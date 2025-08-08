@@ -1,0 +1,721 @@
+#define SOKOL_AUDIO_IMPL
+#include "sokol_audio.h"
+
+#include "linenoise.h"
+
+#define HISTORY_FILE ".sok1_history"
+
+#include <math.h>
+#include <time.h>
+
+#define MAIN_SAMPLE_RATE (44100)
+
+#define WAVE_MAX (99)
+
+#define NUM_VOICE (4)
+#define num_chan (2)
+
+float *wave_data[WAVE_MAX] = {NULL};
+int wave_size[WAVE_MAX] = {0};
+float wave_rate[WAVE_MAX] = {0};
+
+typedef struct {
+    float *table;           // Pointer to waveform or sample
+    int table_size;         // Length of table
+    float table_rate;       // Native sample rate of the table
+    float phase;            // Current position in table
+    float phase_inc;        // Phase increment per host sample
+} osc_t;
+
+osc_t osc[NUM_VOICE];
+
+void osc_set_freq(int v, float freq, float system_sample_rate) {
+    // Compute the frequency in "table samples per system sample"
+    // This works even if table_rate ≠ system rate
+    osc[v].phase_inc = (freq * osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / system_sample_rate);
+}
+
+// inspired by AMY :)
+enum {
+    EXWAVESINE,     // 0
+    EXWAVESQR,      // 1
+    EXWAVESAWDN,    // 2
+    EXWAVESAWUP,    // 3
+    EXWAVETRI,      // 4
+    EXWAVENOISE,    // 5
+    EXWAVEUSR0,     // 6
+    EXWAVEPCM,      // 7
+    EXWAVEUSR1,     // 8
+    EXWAVEUSR2,     // 9
+    EXWAVEUSR3,     // 10
+    EXWAVENONE,     // 11
+    
+    EXWAVEUSR4,     // 12
+    EXWAVEUSR5,     // 13
+    EXWAVEUSR6,     // 14
+    EXWAVEUSR7,     // 15
+    
+    EXWAVEKRG1,     // 16
+    EXWAVEKRG2,     // 17
+    EXWAVEKRG3,     // 18
+    EXWAVEKRG4,     // 19
+    EXWAVEKRG5,     // 10
+    EXWAVEKRG6,     // 21
+    EXWAVEKRG7,     // 22
+    EXWAVEKRG8,     // 23
+    EXWAVEKRG9,     // 24
+    EXWAVEKRG10,    // 25
+    EXWAVEKRG11,    // 26
+    EXWAVEKRG12,    // 27
+    EXWAVEKRG13,    // 28
+    EXWAVEKRG14,    // 29
+    EXWAVEKRG15,    // 30
+    EXWAVEKRG16,    // 31
+
+    EXWAVEKRG17,     // 32
+    EXWAVEKRG18,     // 33
+    EXWAVEKRG19,     // 34
+    EXWAVEKRG20,     // 35
+    EXWAVEKRG21,     // 36
+    EXWAVEKRG22,     // 37
+    EXWAVEKRG23,     // 38
+    EXWAVEKRG24,     // 39
+    EXWAVEKRG25,     // 40
+    EXWAVEKRG26,    // 41
+    EXWAVEKRG27,    // 42
+    EXWAVEKRG28,    // 43
+    EXWAVEKRG29,    // 44
+    EXWAVEKRG30,    // 45
+    EXWAVEKRG31,    // 46
+    EXWAVEKRG32,    // 47
+
+    EXWAVEOUT,      // 48
+
+    EXWAVMAX
+};
+
+
+float *tsqr = NULL; // [] = {-1.00, 0.00, 1.00, 0.00};
+float *tsin = NULL; // [] = {-1.00, -0.50, 0.0, 0.50, 1.00};
+
+
+void free_tables(void);
+
+
+
+double freq[NUM_VOICE];
+double phase[NUM_VOICE];
+float sample[NUM_VOICE];
+float hold[NUM_VOICE];
+double amp[NUM_VOICE];
+double panl[NUM_VOICE];
+double panr[NUM_VOICE];
+double pan[NUM_VOICE];
+int interp[NUM_VOICE];
+int use_amod[NUM_VOICE];
+int decimate[NUM_VOICE];
+
+int wtsel[NUM_VOICE];
+
+void init_voice(void);
+
+float osc_next(int n) {
+    int i = (int)osc[n].phase;
+    int i_next = (i + 1) % osc[n].table_size;
+    float frac = 0.0;
+    if (interp[n]) {
+      frac = osc[n].phase - i;
+    }
+
+    float sample = osc[n].table[i] + frac * (osc[n].table[i_next] - osc[n].table[i]);
+
+    osc[n].phase += osc[n].phase_inc;
+    if (osc[n].phase >= osc[n].table_size)
+        osc[n].phase -= osc[n].table_size;
+
+    return sample;
+}
+
+
+typedef enum {
+    ADSR_OFF,
+    ADSR_ATTACK,
+    ADSR_DECAY,
+    ADSR_SUSTAIN,
+    ADSR_RELEASE
+} adsr_state_t;
+
+typedef struct {
+    float attack_time;   // Attack duration in seconds
+    float decay_time;    // Decay duration in seconds
+    float sustain_level; // Sustain level (0.0 to 1.0)
+    float release_time;  // Release duration in seconds
+    float sample_rate;   // Samples per second (e.g., 44100.0)
+
+    adsr_state_t state;  // Current state
+    float value;         // Current envelope output (0.0 to 1.0)
+    float time;          // Time elapsed in current stage (seconds)
+} adsr_t;
+
+adsr_t amp_env[NUM_VOICE];
+
+// Initialize the ADSR envelope
+void adsr_init(int n, float attack_time, float decay_time, float sustain_level, float release_time, float sample_rate) {
+    amp_env[n].attack_time = attack_time;
+    amp_env[n].decay_time = decay_time;
+    amp_env[n].sustain_level = sustain_level;
+    amp_env[n].release_time = release_time;
+    amp_env[n].sample_rate = sample_rate;
+    amp_env[n].state = ADSR_OFF;
+    amp_env[n].value = 0.0f;
+    amp_env[n].time = 0.0f;
+}
+
+// Trigger the envelope (start attack)
+void adsr_trigger(int n) {
+    amp_env[n].state = ADSR_ATTACK;
+    amp_env[n].value = 0.0f;
+    amp_env[n].time = 0.0f;
+}
+
+// Release the envelope (start release)
+void adsr_release(int n) {
+    if (amp_env[n].state != ADSR_OFF) {
+        amp_env[n].state = ADSR_RELEASE;
+        amp_env[n].time = 0.0f;
+    }
+}
+
+
+// Compute one sample of the envelope
+float adsr_step(int n) {
+    if (amp_env[n].state == ADSR_OFF) {
+        return 0.0f;
+    }
+
+    // Increment time (in seconds)
+    amp_env[n].time += 1.0f / amp_env[n].sample_rate;
+    float t, target;
+
+    switch (amp_env[n].state) {
+        case ADSR_ATTACK:
+            if (amp_env[n].attack_time <= 0.0f) {
+                amp_env[n].value = 1.0f;
+                amp_env[n].state = ADSR_DECAY;
+                amp_env[n].time = 0.0f;
+            } else {
+                t = amp_env[n].time / amp_env[n].attack_time;
+                if (t >= 1.0f) {
+                    amp_env[n].value = 1.0f;
+                    amp_env[n].state = ADSR_DECAY;
+                    amp_env[n].time = 0.0f;
+                } else {
+                    amp_env[n].value = t; // Linear ramp from 0 to 1
+                }
+            }
+            break;
+
+        case ADSR_DECAY:
+            if (amp_env[n].decay_time <= 0.0f) {
+                amp_env[n].value = amp_env[n].sustain_level;
+                amp_env[n].state = ADSR_SUSTAIN;
+                amp_env[n].time = 0.0f;
+            } else {
+                t = amp_env[n].time / amp_env[n].decay_time;
+                if (t >= 1.0f) {
+                    amp_env[n].value = amp_env[n].sustain_level;
+                    amp_env[n].state = ADSR_SUSTAIN;
+                    amp_env[n].time = 0.0f;
+                } else {
+                    // Linear ramp from 1 to sustain_level
+                    amp_env[n].value = 1.0f - t * (1.0f - amp_env[n].sustain_level);
+                }
+            }
+            break;
+
+        case ADSR_SUSTAIN:
+            amp_env[n].value = amp_env[n].sustain_level;
+            break;
+
+        case ADSR_RELEASE:
+            if (amp_env[n].release_time <= 0.0f) {
+                amp_env[n].value = 0.0f;
+                amp_env[n].state = ADSR_OFF;
+                amp_env[n].time = 0.0f;
+            } else {
+                t = amp_env[n].time / amp_env[n].release_time;
+                if (t >= 1.0f) {
+                    amp_env[n].value = 0.0f;
+                    amp_env[n].state = ADSR_OFF;
+                    amp_env[n].time = 0.0f;
+                } else {
+                    // Linear ramp from current value to 0
+                    amp_env[n].value = amp_env[n].sustain_level * (1.0f - t);
+                }
+            }
+            break;
+
+        default:
+            amp_env[n].value = 0.0f;
+            amp_env[n].state = ADSR_OFF;
+    }
+
+    // Clamp value to [0.0, 1.0]
+    if (amp_env[n].value < 0.0f) amp_env[n].value = 0.0f;
+    if (amp_env[n].value > 1.0f) amp_env[n].value = 1.0f;
+
+    return amp_env[n].value;
+}
+
+// Example configuration
+void setup_example() {
+    adsr_init(0, 0.1f, 0.2f, 0.7f, 0.5f, 44100.0f);
+}
+
+int sample_count = 0;
+
+
+// Stream callback function
+void stream_cb(float *buffer, int num_frames, int num_channels) { // , void *user_data) {
+  for (int i = 0; i < num_frames; i++) {
+    sample_count++;
+    float samplel = 0;
+    float sampler = 0;
+    float f = 0;
+    for (int n = 0; n < NUM_VOICE; n++) {
+      if (amp[n] == 0) continue;
+      f = osc_next(n);
+      if (decimate[n] > 1) {
+        if ((sample_count % decimate[n]) == 1) sample[n] = f;
+      } else {
+        sample[n] = f;
+      }
+      // apply amp to sample
+      sample[n] *= amp[n];
+      if (use_amod[n]) {
+        float amod = adsr_step(n);
+        sample[n] *= amod;
+      }
+      // accumulate samples
+      samplel += sample[n] * panl[n];
+      sampler += sample[n] * panr[n];
+    }
+    // Write to all channels
+    buffer[i * num_channels + 0] = samplel;
+    buffer[i * num_channels + 1] = sampler;
+  }
+}
+
+void fsleep(double seconds) {
+  if (seconds < 0.0f) return; // Invalid input
+  struct timespec ts;
+  ts.tv_sec = (time_t)seconds; // Whole seconds
+  ts.tv_nsec = (long)((seconds - (double)ts.tv_sec) * 1e9); // Fractional part to nanoseconds
+  nanosleep(&ts, NULL);
+}
+
+void init_tables(void);
+
+int running = 1;
+
+int current_voice = 0;
+
+long mytol(char *str, int *valid, int *next) {
+  long val;
+  char *endptr;
+  val = strtol(str, &endptr, 10);
+  if (endptr == str) {
+    if (valid) *valid = 0;
+    if (next) *next = 0;
+    return 0;
+  }
+  if (valid) *valid = 1;
+  if (next) *next = endptr - str + 1;
+  return val;
+}
+
+double mytod(char *str, int *valid, int *next) {
+  double val;
+  char *endptr;
+  val = strtod(str, &endptr);
+  if (endptr == str) {
+    if (valid) *valid = 0;
+    if (next) *next = 0;
+    return 0;
+  }
+  if (valid) *valid = 1;
+  if (next) *next = endptr - str + 1;
+  return val;
+}
+
+enum {
+  ERR_EXPECTED_INT,
+  ERR_EXPECTED_FLOAT,
+  ERR_INVALID_VOICE,
+  ERR_INVALID_COLON,
+  ERR_FREQUENCY_OUT_OF_RANGE,
+  ERR_AMPLITUDE_OUT_OF_RANGE,
+  ERR_INVALID_WAVE,
+  ERR_EMPTY_WAVE,
+  ERR_INVALID_INTERPOLATE,
+  ERR_PAN_OUT_OF_RANGE,
+  ERR_INVALID_DELAY,
+};
+
+void show_voice(int v, char c) {
+  printf("# %cv%d w%d f%g a%g p%g I%d d%d",
+    c,
+    v,
+    wtsel[v],
+    freq[v],
+    amp[v],
+    pan[v],
+    interp[v],
+    decimate[v]);
+  printf(" A%g,%g,%g,%g",
+    amp_env[v].attack_time,
+    amp_env[v].decay_time,
+    amp_env[v].sustain_level,
+    amp_env[v].release_time);
+  puts("");
+}
+
+#define AFACTOR (1) // (0.025)
+
+int wire(char *line, int *this_voice, int output) {
+  int p = 0;
+  int more = 1;
+  int r = 0;
+  int next;
+  int valid;
+  int n, na[8];
+  double f, fa[8];
+  int voice = 0;
+  if (this_voice) voice = *this_voice;
+  while (more) {
+    valid = 1;
+    char c = line[p++];
+    char t = '\0';
+    if (c == '\0') {
+      more = 0;
+      break;
+    }
+    if (c == ' ' || c == '\t') continue;
+    if (c == 'v') {
+      n = mytol(&line[p], &valid, &next);
+      if (!valid) {
+        more = 0;
+        r = ERR_EXPECTED_INT;
+      } else {
+        p += next-1;
+        if (n >= 0 && n < NUM_VOICE) voice = n;
+        else {
+          more = 0;
+          r = ERR_INVALID_VOICE;
+        }
+      }
+      continue;
+    }
+    if (c == ':') {
+      t = line[p++];
+      switch (t) {
+        case 'q': r = -1; more = 0; break;
+        default:
+          r = 1; more = 0; break;
+      }
+      continue;
+    }
+    if (c == 'f') {
+      f = mytod(&line[p], &valid, &next);
+      if (!valid) {
+        more = 0;
+        r = ERR_EXPECTED_FLOAT;
+      } else {
+        if (f > 0 && f < (double)MAIN_SAMPLE_RATE) {
+          freq[voice] = f;
+          osc_set_freq(voice, f, MAIN_SAMPLE_RATE);
+        } else {
+          more = 0;
+          r = ERR_FREQUENCY_OUT_OF_RANGE;
+        }
+      }
+      continue;
+    }
+    if (c == 'a') {
+      f = mytod(&line[p], &valid, &next);
+      if (!valid) {
+        more = 0;
+        r = ERR_EXPECTED_FLOAT;
+      } else {
+        if (f >= 0) {
+          use_amod[voice] = 0;
+          amp[voice] = f * AFACTOR;
+        } else {
+          more = 0;
+          r = ERR_AMPLITUDE_OUT_OF_RANGE;
+        }
+      }
+      continue;
+    }
+    if (c == 'l') {
+      f = mytod(&line[p], &valid, &next);
+      if (!valid) {
+        more = 0;
+        r = ERR_EXPECTED_FLOAT;
+      } else {
+        if (f == 0) {
+          adsr_release(voice);
+        } else {
+          use_amod[voice] = 1;
+          amp[voice] = f;
+          adsr_trigger(voice);
+        }
+      }
+      continue;
+    }
+    if (c == 'w') {
+      n = mytol(&line[p], &valid, &next);
+      if (!valid) {
+        more = 0;
+        r = ERR_EXPECTED_INT;
+      } else {
+        p += next-1;
+        if (n >= 0 && n < EXWAVMAX) {
+          if (wtsel[voice] == n) continue;
+          if (wave_data[n] && wave_size[n] && wave_rate[n] > 0.0) {
+            wtsel[voice] = n;
+            osc[voice].table_rate = wave_rate[n];
+            osc[voice].table_size = wave_size[n];
+            osc[voice].table = wave_data[n];
+          } else {
+            more = 0;
+            r = ERR_EMPTY_WAVE;
+          }
+        } else {
+          more = 0;
+          r = ERR_INVALID_WAVE;
+        }
+      }
+      continue;
+    }
+    if (c == 'I') {
+      c = line[p++];
+      if (c == '0') interp[voice] = 0;
+      else if (c == '1') interp[voice] = 1;
+      else {
+        more = 0;
+        r = ERR_INVALID_INTERPOLATE;
+      }
+      continue;
+    }
+    if (c == 'p') {
+      f = mytod(&line[p], &valid, &next);
+      if (!valid) {
+        more = 0;
+        r = ERR_EXPECTED_FLOAT;
+      } else {
+        if (f >= -1.0 && f <= 1.0) {
+          pan[voice] = f;
+          panl[voice] = (1.0 - f) / 2.0;
+          panr[voice] = (1.0 + f) / 2.0;          
+        } else {
+          more = 0;
+          r = ERR_PAN_OUT_OF_RANGE;
+        }
+      }
+      continue;
+    }
+    if (c == '+') {
+      f = mytod(&line[p], &valid, &next);
+      if (!valid) {
+        more = 0;
+        r = ERR_EXPECTED_FLOAT;
+      } else {
+        if (f > 0) {
+          fsleep(f);
+        } else {
+          more = 0;
+          r = ERR_INVALID_DELAY;          
+        }
+      }
+      continue;
+    }
+    if (c == 'A') {
+      for (int s = 0; s < 4; s++) {
+        f = mytod(&line[p], &valid, &next);
+        if (!valid) {
+          more = 0;
+          r = ERR_EXPECTED_FLOAT;
+          break;
+        } else {
+          if (s == 0) {
+            amp_env[voice].attack_time = f;
+          } else if (s == 1) {
+            amp_env[voice].decay_time = f;
+          } else if (s == 2) {
+            amp_env[voice].sustain_level = f;
+          } else if (s == 3) {
+            amp_env[voice].release_time = f;
+          }
+          p += next-1;
+          c = line[p];
+          if (c == ',') {
+            p++;
+          } else {
+            break;
+          }
+        }
+      }
+      continue;
+    }
+    if (c == 'd') {
+      n = mytol(&line[p], &valid, &next);
+      if (!valid) {
+        more = 0;
+        r = ERR_EXPECTED_INT;
+      } else {
+        decimate[voice] = n;
+      }
+      continue;
+    }
+    if (c == '?') {
+      char peek = line[p];
+      if (peek == '?') {
+        p++;
+        for (int i=0; i<NUM_VOICE; i++) {
+          c = ' ';
+          if (i == current_voice) c = '*';
+          show_voice(i, c);
+        }
+      } else show_voice(voice, ' ');
+      continue;
+    }
+  }
+  if (this_voice) *this_voice = voice;
+  return r;
+}
+
+int main(int argc, char *argv[]) {
+  linenoiseHistoryLoad(HISTORY_FILE);
+  init_tables();
+  init_voice();
+  
+  // Initialize Sokol Audio
+  saudio_setup(&(saudio_desc){
+    .stream_cb = stream_cb,
+    .sample_rate = MAIN_SAMPLE_RATE,
+    .num_channels = num_chan // Stereo
+  });
+
+  while (running) {
+    char *line = linenoise("> ");
+    if (line == NULL) {
+      running = 0;
+      break;
+    }
+    if (strlen(line) == 0) continue;
+    linenoiseHistoryAdd(line);
+    int n = wire(line, &current_voice, 1);
+    if (n < 0) break; // request to stop or error
+    if (n > 0) {
+      printf("got information %d\n", n);
+    }
+    linenoiseFree(line);
+  }
+  linenoiseHistorySave(HISTORY_FILE);
+
+  // Cleanup
+  saudio_shutdown();
+  sleep(1); // make sure we don't crash the callback b/c thread timing and wave_data
+  free_tables();
+  return 0;
+}
+
+
+void init_tables(void) {
+  float *table;
+  float f;
+  float d;
+
+#define SIZE_SQR (4096)
+  table = (float *)malloc(SIZE_SQR * sizeof(float));
+  for (int i=0; i<SIZE_SQR; i++) {
+    if (i < SIZE_SQR/2) table[i] = -1;
+    else table[i] = 1;
+  }
+  wave_data[EXWAVESQR] = table;
+  wave_size[EXWAVESQR] = SIZE_SQR;
+  wave_rate[EXWAVESQR] = MAIN_SAMPLE_RATE;
+
+#define SIZE_SINE (4096)
+  table = (float *)malloc(SIZE_SINE * sizeof(float));
+  for (int i=0; i<SIZE_SINE; i++) {
+    float t = (i * 2.0 * M_PI) / (float)SIZE_SINE;
+    table[i] = sin(t);
+  }
+  wave_data[EXWAVESINE] = table;
+  wave_size[EXWAVESINE] = SIZE_SINE;
+  wave_rate[EXWAVESINE] = MAIN_SAMPLE_RATE;
+
+#define SIZE_SAWDN (4096)
+  table = (float *)malloc(SIZE_SAWDN * sizeof(float));
+  f = -1.0;
+  d = 2.0 / (float)SIZE_SAWDN;
+  for (int i=0; i<SIZE_SAWDN; i++) {
+    table[i] = f - 1.0;
+    f += d;
+  }
+  wave_data[EXWAVESAWDN] = table;
+  wave_size[EXWAVESAWDN] = SIZE_SAWDN;
+  wave_rate[EXWAVESAWDN] = MAIN_SAMPLE_RATE;
+
+#define SIZE_SAWUP (4096)
+  table = (float *)malloc(SIZE_SAWUP * sizeof(float));
+  f = 1.0;
+  d = 2.0 / (float)SIZE_SAWUP;
+  for (int i=0; i<SIZE_SAWUP; i++) {
+    table[i] = f - 1.0;
+    f -= d;
+  }
+  wave_data[EXWAVESAWUP] = table;
+  wave_size[EXWAVESAWUP] = SIZE_SAWUP;
+  wave_rate[EXWAVESAWUP] = MAIN_SAMPLE_RATE;
+
+  for (int i=0; i<NUM_VOICE; i++) {
+    wtsel[i] = EXWAVESINE;
+    osc[i].table = wave_data[wtsel[i]];
+    osc[i].table_size = wave_size[wtsel[i]];
+    osc[i].table_rate = wave_rate[wtsel[i]];
+    osc[i].phase = 0;
+    osc[i].phase_inc = 0;
+  }
+
+}
+
+
+void free_tables(void) {
+  for (int i = 0; i < EXWAVMAX; i++) {
+    if (wave_data[i]) {
+      free(wave_data[i]);
+      wave_size[i] = 0;
+    }
+  }
+}
+
+void init_voice(void) {
+  for (int i=0; i<NUM_VOICE; i++) {
+    freq[i] = 0.0;
+    phase[i] = 0;
+    sample[i] = 0;
+    hold[i] = 0;
+    amp[i] = 0;
+    pan[i] = 0;
+    panl[i] = 0.5;
+    panr[i] = 0.5;
+    interp[i] = 0;
+    wtsel[i] = 0;
+    use_amod[i] = 0;
+    decimate[i] = 0;
+    adsr_init(i, 1.1f, 0.2f, 0.7f, 0.5f, 44100.0f);
+  }
+}
