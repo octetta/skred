@@ -12,28 +12,12 @@
 
 #define WAVE_MAX (99)
 
-#define NUM_VOICE (4)
+#define NUM_VOICE (16)
 #define num_chan (2)
 
 float *wave_data[WAVE_MAX] = {NULL};
 int wave_size[WAVE_MAX] = {0};
 float wave_rate[WAVE_MAX] = {0};
-
-typedef struct {
-    float *table;           // Pointer to waveform or sample
-    int table_size;         // Length of table
-    float table_rate;       // Native sample rate of the table
-    float phase;            // Current position in table
-    float phase_inc;        // Phase increment per host sample
-} osc_t;
-
-osc_t osc[NUM_VOICE];
-
-void osc_set_freq(int v, float freq, float system_sample_rate) {
-    // Compute the frequency in "table samples per system sample"
-    // This works even if table_rate ≠ system rate
-    osc[v].phase_inc = (freq * osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / system_sample_rate);
-}
 
 // inspired by AMY :)
 enum {
@@ -95,13 +79,7 @@ enum {
 };
 
 
-float *tsqr = NULL; // [] = {-1.00, 0.00, 1.00, 0.00};
-float *tsin = NULL; // [] = {-1.00, -0.50, 0.0, 0.50, 1.00};
-
-
 void free_tables(void);
-
-
 
 double freq[NUM_VOICE];
 double phase[NUM_VOICE];
@@ -113,24 +91,51 @@ double panr[NUM_VOICE];
 double pan[NUM_VOICE];
 int interp[NUM_VOICE];
 int use_amod[NUM_VOICE];
+int use_fmod[NUM_VOICE];
+int hide[NUM_VOICE];
 int decimate[NUM_VOICE];
+int quantize[NUM_VOICE];
 
 int wtsel[NUM_VOICE];
 
 void init_voice(void);
 
-float osc_next(int n) {
-    int i = (int)osc[n].phase;
-    int i_next = (i + 1) % osc[n].table_size;
-    float frac = 0.0;
+typedef struct {
+    float *table;           // Pointer to waveform or sample
+    int table_size;         // Length of table
+    float table_rate;       // Native sample rate of the table
+    float phase;            // Current position in table
+    float phase_inc;        // Phase increment per host sample
+} osc_t;
+
+osc_t osc[NUM_VOICE];
+
+float osc_get_phase_inc(int v, float freq) {
+    float phase_inc = (freq * osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / MAIN_SAMPLE_RATE);
+    return phase_inc;
+}
+
+void osc_set_freq(int v, float freq, float system_sample_rate) {
+    // Compute the frequency in "table samples per system sample"
+    // This works even if table_rate ≠ system rate
+    osc[v].phase_inc = (freq * osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / system_sample_rate);
+}
+
+float osc_next(int n, float phase_inc) {
+    int i = (int)osc[n].phase % osc[n].table_size;
+    float sample;
     if (interp[n]) {
+      int i_next = (i + 1) % osc[n].table_size;
+      float frac = 0.0;
       frac = osc[n].phase - i;
+      sample = osc[n].table[i] + frac * (osc[n].table[i_next] - osc[n].table[i]);
+    } else {
+      sample = osc[n].table[i];      
     }
 
-    float sample = osc[n].table[i] + frac * (osc[n].table[i_next] - osc[n].table[i]);
 
-    osc[n].phase += osc[n].phase_inc;
-    if (osc[n].phase >= osc[n].table_size)
+    osc[n].phase += phase_inc;
+    if (osc[n].phase > osc[n].table_size)
         osc[n].phase -= osc[n].table_size;
 
     return sample;
@@ -267,11 +272,11 @@ float adsr_step(int n) {
     return amp_env[n].value;
 }
 
-// Example configuration
-void setup_example() {
-    adsr_init(0, 0.1f, 0.2f, 0.7f, 0.5f, 44100.0f);
+float quantize_bits_int(float v, int bits) {
+  int levels = (1 << bits) - 1;
+  int iv = (int)(v * levels + 0.5);
+  return iv * (1.0 / levels);
 }
-
 int sample_count = 0;
 
 
@@ -284,12 +289,24 @@ void stream_cb(float *buffer, int num_frames, int num_channels) { // , void *use
     float f = 0;
     for (int n = 0; n < NUM_VOICE; n++) {
       if (amp[n] == 0) continue;
-      f = osc_next(n);
+      if (use_fmod[n] >= 0) {
+        int m = use_fmod[n];
+        float g = sample[m];
+        float h = osc_get_phase_inc(n, freq[n] + g);
+        f = osc_next(n, h);
+      } else {
+        f = osc_next(n, osc[n].phase_inc);
+      }
       if (decimate[n] > 1) {
         if ((sample_count % decimate[n]) == 1) sample[n] = f;
       } else {
         sample[n] = f;
       }
+      if (quantize[n]) {
+        sample[n] = quantize_bits_int(sample[n], quantize[n]);
+      }
+
+
       // apply amp to sample
       sample[n] *= amp[n];
       if (use_amod[n]) {
@@ -297,8 +314,10 @@ void stream_cb(float *buffer, int num_frames, int num_channels) { // , void *use
         sample[n] *= amod;
       }
       // accumulate samples
-      samplel += sample[n] * panl[n];
-      sampler += sample[n] * panr[n];
+      if (hide[n] == 0) {
+        samplel += sample[n] * panl[n];
+        sampler += sample[n] * panr[n];
+      }
     }
     // Write to all channels
     buffer[i * num_channels + 0] = samplel;
@@ -360,10 +379,11 @@ enum {
   ERR_INVALID_INTERPOLATE,
   ERR_PAN_OUT_OF_RANGE,
   ERR_INVALID_DELAY,
+  ERR_INVALID_MODULATOR,
 };
 
 void show_voice(int v, char c) {
-  printf("# %cv%d w%d f%g a%g p%g I%d d%d",
+  printf("# %cv%d w%d f%g a%g p%g I%d d%d q%d",
     c,
     v,
     wtsel[v],
@@ -371,8 +391,11 @@ void show_voice(int v, char c) {
     amp[v],
     pan[v],
     interp[v],
-    decimate[v]);
-  printf(" A%g,%g,%g,%g",
+    decimate[v],
+    quantize[v]);
+  printf(" M%d m%d A%g,%g,%g,%g",
+    use_fmod[v],
+    hide[v],
     amp_env[v].attack_time,
     amp_env[v].decay_time,
     amp_env[v].sustain_level,
@@ -473,6 +496,39 @@ int wire(char *line, int *this_voice, int output) {
       }
       continue;
     }
+    if (c == 'm') {
+      n = mytol(&line[p], &valid, &next);
+      if (!valid) {
+        more = 0;
+        r = ERR_EXPECTED_INT;
+      } else {
+        if (n == 0) {
+          hide[voice] = 0;
+        } else {
+          hide[voice] = 1;
+        }
+      }
+      continue;
+    }
+    if (c == 'M') {
+      n = mytol(&line[p], &valid, &next);
+      if (!valid) {
+        more = 0;
+        r = ERR_EXPECTED_INT;
+      } else {
+        if (n < 0) {
+          use_fmod[voice] = -1;
+        } else {
+          if (n < NUM_VOICE) {
+            use_fmod[voice] = n;
+          } else {
+            more = 0;
+            r = ERR_INVALID_MODULATOR;
+          }
+        }
+      }
+      continue;
+    }
     if (c == 'w') {
       n = mytol(&line[p], &valid, &next);
       if (!valid) {
@@ -568,13 +624,13 @@ int wire(char *line, int *this_voice, int output) {
       }
       continue;
     }
-    if (c == 'd') {
+    if (c == 'q') {
       n = mytol(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
         r = ERR_EXPECTED_INT;
       } else {
-        decimate[voice] = n;
+        quantize[voice] = n;
       }
       continue;
     }
@@ -715,7 +771,10 @@ void init_voice(void) {
     interp[i] = 0;
     wtsel[i] = 0;
     use_amod[i] = 0;
+    use_fmod[i] = -1;
+    hide[i] = 0;
     decimate[i] = 0;
+    quantize[i] = 0;
     adsr_init(i, 1.1f, 0.2f, 0.7f, 0.5f, 44100.0f);
   }
 }
