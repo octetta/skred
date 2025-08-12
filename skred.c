@@ -14,6 +14,7 @@
 
 #define NUM_VOICE (16)
 #define num_chan (2)
+#define AFACTOR (0.025) // (0.025)
 
 float *wave_data[WAVE_MAX] = {NULL};
 int wave_size[WAVE_MAX] = {0};
@@ -90,8 +91,11 @@ double panl[NUM_VOICE];
 double panr[NUM_VOICE];
 double pan[NUM_VOICE];
 int interp[NUM_VOICE];
-int use_amod[NUM_VOICE];
-int use_fmod[NUM_VOICE];
+int use_adsr[NUM_VOICE];
+int fmod_osc[NUM_VOICE];
+int pmod_osc[NUM_VOICE];
+float fmod_depth[NUM_VOICE];
+float pmod_depth[NUM_VOICE];
 int hide[NUM_VOICE];
 int decimate[NUM_VOICE];
 int quantize[NUM_VOICE];
@@ -122,10 +126,16 @@ void osc_set_freq(int v, float freq, float system_sample_rate) {
 }
 
 float osc_next(int n, float phase_inc) {
-    int i = (int)osc[n].phase % osc[n].table_size;
+    int table_size = osc[n].table_size;
+    int i = (int)osc[n].phase % table_size;
+    if (i < 0 || i >= table_size) {
+      //printf("!! index %d\n", i);
+      osc[n].phase = 0;
+      return 0;
+    }
     float sample;
     if (interp[n]) {
-      int i_next = (i + 1) % osc[n].table_size;
+      int i_next = (i + 1) % table_size;
       float frac = 0.0;
       frac = osc[n].phase - i;
       sample = osc[n].table[i] + frac * (osc[n].table[i_next] - osc[n].table[i]);
@@ -133,10 +143,9 @@ float osc_next(int n, float phase_inc) {
       sample = osc[n].table[i];      
     }
 
-
     osc[n].phase += phase_inc;
-    if (osc[n].phase > osc[n].table_size)
-        osc[n].phase -= osc[n].table_size;
+    if (osc[n].phase > table_size)
+        osc[n].phase -= table_size;
 
     return sample;
 }
@@ -281,7 +290,11 @@ int sample_count = 0;
 
 
 // Stream callback function
+#if 0
 void stream_cb(float *buffer, int num_frames, int num_channels) { // , void *user_data) {
+#else
+void stream_userdata_cb(float *buffer, int num_frames, int num_channels, void *user_data) { // , void *user_data) {
+#endif
   for (int i = 0; i < num_frames; i++) {
     sample_count++;
     float samplel = 0;
@@ -289,9 +302,9 @@ void stream_cb(float *buffer, int num_frames, int num_channels) { // , void *use
     float f = 0;
     for (int n = 0; n < NUM_VOICE; n++) {
       if (amp[n] == 0) continue;
-      if (use_fmod[n] >= 0) {
-        int m = use_fmod[n];
-        float g = sample[m];
+      if (fmod_osc[n] >= 0) {
+        int m = fmod_osc[n];
+        float g = sample[m] * fmod_depth[n];
         float h = osc_get_phase_inc(n, freq[n] + g);
         f = osc_next(n, h);
       } else {
@@ -306,15 +319,21 @@ void stream_cb(float *buffer, int num_frames, int num_channels) { // , void *use
         sample[n] = quantize_bits_int(sample[n], quantize[n]);
       }
 
-
       // apply amp to sample
-      sample[n] *= amp[n];
-      if (use_amod[n]) {
+      // sample[n] *= amp[n];
+      if (use_adsr[n]) {
         float amod = adsr_step(n);
-        sample[n] *= amod;
+        sample[n] *= amod * AFACTOR;
+      } else {
+        sample[n] *= amp[n];
       }
       // accumulate samples
       if (hide[n] == 0) {
+        if (pmod_osc[n] >= 0) {
+          float q = sample[pmod_osc[n]] * pmod_depth[n];
+          panl[n] = (1.0 - q) / 2.0;
+          panr[n] = (1.0 + q) / 2.0;          
+        }
         samplel += sample[n] * panl[n];
         sampler += sample[n] * panr[n];
       }
@@ -339,7 +358,33 @@ int running = 1;
 
 int current_voice = 0;
 
-long mytol(char *str, int *valid, int *next) {
+#include <dirent.h>
+
+void plist(void) {
+  DIR* dir;
+  struct dirent* entry;
+  // Open /proc/self/task to list threads
+  dir = opendir("/proc/self/task");
+  if (dir == NULL) {
+    perror("Failed to open /proc/self/task");
+    return;
+  }
+
+  // Iterate through each thread directory
+  while ((entry = readdir(dir)) != NULL) {
+    // Skip . and .. directories
+    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+      continue;
+    }
+    char *thread_name = NULL;
+    printf("%s\t%s\n", entry->d_name, thread_name ? thread_name : "Unknown");
+    free(thread_name);
+  }
+
+  closedir(dir);
+}
+
+long parse_int(char *str, int *valid, int *next) {
   long val;
   char *endptr;
   val = strtol(str, &endptr, 10);
@@ -353,7 +398,7 @@ long mytol(char *str, int *valid, int *next) {
   return val;
 }
 
-double mytod(char *str, int *valid, int *next) {
+double parse_double(char *str, int *valid, int *next) {
   double val;
   char *endptr;
   val = strtod(str, &endptr);
@@ -388,22 +433,24 @@ void show_voice(int v, char c) {
     v,
     wtsel[v],
     freq[v],
-    amp[v],
+    amp[v] / AFACTOR,
     pan[v],
     interp[v],
     decimate[v],
     quantize[v]);
-  printf(" M%d m%d A%g,%g,%g,%g",
-    use_fmod[v],
+  printf(" M%d,%g P%d,%g m%d A%g,%g,%g,%g",
+    fmod_osc[v],
+    fmod_depth[v],
+    pmod_osc[v],
+    pmod_depth[v],
     hide[v],
     amp_env[v].attack_time,
     amp_env[v].decay_time,
     amp_env[v].sustain_level,
     amp_env[v].release_time);
+  printf(" : %g/%g", osc[v].phase, osc[v].phase_inc);
   puts("");
 }
-
-#define AFACTOR (1) // (0.025)
 
 int wire(char *line, int *this_voice, int output) {
   int p = 0;
@@ -425,7 +472,7 @@ int wire(char *line, int *this_voice, int output) {
     }
     if (c == ' ' || c == '\t') continue;
     if (c == 'v') {
-      n = mytol(&line[p], &valid, &next);
+      n = parse_int(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
         r = ERR_EXPECTED_INT;
@@ -443,13 +490,14 @@ int wire(char *line, int *this_voice, int output) {
       t = line[p++];
       switch (t) {
         case 'q': r = -1; more = 0; break;
+        case 's': plist(); break;
         default:
           r = 1; more = 0; break;
       }
       continue;
     }
     if (c == 'f') {
-      f = mytod(&line[p], &valid, &next);
+      f = parse_double(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
         r = ERR_EXPECTED_FLOAT;
@@ -465,13 +513,13 @@ int wire(char *line, int *this_voice, int output) {
       continue;
     }
     if (c == 'a') {
-      f = mytod(&line[p], &valid, &next);
+      f = parse_double(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
         r = ERR_EXPECTED_FLOAT;
       } else {
         if (f >= 0) {
-          use_amod[voice] = 0;
+          use_adsr[voice] = 0;
           amp[voice] = f * AFACTOR;
         } else {
           more = 0;
@@ -481,7 +529,7 @@ int wire(char *line, int *this_voice, int output) {
       continue;
     }
     if (c == 'l') {
-      f = mytod(&line[p], &valid, &next);
+      f = parse_double(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
         r = ERR_EXPECTED_FLOAT;
@@ -489,7 +537,7 @@ int wire(char *line, int *this_voice, int output) {
         if (f == 0) {
           adsr_release(voice);
         } else {
-          use_amod[voice] = 1;
+          use_adsr[voice] = 1;
           amp[voice] = f;
           adsr_trigger(voice);
         }
@@ -497,7 +545,7 @@ int wire(char *line, int *this_voice, int output) {
       continue;
     }
     if (c == 'm') {
-      n = mytol(&line[p], &valid, &next);
+      n = parse_int(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
         r = ERR_EXPECTED_INT;
@@ -510,17 +558,58 @@ int wire(char *line, int *this_voice, int output) {
       }
       continue;
     }
-    if (c == 'M') {
-      n = mytol(&line[p], &valid, &next);
+    if (c == 'P') {
+      n = parse_int(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
         r = ERR_EXPECTED_INT;
       } else {
         if (n < 0) {
-          use_fmod[voice] = -1;
+        } else if (n >= 0 && n < NUM_VOICE) {
+          pmod_osc[voice] = n;
+        } else {
+          pmod_osc[voice] = -1;
+        }
+        char peek = line[p+1];
+        if (peek == ',') {
+          p++;
+          p++;
+          f = parse_double(&line[p], &valid, &next);
+          if (!valid) {
+            more = 0;
+            r = ERR_EXPECTED_INT;
+          } else {
+            pmod_depth[voice] = f;
+            p += next-1;
+          }
+        }
+      }
+      continue;
+    }
+    if (c == 'M') {
+      n = parse_int(&line[p], &valid, &next);
+      if (!valid) {
+        more = 0;
+        r = ERR_EXPECTED_INT;
+      } else {
+        if (n < 0) {
+          fmod_osc[voice] = -1;
         } else {
           if (n < NUM_VOICE) {
-            use_fmod[voice] = n;
+            fmod_osc[voice] = n;
+            char peek = line[p+1];
+            if (peek == ',') {
+              p++;
+              p++;
+              f = parse_double(&line[p], &valid, &next);
+              if (!valid) {
+                more = 0;
+                r = ERR_EXPECTED_FLOAT;
+              } else {
+                fmod_depth[voice] = f;
+                p += next-1;
+              }
+            }
           } else {
             more = 0;
             r = ERR_INVALID_MODULATOR;
@@ -530,7 +619,7 @@ int wire(char *line, int *this_voice, int output) {
       continue;
     }
     if (c == 'w') {
-      n = mytol(&line[p], &valid, &next);
+      n = parse_int(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
         r = ERR_EXPECTED_INT;
@@ -565,7 +654,7 @@ int wire(char *line, int *this_voice, int output) {
       continue;
     }
     if (c == 'p') {
-      f = mytod(&line[p], &valid, &next);
+      f = parse_double(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
         r = ERR_EXPECTED_FLOAT;
@@ -582,7 +671,7 @@ int wire(char *line, int *this_voice, int output) {
       continue;
     }
     if (c == '+') {
-      f = mytod(&line[p], &valid, &next);
+      f = parse_double(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
         r = ERR_EXPECTED_FLOAT;
@@ -598,7 +687,7 @@ int wire(char *line, int *this_voice, int output) {
     }
     if (c == 'A') {
       for (int s = 0; s < 4; s++) {
-        f = mytod(&line[p], &valid, &next);
+        f = parse_double(&line[p], &valid, &next);
         if (!valid) {
           more = 0;
           r = ERR_EXPECTED_FLOAT;
@@ -609,7 +698,7 @@ int wire(char *line, int *this_voice, int output) {
           } else if (s == 1) {
             amp_env[voice].decay_time = f;
           } else if (s == 2) {
-            amp_env[voice].sustain_level = f;
+            amp_env[voice].sustain_level = f * 1; // AFACTOR;
           } else if (s == 3) {
             amp_env[voice].release_time = f;
           }
@@ -625,7 +714,7 @@ int wire(char *line, int *this_voice, int output) {
       continue;
     }
     if (c == 'q') {
-      n = mytol(&line[p], &valid, &next);
+      n = parse_int(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
         r = ERR_EXPECTED_INT;
@@ -639,6 +728,7 @@ int wire(char *line, int *this_voice, int output) {
       if (peek == '?') {
         p++;
         for (int i=0; i<NUM_VOICE; i++) {
+          if (freq[i] == 0) continue;
           c = ' ';
           if (i == current_voice) c = '*';
           show_voice(i, c);
@@ -651,6 +741,9 @@ int wire(char *line, int *this_voice, int output) {
   return r;
 }
 
+
+char my_data[] = "hello";
+
 int main(int argc, char *argv[]) {
   linenoiseHistoryLoad(HISTORY_FILE);
   init_tables();
@@ -658,10 +751,25 @@ int main(int argc, char *argv[]) {
   
   // Initialize Sokol Audio
   saudio_setup(&(saudio_desc){
-    .stream_cb = stream_cb,
+    // .stream_cb = stream_cb,
+    .stream_userdata_cb = stream_userdata_cb,
+    .user_data = &my_data,
     .sample_rate = MAIN_SAMPLE_RATE,
-    .num_channels = num_chan // Stereo
+    .num_channels = num_chan, // Stereo
+    // .user_data = &my_data, // todo
   });
+
+  if (saudio_isvalid()) {
+    printf("# audio backend is running\n");
+    printf("# requested sample rate %d, actual sample rate %d\n",
+        (int)MAIN_SAMPLE_RATE,
+        saudio_sample_rate());
+    printf("# buffer frames %d\n", saudio_buffer_frames());
+    printf("# number of channels %d\n", saudio_channels());
+  } else {
+    printf("# cannot start audio backend\n");
+    return 1;
+  }
 
   while (running) {
     char *line = linenoise("> ");
@@ -737,6 +845,22 @@ void init_tables(void) {
   wave_size[EXWAVESAWUP] = SIZE_SAWUP;
   wave_rate[EXWAVESAWUP] = MAIN_SAMPLE_RATE;
 
+#define SIZE_TRI (4096)
+  table = (float *)malloc(SIZE_TRI * sizeof(float));
+  f = -1.0;
+  d = (float)SIZE_TRI / 2.0;
+  for (int i=0; i<SIZE_TRI; i++) {
+    table[i] = f;
+    if (i < (SIZE_TRI / 2)) {
+      f += d;
+    } else {
+      f -= d;
+    }
+  }
+  wave_data[EXWAVETRI] = table;
+  wave_size[EXWAVETRI] = SIZE_TRI;
+  wave_rate[EXWAVETRI] = MAIN_SAMPLE_RATE;
+
   for (int i=0; i<NUM_VOICE; i++) {
     wtsel[i] = EXWAVESINE;
     osc[i].table = wave_data[wtsel[i]];
@@ -770,8 +894,9 @@ void init_voice(void) {
     panr[i] = 0.5;
     interp[i] = 0;
     wtsel[i] = 0;
-    use_amod[i] = 0;
-    use_fmod[i] = -1;
+    use_adsr[i] = 0;
+    fmod_osc[i] = -1;
+    pmod_osc[i] = -1;
     hide[i] = 0;
     decimate[i] = 0;
     quantize[i] = 0;
