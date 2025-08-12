@@ -83,7 +83,8 @@ enum {
 void free_tables(void);
 
 double freq[NUM_VOICE];
-double phase[NUM_VOICE];
+double note[NUM_VOICE];
+//double phase[NUM_VOICE];
 float sample[NUM_VOICE];
 float hold[NUM_VOICE];
 double amp[NUM_VOICE];
@@ -428,17 +429,18 @@ enum {
 };
 
 void show_voice(int v, char c) {
-  printf("# %cv%d w%d f%g a%g p%g I%d d%d q%d",
+  printf("# %cv%d w%d n%g f%g a%g p%g I%d d%d q%d",
     c,
     v,
     wtsel[v],
+    note[v],
     freq[v],
     amp[v] / AFACTOR,
     pan[v],
     interp[v],
     decimate[v],
     quantize[v]);
-  printf(" M%d,%g P%d,%g m%d A%g,%g,%g,%g",
+  printf(" F%d,%g P%d,%g m%d A%g,%g,%g,%g",
     fmod_osc[v],
     fmod_depth[v],
     pmod_osc[v],
@@ -544,7 +546,7 @@ int wire(char *line, int *this_voice, int output) {
       }
       continue;
     }
-    if (c == 'm') {
+    if (c == 'f') {
       n = parse_int(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
@@ -586,7 +588,20 @@ int wire(char *line, int *this_voice, int output) {
       }
       continue;
     }
-    if (c == 'M') {
+    if (c == 'n') {
+      f = parse_double(&line[p], &valid, &next);
+      if (!valid) {
+        more = 0;
+        r = ERR_EXPECTED_FLOAT;
+      } else {
+        float g = 440.0 * pow(2.0, (f - 69.0) / 12.0);
+        note[voice] = f;
+        freq[voice] = g;
+        osc_set_freq(voice, g, MAIN_SAMPLE_RATE);
+      }
+      continue;
+    }
+    if (c == 'F') {
       n = parse_int(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
@@ -710,6 +725,16 @@ int wire(char *line, int *this_voice, int output) {
             break;
           }
         }
+      }
+      continue;
+    }
+    if (c == 'd') {
+      n = parse_int(&line[p], &valid, &next);
+      if (!valid) {
+        more = 0;
+        r = ERR_EXPECTED_INT;
+      } else {
+        decimate[voice] = n;
       }
       continue;
     }
@@ -885,7 +910,7 @@ void free_tables(void) {
 void init_voice(void) {
   for (int i=0; i<NUM_VOICE; i++) {
     freq[i] = 0.0;
-    phase[i] = 0;
+    //phase[i] = 0;
     sample[i] = 0;
     hold[i] = 0;
     amp[i] = 0;
