@@ -1,24 +1,38 @@
+#include <stdio.h>
+
 #define SOKOL_AUDIO_IMPL
 #include "sokol_audio.h"
 
-#include "linenoise.h"
-
 #define HISTORY_FILE ".sok1_history"
+#define MAIN_SAMPLE_RATE (44100)
+#define WT_MAX (99)
+#define VOICE_MAX (16)
+#define CHANNEL_NUM (2)
+#define AFACTOR (0.025)
+
+int show_audio(void) {
+  if (saudio_isvalid()) {
+    printf("# audio backend is running\n");
+    printf("# requested sample rate %d, actual sample rate %d\n",
+        (int)MAIN_SAMPLE_RATE,
+        saudio_sample_rate());
+    printf("# buffer frames %d\n", saudio_buffer_frames());
+    printf("# number of channels %d\n", saudio_channels());
+  } else {
+    printf("# did not start audio backend\n");
+    return 1;
+  }
+  return 0;
+}
+
+#include "linenoise.h"
 
 #include <math.h>
 #include <time.h>
 
-#define MAIN_SAMPLE_RATE (44100)
-
-#define WAVE_MAX (99)
-
-#define NUM_VOICE (16)
-#define num_chan (2)
-#define AFACTOR (0.025) // (0.025)
-
-float *wave_data[WAVE_MAX] = {NULL};
-int wave_size[WAVE_MAX] = {0};
-float wave_rate[WAVE_MAX] = {0};
+float *wt_data[WT_MAX] = {NULL};
+int wt_size[WT_MAX] = {0};
+float wt_rate[WT_MAX] = {0};
 
 // inspired by AMY :)
 enum {
@@ -80,28 +94,28 @@ enum {
 };
 
 
-void free_tables(void);
+void wt_free(void);
 
-double freq[NUM_VOICE];
-double note[NUM_VOICE];
-//double phase[NUM_VOICE];
-float sample[NUM_VOICE];
-float hold[NUM_VOICE];
-double amp[NUM_VOICE];
-double panl[NUM_VOICE];
-double panr[NUM_VOICE];
-double pan[NUM_VOICE];
-int interp[NUM_VOICE];
-int use_adsr[NUM_VOICE];
-int fmod_osc[NUM_VOICE];
-int pmod_osc[NUM_VOICE];
-float fmod_depth[NUM_VOICE];
-float pmod_depth[NUM_VOICE];
-int hide[NUM_VOICE];
-int decimate[NUM_VOICE];
-int quantize[NUM_VOICE];
+double freq[VOICE_MAX];
+double note[VOICE_MAX];
+//double phase[VOICE_MAX];
+float sample[VOICE_MAX];
+float hold[VOICE_MAX];
+double amp[VOICE_MAX];
+double panl[VOICE_MAX];
+double panr[VOICE_MAX];
+double pan[VOICE_MAX];
+int interp[VOICE_MAX];
+int use_adsr[VOICE_MAX];
+int fmod_osc[VOICE_MAX];
+int pmod_osc[VOICE_MAX];
+float fmod_depth[VOICE_MAX];
+float pmod_depth[VOICE_MAX];
+int hide[VOICE_MAX];
+int decimate[VOICE_MAX];
+int quantize[VOICE_MAX];
 
-int wtsel[NUM_VOICE];
+int wtsel[VOICE_MAX];
 
 void init_voice(void);
 
@@ -113,7 +127,7 @@ typedef struct {
     float phase_inc;        // Phase increment per host sample
 } osc_t;
 
-osc_t osc[NUM_VOICE];
+osc_t osc[VOICE_MAX];
 
 float osc_get_phase_inc(int v, float freq) {
     float phase_inc = (freq * osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / MAIN_SAMPLE_RATE);
@@ -130,7 +144,7 @@ float osc_next(int n, float phase_inc) {
     int table_size = osc[n].table_size;
     int i = (int)osc[n].phase % table_size;
     if (i < 0 || i >= table_size) {
-      //printf("!! index %d\n", i);
+      // printf("!! index %d\n", i);
       osc[n].phase = 0;
       return 0;
     }
@@ -172,7 +186,7 @@ typedef struct {
     float time;          // Time elapsed in current stage (seconds)
 } adsr_t;
 
-adsr_t amp_env[NUM_VOICE];
+adsr_t amp_env[VOICE_MAX];
 
 // Initialize the ADSR envelope
 void adsr_init(int n, float attack_time, float decay_time, float sustain_level, float release_time, float sample_rate) {
@@ -187,7 +201,8 @@ void adsr_init(int n, float attack_time, float decay_time, float sustain_level, 
 }
 
 // Trigger the envelope (start attack)
-void adsr_trigger(int n) {
+void adsr_trigger(int n, float a) {
+    amp_env[n].sustain_level = a;
     amp_env[n].state = ADSR_ATTACK;
     amp_env[n].value = 0.0f;
     amp_env[n].time = 0.0f;
@@ -301,7 +316,7 @@ void stream_userdata_cb(float *buffer, int num_frames, int num_channels, void *u
     float samplel = 0;
     float sampler = 0;
     float f = 0;
-    for (int n = 0; n < NUM_VOICE; n++) {
+    for (int n = 0; n < VOICE_MAX; n++) {
       if (amp[n] == 0) continue;
       if (fmod_osc[n] >= 0) {
         int m = fmod_osc[n];
@@ -324,7 +339,7 @@ void stream_userdata_cb(float *buffer, int num_frames, int num_channels, void *u
       // sample[n] *= amp[n];
       if (use_adsr[n]) {
         float amod = adsr_step(n);
-        sample[n] *= amod * AFACTOR;
+        sample[n] *= amod; // * AFACTOR;
       } else {
         sample[n] *= amp[n];
       }
@@ -353,7 +368,7 @@ void fsleep(double seconds) {
   nanosleep(&ts, NULL);
 }
 
-void init_tables(void);
+void init_wt(void);
 
 int running = 1;
 
@@ -361,7 +376,7 @@ int current_voice = 0;
 
 #include <dirent.h>
 
-void plist(void) {
+void show_threads(void) {
   DIR* dir;
   struct dirent* entry;
   // Open /proc/self/task to list threads
@@ -450,7 +465,7 @@ void show_voice(int v, char c) {
     amp_env[v].decay_time,
     amp_env[v].sustain_level,
     amp_env[v].release_time);
-  printf(" : %g/%g", osc[v].phase, osc[v].phase_inc);
+  printf(" ## %g/%g", osc[v].phase, osc[v].phase_inc);
   puts("");
 }
 
@@ -472,7 +487,9 @@ int wire(char *line, int *this_voice, int output) {
       more = 0;
       break;
     }
-    if (c == ' ' || c == '\t') continue;
+    printf("# %c / %d / %x [%d]\n", c, c, c, p);
+    if (c == '#') break;
+    if (c == ' ' || c == '\t' || c == ';' || c == '\n' || c == '\r') continue;
     if (c == 'v') {
       n = parse_int(&line[p], &valid, &next);
       if (!valid) {
@@ -480,7 +497,7 @@ int wire(char *line, int *this_voice, int output) {
         r = ERR_EXPECTED_INT;
       } else {
         p += next-1;
-        if (n >= 0 && n < NUM_VOICE) voice = n;
+        if (n >= 0 && n < VOICE_MAX) voice = n;
         else {
           more = 0;
           r = ERR_INVALID_VOICE;
@@ -492,7 +509,7 @@ int wire(char *line, int *this_voice, int output) {
       t = line[p++];
       switch (t) {
         case 'q': r = -1; more = 0; break;
-        case 's': plist(); break;
+        case 's': show_threads(); show_audio(); break;
         default:
           r = 1; more = 0; break;
       }
@@ -504,6 +521,7 @@ int wire(char *line, int *this_voice, int output) {
         more = 0;
         r = ERR_EXPECTED_FLOAT;
       } else {
+        p += next-1;
         if (f > 0 && f < (double)MAIN_SAMPLE_RATE) {
           freq[voice] = f;
           osc_set_freq(voice, f, MAIN_SAMPLE_RATE);
@@ -520,6 +538,7 @@ int wire(char *line, int *this_voice, int output) {
         more = 0;
         r = ERR_EXPECTED_FLOAT;
       } else {
+        p += next-1;
         if (f >= 0) {
           use_adsr[voice] = 0;
           amp[voice] = f * AFACTOR;
@@ -536,22 +555,24 @@ int wire(char *line, int *this_voice, int output) {
         more = 0;
         r = ERR_EXPECTED_FLOAT;
       } else {
+        p += next-1;
         if (f == 0) {
           adsr_release(voice);
         } else {
           use_adsr[voice] = 1;
-          amp[voice] = f;
-          adsr_trigger(voice);
+          amp[voice] = f * AFACTOR;
+          adsr_trigger(voice, f);
         }
       }
       continue;
     }
-    if (c == 'f') {
+    if (c == 'm') {
       n = parse_int(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
         r = ERR_EXPECTED_INT;
       } else {
+        p += next-1;
         if (n == 0) {
           hide[voice] = 0;
         } else {
@@ -567,7 +588,7 @@ int wire(char *line, int *this_voice, int output) {
         r = ERR_EXPECTED_INT;
       } else {
         if (n < 0) {
-        } else if (n >= 0 && n < NUM_VOICE) {
+        } else if (n >= 0 && n < VOICE_MAX) {
           pmod_osc[voice] = n;
         } else {
           pmod_osc[voice] = -1;
@@ -594,6 +615,7 @@ int wire(char *line, int *this_voice, int output) {
         more = 0;
         r = ERR_EXPECTED_FLOAT;
       } else {
+        p += next-1;
         float g = 440.0 * pow(2.0, (f - 69.0) / 12.0);
         note[voice] = f;
         freq[voice] = g;
@@ -610,7 +632,7 @@ int wire(char *line, int *this_voice, int output) {
         if (n < 0) {
           fmod_osc[voice] = -1;
         } else {
-          if (n < NUM_VOICE) {
+          if (n < VOICE_MAX) {
             fmod_osc[voice] = n;
             char peek = line[p+1];
             if (peek == ',') {
@@ -642,11 +664,16 @@ int wire(char *line, int *this_voice, int output) {
         p += next-1;
         if (n >= 0 && n < EXWAVMAX) {
           if (wtsel[voice] == n) continue;
-          if (wave_data[n] && wave_size[n] && wave_rate[n] > 0.0) {
+          if (wt_data[n] && wt_size[n] && wt_rate[n] > 0.0) {
             wtsel[voice] = n;
-            osc[voice].table_rate = wave_rate[n];
-            osc[voice].table_size = wave_size[n];
-            osc[voice].table = wave_data[n];
+            int update_freq = 0;
+            if (osc[voice].table_rate != wt_rate[n] || osc[voice].table_size != wt_size[n]) update_freq = 1;
+            osc[voice].table_rate = wt_rate[n];
+            osc[voice].table_size = wt_size[n];
+            osc[voice].table = wt_data[n];
+            if (update_freq) {
+              osc_set_freq(voice, freq[voice], MAIN_SAMPLE_RATE);
+            }
           } else {
             more = 0;
             r = ERR_EMPTY_WAVE;
@@ -674,6 +701,7 @@ int wire(char *line, int *this_voice, int output) {
         more = 0;
         r = ERR_EXPECTED_FLOAT;
       } else {
+        p += next-1;
         if (f >= -1.0 && f <= 1.0) {
           pan[voice] = f;
           panl[voice] = (1.0 - f) / 2.0;
@@ -691,6 +719,7 @@ int wire(char *line, int *this_voice, int output) {
         more = 0;
         r = ERR_EXPECTED_FLOAT;
       } else {
+        p += next-1;
         if (f > 0) {
           fsleep(f);
         } else {
@@ -752,7 +781,7 @@ int wire(char *line, int *this_voice, int output) {
       char peek = line[p];
       if (peek == '?') {
         p++;
-        for (int i=0; i<NUM_VOICE; i++) {
+        for (int i=0; i<VOICE_MAX; i++) {
           if (freq[i] == 0) continue;
           c = ' ';
           if (i == current_voice) c = '*';
@@ -771,7 +800,7 @@ char my_data[] = "hello";
 
 int main(int argc, char *argv[]) {
   linenoiseHistoryLoad(HISTORY_FILE);
-  init_tables();
+  init_wt();
   init_voice();
   
   // Initialize Sokol Audio
@@ -780,24 +809,14 @@ int main(int argc, char *argv[]) {
     .stream_userdata_cb = stream_userdata_cb,
     .user_data = &my_data,
     .sample_rate = MAIN_SAMPLE_RATE,
-    .num_channels = num_chan, // Stereo
+    .num_channels = CHANNEL_NUM, // Stereo
     // .user_data = &my_data, // todo
   });
 
-  if (saudio_isvalid()) {
-    printf("# audio backend is running\n");
-    printf("# requested sample rate %d, actual sample rate %d\n",
-        (int)MAIN_SAMPLE_RATE,
-        saudio_sample_rate());
-    printf("# buffer frames %d\n", saudio_buffer_frames());
-    printf("# number of channels %d\n", saudio_channels());
-  } else {
-    printf("# cannot start audio backend\n");
-    return 1;
-  }
+  if (show_audio() != 0) return 1;
 
   while (running) {
-    char *line = linenoise("> ");
+    char *line = linenoise("# ");
     if (line == NULL) {
       running = 0;
       break;
@@ -815,13 +834,14 @@ int main(int argc, char *argv[]) {
 
   // Cleanup
   saudio_shutdown();
-  sleep(1); // make sure we don't crash the callback b/c thread timing and wave_data
-  free_tables();
+  sleep(1); // make sure we don't crash the callback b/c thread timing and wt_data
+  wt_free();
   return 0;
 }
 
+#include "retro/korg.h"
 
-void init_tables(void) {
+void init_wt(void) {
   float *table;
   float f;
   float d;
@@ -832,9 +852,9 @@ void init_tables(void) {
     if (i < SIZE_SQR/2) table[i] = -1;
     else table[i] = 1;
   }
-  wave_data[EXWAVESQR] = table;
-  wave_size[EXWAVESQR] = SIZE_SQR;
-  wave_rate[EXWAVESQR] = MAIN_SAMPLE_RATE;
+  wt_data[EXWAVESQR] = table;
+  wt_size[EXWAVESQR] = SIZE_SQR;
+  wt_rate[EXWAVESQR] = MAIN_SAMPLE_RATE;
 
 #define SIZE_SINE (4096)
   table = (float *)malloc(SIZE_SINE * sizeof(float));
@@ -842,9 +862,9 @@ void init_tables(void) {
     float t = (i * 2.0 * M_PI) / (float)SIZE_SINE;
     table[i] = sin(t);
   }
-  wave_data[EXWAVESINE] = table;
-  wave_size[EXWAVESINE] = SIZE_SINE;
-  wave_rate[EXWAVESINE] = MAIN_SAMPLE_RATE;
+  wt_data[EXWAVESINE] = table;
+  wt_size[EXWAVESINE] = SIZE_SINE;
+  wt_rate[EXWAVESINE] = MAIN_SAMPLE_RATE;
 
 #define SIZE_SAWDN (4096)
   table = (float *)malloc(SIZE_SAWDN * sizeof(float));
@@ -854,9 +874,9 @@ void init_tables(void) {
     table[i] = f - 1.0;
     f += d;
   }
-  wave_data[EXWAVESAWDN] = table;
-  wave_size[EXWAVESAWDN] = SIZE_SAWDN;
-  wave_rate[EXWAVESAWDN] = MAIN_SAMPLE_RATE;
+  wt_data[EXWAVESAWDN] = table;
+  wt_size[EXWAVESAWDN] = SIZE_SAWDN;
+  wt_rate[EXWAVESAWDN] = MAIN_SAMPLE_RATE;
 
 #define SIZE_SAWUP (4096)
   table = (float *)malloc(SIZE_SAWUP * sizeof(float));
@@ -866,51 +886,70 @@ void init_tables(void) {
     table[i] = f - 1.0;
     f -= d;
   }
-  wave_data[EXWAVESAWUP] = table;
-  wave_size[EXWAVESAWUP] = SIZE_SAWUP;
-  wave_rate[EXWAVESAWUP] = MAIN_SAMPLE_RATE;
+  wt_data[EXWAVESAWUP] = table;
+  wt_size[EXWAVESAWUP] = SIZE_SAWUP;
+  wt_rate[EXWAVESAWUP] = MAIN_SAMPLE_RATE;
 
 #define SIZE_TRI (4096)
+  //FILE *out = fopen("tri.dat", "w+");
   table = (float *)malloc(SIZE_TRI * sizeof(float));
   f = -1.0;
-  d = (float)SIZE_TRI / 2.0;
+  d = 4.0 / (float)SIZE_TRI;
   for (int i=0; i<SIZE_TRI; i++) {
     table[i] = f;
+    //fprintf(out, "%g\n", f);
     if (i < (SIZE_TRI / 2)) {
       f += d;
     } else {
       f -= d;
     }
   }
-  wave_data[EXWAVETRI] = table;
-  wave_size[EXWAVETRI] = SIZE_TRI;
-  wave_rate[EXWAVETRI] = MAIN_SAMPLE_RATE;
+  //fclose(out);
+  
+  
+  wt_data[EXWAVETRI] = table;
+  wt_size[EXWAVETRI] = SIZE_TRI;
+  wt_rate[EXWAVETRI] = MAIN_SAMPLE_RATE;
 
-  for (int i=0; i<NUM_VOICE; i++) {
+  korg_init();
+
+  for (int i = EXWAVEKRG1; i <= EXWAVEKRG32; i++) {
+    int k = i - EXWAVEKRG1;
+    int s = kwave_size[k];
+    printf("[%d] %d\n", k, s);
+    table = malloc(s * sizeof(float));
+    for (int j = 0 ; j < s; j++) {
+      table[j] = (float)kwave[k][j] / (float)32767;
+    }
+    wt_data[i] = table;
+    wt_size[i] = s;
+    wt_rate[i] = MAIN_SAMPLE_RATE;
+  }
+
+  for (int i=0; i<VOICE_MAX; i++) {
     wtsel[i] = EXWAVESINE;
-    osc[i].table = wave_data[wtsel[i]];
-    osc[i].table_size = wave_size[wtsel[i]];
-    osc[i].table_rate = wave_rate[wtsel[i]];
+    osc[i].table = wt_data[wtsel[i]];
+    osc[i].table_size = wt_size[wtsel[i]];
+    osc[i].table_rate = wt_rate[wtsel[i]];
     osc[i].phase = 0;
     osc[i].phase_inc = 0;
   }
 
 }
 
-
-void free_tables(void) {
+void wt_free(void) {
   for (int i = 0; i < EXWAVMAX; i++) {
-    if (wave_data[i]) {
-      free(wave_data[i]);
-      wave_size[i] = 0;
+    if (wt_data[i]) {
+      free(wt_data[i]);
+      wt_size[i] = 0;
     }
   }
 }
 
 void init_voice(void) {
-  for (int i=0; i<NUM_VOICE; i++) {
+  for (int i=0; i<VOICE_MAX; i++) {
     freq[i] = 0.0;
-    //phase[i] = 0;
+    // phase[i] = 0;
     sample[i] = 0;
     hold[i] = 0;
     amp[i] = 0;

@@ -1,0 +1,23 @@
+Wave ROM organization:
+
+Each ROM contains 4 waves, 8bit unsigned format, with the following data:
+2048 samples octave 0
+2048 samples octave 1
+1024 samples octave 2
+1024 samples octave 3
+512 samples octave 4
+512 samples octave 5
+512 samples octave 6
+512 samples octave 7
+
+Standard waves:
+HN613256P-T70	1-4
+HN613256P-T71	5-8
+HN613256P-CB4	9-12
+HN613256P-CB5	13-16
+
+Expansion waves ("Version E"):
+EXP-1		1-4
+EXP-3		5-8
+EXP-2		9-12
+EXP-4		13-16

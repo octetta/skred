@@ -1,0 +1,36 @@
+#!/bin/bash
+file=$1
+[ "$file" = "" ] && exit
+base=$(basename $file .bin)
+echo $base
+name=${base//-/_}
+od -tu1 -w1 -v $file | awk '
+  BEGIN {
+    n=0;
+    w=0;
+  }
+  {
+    if (n >= 8192) {
+      n=0;
+      w++;
+    }
+    if (w < 4 && n < 2048) {
+      print w,n,($2*256)-32767;
+    }
+    n++;
+  }' > $base.waves
+for i in 0 1 2 3; do
+  awk -v wave=$i -v name=$base '
+    BEGIN{
+      fix = name
+      sub(/-/, "_", fix)
+      # printf("int16_t %s_w%s[] = {", fix, wave);
+    }
+    $1==wave{
+      printf("%d,", $3+0);
+    }
+    END{
+      # printf("}\n");
+    }' $base.waves > $name.w$i
+done
+rm $base.waves
