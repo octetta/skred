@@ -14,8 +14,8 @@ int show_audio(void) {
   if (saudio_isvalid()) {
     printf("# audio backend is running\n");
     printf("# requested sample rate %d, actual sample rate %d\n",
-        (int)MAIN_SAMPLE_RATE,
-        saudio_sample_rate());
+      (int)MAIN_SAMPLE_RATE,
+      saudio_sample_rate());
     printf("# buffer frames %d\n", saudio_buffer_frames());
     printf("# number of channels %d\n", saudio_channels());
   } else {
@@ -98,7 +98,6 @@ void wt_free(void);
 
 double freq[VOICE_MAX];
 double note[VOICE_MAX];
-//double phase[VOICE_MAX];
 float sample[VOICE_MAX];
 float hold[VOICE_MAX];
 double amp[VOICE_MAX];
@@ -117,6 +116,7 @@ int quantize[VOICE_MAX];
 
 int wtsel[VOICE_MAX];
 
+void reset_voice(int i);
 void init_voice(void);
 
 typedef struct {
@@ -165,6 +165,27 @@ float osc_next(int n, float phase_inc) {
     return sample;
 }
 
+void osc_set_wt(int voice, int n) {
+#if 0
+  static int first = 1;
+  if (first) {
+    first = 0;
+  } else {
+    if (wtsel[voice] == n) return;
+  }
+#endif
+  if (wt_data[n] && wt_size[n] && wt_rate[n] > 0.0) {
+    wtsel[voice] = n;
+    int update_freq = 0;
+    if (osc[voice].table_rate != wt_rate[n] || osc[voice].table_size != wt_size[n]) update_freq = 1;
+    osc[voice].table_rate = wt_rate[n];
+    osc[voice].table_size = wt_size[n];
+    osc[voice].table = wt_data[n];
+    if (update_freq) {
+      osc_set_freq(voice, freq[voice], MAIN_SAMPLE_RATE);
+    }
+  }
+}
 
 typedef enum {
     ADSR_OFF,
@@ -487,7 +508,7 @@ int wire(char *line, int *this_voice, int output) {
       more = 0;
       break;
     }
-    printf("# %c / %d / %x [%d]\n", c, c, c, p);
+    // printf("# %c / %d / %x [%d]\n", c, c, c, p);
     if (c == '#') break;
     if (c == ' ' || c == '\t' || c == ';' || c == '\n' || c == '\r') continue;
     if (c == 'v') {
@@ -663,21 +684,7 @@ int wire(char *line, int *this_voice, int output) {
       } else {
         p += next-1;
         if (n >= 0 && n < EXWAVMAX) {
-          if (wtsel[voice] == n) continue;
-          if (wt_data[n] && wt_size[n] && wt_rate[n] > 0.0) {
-            wtsel[voice] = n;
-            int update_freq = 0;
-            if (osc[voice].table_rate != wt_rate[n] || osc[voice].table_size != wt_size[n]) update_freq = 1;
-            osc[voice].table_rate = wt_rate[n];
-            osc[voice].table_size = wt_size[n];
-            osc[voice].table = wt_data[n];
-            if (update_freq) {
-              osc_set_freq(voice, freq[voice], MAIN_SAMPLE_RATE);
-            }
-          } else {
-            more = 0;
-            r = ERR_EMPTY_WAVE;
-          }
+          osc_set_wt(voice, n);
         } else {
           more = 0;
           r = ERR_INVALID_WAVE;
@@ -782,10 +789,10 @@ int wire(char *line, int *this_voice, int output) {
       if (peek == '?') {
         p++;
         for (int i=0; i<VOICE_MAX; i++) {
-          if (freq[i] == 0) continue;
-          c = ' ';
-          if (i == current_voice) c = '*';
-          show_voice(i, c);
+          if (amp[i] == 0) continue;
+          int t = ' ';
+          if (i == current_voice) t = '*';
+          show_voice(i, t);
         }
       } else show_voice(voice, ' ');
       continue;
@@ -839,6 +846,12 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
+
+#define SIZE_SINE (4096)
+#define SIZE_SQR (4096)
+#define SIZE_SAWDN (4096)
+#define SIZE_SAWUP (4096)
+#define SIZE_TRI (4096)
 #include "retro/korg.h"
 
 void init_wt(void) {
@@ -846,17 +859,7 @@ void init_wt(void) {
   float f;
   float d;
 
-#define SIZE_SQR (4096)
-  table = (float *)malloc(SIZE_SQR * sizeof(float));
-  for (int i=0; i<SIZE_SQR; i++) {
-    if (i < SIZE_SQR/2) table[i] = -1;
-    else table[i] = 1;
-  }
-  wt_data[EXWAVESQR] = table;
-  wt_size[EXWAVESQR] = SIZE_SQR;
-  wt_rate[EXWAVESQR] = MAIN_SAMPLE_RATE;
-
-#define SIZE_SINE (4096)
+  printf("# make sine wave (%d)\n", EXWAVESINE);
   table = (float *)malloc(SIZE_SINE * sizeof(float));
   for (int i=0; i<SIZE_SINE; i++) {
     float t = (i * 2.0 * M_PI) / (float)SIZE_SINE;
@@ -866,7 +869,17 @@ void init_wt(void) {
   wt_size[EXWAVESINE] = SIZE_SINE;
   wt_rate[EXWAVESINE] = MAIN_SAMPLE_RATE;
 
-#define SIZE_SAWDN (4096)
+  printf("# make square wave (%d)\n", EXWAVESQR);
+  table = (float *)malloc(SIZE_SQR * sizeof(float));
+  for (int i=0; i<SIZE_SQR; i++) {
+    if (i < SIZE_SQR/2) table[i] = -1;
+    else table[i] = 1;
+  }
+  wt_data[EXWAVESQR] = table;
+  wt_size[EXWAVESQR] = SIZE_SQR;
+  wt_rate[EXWAVESQR] = MAIN_SAMPLE_RATE;
+
+  printf("# make saw-down wave (%d)\n", EXWAVESAWDN);
   table = (float *)malloc(SIZE_SAWDN * sizeof(float));
   f = -1.0;
   d = 2.0 / (float)SIZE_SAWDN;
@@ -878,7 +891,7 @@ void init_wt(void) {
   wt_size[EXWAVESAWDN] = SIZE_SAWDN;
   wt_rate[EXWAVESAWDN] = MAIN_SAMPLE_RATE;
 
-#define SIZE_SAWUP (4096)
+  printf("# make saw-up wave (%d)\n", EXWAVESAWUP);
   table = (float *)malloc(SIZE_SAWUP * sizeof(float));
   f = 1.0;
   d = 2.0 / (float)SIZE_SAWUP;
@@ -890,7 +903,7 @@ void init_wt(void) {
   wt_size[EXWAVESAWUP] = SIZE_SAWUP;
   wt_rate[EXWAVESAWUP] = MAIN_SAMPLE_RATE;
 
-#define SIZE_TRI (4096)
+  printf("# make triangle wave (%d)\n", EXWAVETRI);
   //FILE *out = fopen("tri.dat", "w+");
   table = (float *)malloc(SIZE_TRI * sizeof(float));
   f = -1.0;
@@ -906,17 +919,17 @@ void init_wt(void) {
   }
   //fclose(out);
   
-  
   wt_data[EXWAVETRI] = table;
   wt_size[EXWAVETRI] = SIZE_TRI;
   wt_rate[EXWAVETRI] = MAIN_SAMPLE_RATE;
+
+  printf("# load retro waves (%d to %d)\n", EXWAVEKRG1, EXWAVEKRG32);
 
   korg_init();
 
   for (int i = EXWAVEKRG1; i <= EXWAVEKRG32; i++) {
     int k = i - EXWAVEKRG1;
     int s = kwave_size[k];
-    printf("[%d] %d\n", k, s);
     table = malloc(s * sizeof(float));
     for (int j = 0 ; j < s; j++) {
       table[j] = (float)kwave[k][j] / (float)32767;
@@ -925,16 +938,6 @@ void init_wt(void) {
     wt_size[i] = s;
     wt_rate[i] = MAIN_SAMPLE_RATE;
   }
-
-  for (int i=0; i<VOICE_MAX; i++) {
-    wtsel[i] = EXWAVESINE;
-    osc[i].table = wt_data[wtsel[i]];
-    osc[i].table_size = wt_size[wtsel[i]];
-    osc[i].table_rate = wt_rate[wtsel[i]];
-    osc[i].phase = 0;
-    osc[i].phase_inc = 0;
-  }
-
 }
 
 void wt_free(void) {
@@ -946,24 +949,28 @@ void wt_free(void) {
   }
 }
 
+void reset_voice(int i) {
+  sample[i] = 0;
+  hold[i] = 0;
+  amp[i] = 0;
+  pan[i] = 0;
+  panl[i] = 0.5;
+  panr[i] = 0.5;
+  interp[i] = 0;
+  use_adsr[i] = 0;
+  fmod_osc[i] = -1;
+  pmod_osc[i] = -1;
+  hide[i] = 0;
+  decimate[i] = 0;
+  quantize[i] = 0;
+  adsr_init(i, 1.1f, 0.2f, 0.7f, 0.5f, 44100.0f);
+  freq[i] = 440.0;
+  osc_set_wt(i, EXWAVESINE);
+  osc_set_freq(i, 440.0, MAIN_SAMPLE_RATE);
+}
+
 void init_voice(void) {
   for (int i=0; i<VOICE_MAX; i++) {
-    freq[i] = 0.0;
-    // phase[i] = 0;
-    sample[i] = 0;
-    hold[i] = 0;
-    amp[i] = 0;
-    pan[i] = 0;
-    panl[i] = 0.5;
-    panr[i] = 0.5;
-    interp[i] = 0;
-    wtsel[i] = 0;
-    use_adsr[i] = 0;
-    fmod_osc[i] = -1;
-    pmod_osc[i] = -1;
-    hide[i] = 0;
-    decimate[i] = 0;
-    quantize[i] = 0;
-    adsr_init(i, 1.1f, 0.2f, 0.7f, 0.5f, 44100.0f);
+    reset_voice(i);
   }
 }
