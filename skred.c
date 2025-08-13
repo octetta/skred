@@ -400,10 +400,9 @@ int current_voice = 0;
 void show_threads(void) {
   DIR* dir;
   struct dirent* entry;
-  // Open /proc/self/task to list threads
   dir = opendir("/proc/self/task");
   if (dir == NULL) {
-    perror("Failed to open /proc/self/task");
+    perror("# failed to open /proc/self/task");
     return;
   }
 
@@ -413,9 +412,20 @@ void show_threads(void) {
     if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
       continue;
     }
-    char *thread_name = NULL;
-    printf("%s\t%s\n", entry->d_name, thread_name ? thread_name : "Unknown");
-    free(thread_name);
+    char path[4096], name[4096];
+    name[0] = '\0';
+    snprintf(path, sizeof(path), "/proc/self/task/%s/comm", entry->d_name);
+    FILE* f = fopen(path, "r");
+    if (f) {
+      if (fgets(name, sizeof(name), f)) {
+        int n = strlen(name);
+        if (name[n-1] == '\r' || name[n-1] == '\n') {
+          name[n-1] = '\0';
+        }
+      }
+      fclose(f);
+    }
+    printf("# %s %s\n", entry->d_name, name);
   }
 
   closedir(dir);
@@ -465,8 +475,7 @@ enum {
 };
 
 void show_voice(int v, char c) {
-  printf("# %cv%d w%d n%g f%g a%g p%g I%d d%d q%d",
-    c,
+  printf("# v%d w%d n%g f%g a%g p%g I%d d%d q%d",
     v,
     wtsel[v],
     note[v],
@@ -486,7 +495,7 @@ void show_voice(int v, char c) {
     amp_env[v].decay_time,
     amp_env[v].sustain_level,
     amp_env[v].release_time);
-  printf(" ## %g/%g", osc[v].phase, osc[v].phase_inc);
+  printf(" ## %c %g/%g", c, osc[v].phase, osc[v].phase_inc);
   puts("");
 }
 
@@ -509,9 +518,11 @@ int wire(char *line, int *this_voice, int output) {
       break;
     }
     // printf("# %c / %d / %x [%d]\n", c, c, c, p);
-    if (c == '#') break;
-    if (c == ' ' || c == '\t' || c == ';' || c == '\n' || c == '\r') continue;
-    if (c == 'v') {
+    if (c == '#') {
+      break;
+    } else if (c == ' ' || c == '\t' || c == ';' || c == '\n' || c == '\r') {
+      continue;
+    } else if (c == 'v') {
       n = parse_int(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
@@ -524,9 +535,7 @@ int wire(char *line, int *this_voice, int output) {
           r = ERR_INVALID_VOICE;
         }
       }
-      continue;
-    }
-    if (c == ':') {
+    } else if (c == ':') {
       t = line[p++];
       switch (t) {
         case 'q': r = -1; more = 0; break;
@@ -534,9 +543,7 @@ int wire(char *line, int *this_voice, int output) {
         default:
           r = 1; more = 0; break;
       }
-      continue;
-    }
-    if (c == 'f') {
+    } else if (c == 'f') {
       f = parse_double(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
@@ -551,9 +558,7 @@ int wire(char *line, int *this_voice, int output) {
           r = ERR_FREQUENCY_OUT_OF_RANGE;
         }
       }
-      continue;
-    }
-    if (c == 'a') {
+    } else if (c == 'a') {
       f = parse_double(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
@@ -568,9 +573,7 @@ int wire(char *line, int *this_voice, int output) {
           r = ERR_AMPLITUDE_OUT_OF_RANGE;
         }
       }
-      continue;
-    }
-    if (c == 'l') {
+    } else if (c == 'l') {
       f = parse_double(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
@@ -585,9 +588,7 @@ int wire(char *line, int *this_voice, int output) {
           adsr_trigger(voice, f);
         }
       }
-      continue;
-    }
-    if (c == 'm') {
+    } else if (c == 'm') {
       n = parse_int(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
@@ -600,9 +601,7 @@ int wire(char *line, int *this_voice, int output) {
           hide[voice] = 1;
         }
       }
-      continue;
-    }
-    if (c == 'P') {
+    } else if (c == 'P') {
       n = parse_int(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
@@ -628,9 +627,7 @@ int wire(char *line, int *this_voice, int output) {
           }
         }
       }
-      continue;
-    }
-    if (c == 'n') {
+    } else if (c == 'n') {
       f = parse_double(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
@@ -642,9 +639,7 @@ int wire(char *line, int *this_voice, int output) {
         freq[voice] = g;
         osc_set_freq(voice, g, MAIN_SAMPLE_RATE);
       }
-      continue;
-    }
-    if (c == 'F') {
+    } else if (c == 'F') {
       n = parse_int(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
@@ -674,9 +669,7 @@ int wire(char *line, int *this_voice, int output) {
           }
         }
       }
-      continue;
-    }
-    if (c == 'w') {
+    } else if (c == 'w') {
       n = parse_int(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
@@ -690,9 +683,7 @@ int wire(char *line, int *this_voice, int output) {
           r = ERR_INVALID_WAVE;
         }
       }
-      continue;
-    }
-    if (c == 'I') {
+    } else if (c == 'I') {
       c = line[p++];
       if (c == '0') interp[voice] = 0;
       else if (c == '1') interp[voice] = 1;
@@ -700,9 +691,7 @@ int wire(char *line, int *this_voice, int output) {
         more = 0;
         r = ERR_INVALID_INTERPOLATE;
       }
-      continue;
-    }
-    if (c == 'p') {
+    } else if (c == 'p') {
       f = parse_double(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
@@ -718,9 +707,7 @@ int wire(char *line, int *this_voice, int output) {
           r = ERR_PAN_OUT_OF_RANGE;
         }
       }
-      continue;
-    }
-    if (c == '+') {
+    } else if (c == '+') {
       f = parse_double(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
@@ -734,9 +721,7 @@ int wire(char *line, int *this_voice, int output) {
           r = ERR_INVALID_DELAY;          
         }
       }
-      continue;
-    }
-    if (c == 'A') {
+    } else if (c == 'A') {
       for (int s = 0; s < 4; s++) {
         f = parse_double(&line[p], &valid, &next);
         if (!valid) {
@@ -762,9 +747,7 @@ int wire(char *line, int *this_voice, int output) {
           }
         }
       }
-      continue;
-    }
-    if (c == 'd') {
+    } else if (c == 'd') {
       n = parse_int(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
@@ -772,9 +755,7 @@ int wire(char *line, int *this_voice, int output) {
       } else {
         decimate[voice] = n;
       }
-      continue;
-    }
-    if (c == 'q') {
+    } else if (c == 'q') {
       n = parse_int(&line[p], &valid, &next);
       if (!valid) {
         more = 0;
@@ -782,9 +763,7 @@ int wire(char *line, int *this_voice, int output) {
       } else {
         quantize[voice] = n;
       }
-      continue;
-    }
-    if (c == '?') {
+    } else if (c == '?') {
       char peek = line[p];
       if (peek == '?') {
         p++;
@@ -795,13 +774,11 @@ int wire(char *line, int *this_voice, int output) {
           show_voice(i, t);
         }
       } else show_voice(voice, ' ');
-      continue;
     }
   }
   if (this_voice) *this_voice = voice;
   return r;
 }
-
 
 char my_data[] = "hello";
 
@@ -833,7 +810,23 @@ int main(int argc, char *argv[]) {
     int n = wire(line, &current_voice, 1);
     if (n < 0) break; // request to stop or error
     if (n > 0) {
-      printf("got information %d\n", n);
+      char *s = "\0";
+      switch (n) {
+        case ERR_EXPECTED_INT: s = "expected int"; break;
+        case ERR_EXPECTED_FLOAT: s = "expected float"; break;
+        case ERR_INVALID_VOICE: s = "invalid voice"; break;
+        case ERR_INVALID_COLON: s = "invalid colon"; break;
+        case ERR_FREQUENCY_OUT_OF_RANGE: s = "frequency out of range"; break;
+        case ERR_AMPLITUDE_OUT_OF_RANGE: s = "amplitude out of range"; break;
+        case ERR_INVALID_WAVE: s = "invalid wave"; break;
+        case ERR_EMPTY_WAVE: s = "empty wave"; break;
+        case ERR_INVALID_INTERPOLATE: s = "invalid interpolate type"; break;
+        case ERR_PAN_OUT_OF_RANGE: s = "pan out of range"; break;
+        case ERR_INVALID_DELAY: s = "invalid delay"; break;
+        case ERR_INVALID_MODULATOR: s = "invalid modulator"; break;
+        default: s = "unknown return"; break;
+      }
+      printf("# %d %s \n", n, s);
     }
     linenoiseFree(line);
   }
