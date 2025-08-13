@@ -360,7 +360,7 @@ void stream_userdata_cb(float *buffer, int num_frames, int num_channels, void *u
       // sample[n] *= amp[n];
       if (use_adsr[n]) {
         float amod = adsr_step(n);
-        sample[n] *= amod; // * AFACTOR;
+        sample[n] *= amod * amp[n]; // * AFACTOR;
       } else {
         sample[n] *= amp[n];
       }
@@ -391,7 +391,7 @@ void fsleep(double seconds) {
 
 void init_wt(void);
 
-int running = 1;
+int main_running = 1;
 
 int current_voice = 0;
 
@@ -539,7 +539,7 @@ int wire(char *line, int *this_voice, int output) {
       t = line[p++];
       switch (t) {
         case 'q': r = -1; more = 0; break;
-        case 's': show_threads(); show_audio(); break;
+        case 's': if (output) { show_threads(); show_audio(); } break;
         default:
           r = 1; more = 0; break;
       }
@@ -771,9 +771,9 @@ int wire(char *line, int *this_voice, int output) {
           if (amp[i] == 0) continue;
           int t = ' ';
           if (i == current_voice) t = '*';
-          show_voice(i, t);
+          if (output) show_voice(i, t);
         }
-      } else show_voice(voice, ' ');
+      } else if (output) show_voice(voice, ' ');
     }
   }
   if (this_voice) *this_voice = voice;
@@ -781,6 +781,8 @@ int wire(char *line, int *this_voice, int output) {
 }
 
 char my_data[] = "hello";
+
+void *udp(void *arg);
 
 int main(int argc, char *argv[]) {
   linenoiseHistoryLoad(HISTORY_FILE);
@@ -799,10 +801,14 @@ int main(int argc, char *argv[]) {
 
   if (show_audio() != 0) return 1;
 
-  while (running) {
+  pthread_t udp_thread;
+  pthread_create(&udp_thread, NULL, udp, NULL);
+  pthread_detach(udp_thread);
+
+  while (main_running) {
     char *line = linenoise("# ");
     if (line == NULL) {
-      running = 0;
+      main_running = 0;
       break;
     }
     if (strlen(line) == 0) continue;
@@ -834,6 +840,8 @@ int main(int argc, char *argv[]) {
 
   // Cleanup
   saudio_shutdown();
+  pthread_join(udp_thread, NULL);
+
   sleep(1); // make sure we don't crash the callback b/c thread timing and wt_data
   wt_free();
   return 0;
@@ -966,4 +974,64 @@ void init_voice(void) {
   for (int i=0; i<VOICE_MAX; i++) {
     reset_voice(i);
   }
+}
+
+int udp_running = 1;
+
+#define UDP_PORT 60440
+
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <ifaddrs.h>
+
+struct sockaddr_in serve;
+
+int udp_open(int port) {
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    int opt = 1;
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(int));
+    bzero(&serve, sizeof(serve));
+    serve.sin_family = AF_INET;
+    serve.sin_addr.s_addr = htonl(INADDR_ANY);
+    serve.sin_port = htons(port);
+    if (bind(sock, (struct sockaddr *)&serve, sizeof(serve)) >= 0) {
+        return sock;
+    }
+    return -1;
+}
+
+#define PORT 60440
+
+void *udp(void *arg) {
+    int sock = udp_open(PORT);
+    if (sock < 0) {
+      puts("udp thread cannot run");
+      return NULL;
+    }
+    struct timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (struct timeval *)&tv, sizeof(struct timeval));
+    int voice = 0;
+    struct sockaddr_in client;
+    unsigned int client_len = sizeof(client);
+    char line[1024];
+    int output = 0;
+    while (udp_running) {
+        int n = recvfrom(sock, line, sizeof(line), 0, (struct sockaddr *)&client, &client_len);
+        if (n > 0) {
+          line[n] = '\0';
+          int r = wire(line, &voice, output);
+        } else {
+          if (errno = EAGAIN) continue;
+          printf("recvfrom = %d ; errno = %d\n", n, errno);
+          perror("recvfrom");
+        }
+    }
+    //udp_stop();
+    //user_stop();
+    return NULL;
 }
