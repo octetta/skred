@@ -114,6 +114,7 @@ float pmod_depth[VOICE_MAX];
 int hide[VOICE_MAX];
 int decimate[VOICE_MAX];
 int quantize[VOICE_MAX];
+int direction[VOICE_MAX];
 
 int wtsel[VOICE_MAX];
 
@@ -143,13 +144,20 @@ void osc_set_freq(int v, float freq, float system_sample_rate) {
 
 float osc_next(int n, float phase_inc) {
     int table_size = osc[n].table_size;
+    float sample;
+    
     int i = (int)osc[n].phase % table_size;
-    if (i < 0 || i >= table_size) {
+    
+    if (i < 0) {
+      osc[n].phase = table_size - 1;
+      sample = osc[n].table[table_size - 1];
+      return sample;
+    } else if (i >= table_size) {
       // printf("!! index %d\n", i);
       osc[n].phase = 0;
-      return 0;
+      sample = osc[n].table[0];
+      return sample;
     }
-    float sample;
     if (interp[n]) {
       int i_next = (i + 1) % table_size;
       float frac = 0.0;
@@ -159,7 +167,11 @@ float osc_next(int n, float phase_inc) {
       sample = osc[n].table[i];      
     }
 
-    osc[n].phase += phase_inc;
+    if (direction[n]) {
+      osc[n].phase -= phase_inc;
+    } else {
+      osc[n].phase += phase_inc;
+    }
     if (osc[n].phase > table_size)
         osc[n].phase -= table_size;
 
@@ -471,15 +483,17 @@ enum {
   ERR_INVALID_WAVE,
   ERR_EMPTY_WAVE,
   ERR_INVALID_INTERPOLATE,
+  ERR_INVALID_DIRECTION,
   ERR_PAN_OUT_OF_RANGE,
   ERR_INVALID_DELAY,
   ERR_INVALID_MODULATOR,
 };
 
 void show_voice(int v, char c) {
-  printf("# v%d w%d n%g f%g a%g p%g I%d d%d q%d",
+  printf("# v%d w%d b%d n%g f%g a%g p%g I%d d%d q%d",
     v,
     wtsel[v],
+    direction[v],
     note[v],
     freq[v],
     amp[v] / AFACTOR,
@@ -540,10 +554,20 @@ int wire(char *line, int *this_voice, int output) {
     } else if (c == ':') {
       t = line[p++];
       switch (t) {
-        case 'q': r = -1; more = 0; break;
-        case 's': if (output) { show_threads(); show_audio(); } break;
+        case 'q':
+          more = 0;
+          r = -1;
+          break;
+        case 's':
+          if (output) {
+            show_threads();
+            show_audio();
+          }
+          break;
         default:
-          r = 1; more = 0; break;
+          more = 0;
+          r = ERR_INVALID_COLON;
+          break;
       }
     } else if (c == 'f') {
       f = parse_double(&line[p], &valid, &next);
@@ -684,6 +708,14 @@ int wire(char *line, int *this_voice, int output) {
           more = 0;
           r = ERR_INVALID_WAVE;
         }
+      }
+    } else if (c == 'b') {
+      c = line[p++];
+      if (c == '0') direction[voice] = 0;
+      else if (c == '1') direction[voice] = 1;
+      else {
+        more = 0;
+        r = ERR_INVALID_DIRECTION;
       }
     } else if (c == 'I') {
       c = line[p++];
@@ -831,6 +863,7 @@ int main(int argc, char *argv[]) {
         case ERR_INVALID_WAVE: s = "invalid wave"; break;
         case ERR_EMPTY_WAVE: s = "empty wave"; break;
         case ERR_INVALID_INTERPOLATE: s = "invalid interpolate type"; break;
+        case ERR_INVALID_DIRECTION: s = "invalid wave direction"; break;
         case ERR_PAN_OUT_OF_RANGE: s = "pan out of range"; break;
         case ERR_INVALID_DELAY: s = "invalid delay"; break;
         case ERR_INVALID_MODULATOR: s = "invalid modulator"; break;
@@ -970,6 +1003,7 @@ void reset_voice(int i) {
   hide[i] = 0;
   decimate[i] = 0;
   quantize[i] = 0;
+  direction[i] = 0;
   adsr_init(i, 1.1f, 0.2f, 0.7f, 0.5f, 44100.0f);
   freq[i] = 440.0;
   osc_set_wt(i, EXWAVESINE);
