@@ -28,6 +28,7 @@ int show_audio(void) {
 #include "linenoise.h"
 
 #include <math.h>
+#include <pthread.h>
 #include <time.h>
 
 float *wt_data[WT_MAX] = {NULL};
@@ -392,6 +393,7 @@ void fsleep(double seconds) {
 void init_wt(void);
 
 int main_running = 1;
+int udp_running = 1;
 
 int current_voice = 0;
 
@@ -801,6 +803,8 @@ int main(int argc, char *argv[]) {
 
   if (show_audio() != 0) return 1;
 
+  pthread_setname_np(pthread_self(), "skred-main");
+
   pthread_t udp_thread;
   pthread_create(&udp_thread, NULL, udp, NULL);
   pthread_detach(udp_thread);
@@ -840,10 +844,12 @@ int main(int argc, char *argv[]) {
 
   // Cleanup
   saudio_shutdown();
+  udp_running = 0;
   pthread_join(udp_thread, NULL);
 
   sleep(1); // make sure we don't crash the callback b/c thread timing and wt_data
   wt_free();
+  show_threads();
   return 0;
 }
 
@@ -976,7 +982,6 @@ void init_voice(void) {
   }
 }
 
-int udp_running = 1;
 
 #define UDP_PORT 60440
 
@@ -1011,6 +1016,7 @@ void *udp(void *arg) {
       puts("udp thread cannot run");
       return NULL;
     }
+    pthread_setname_np(pthread_self(), "skred-udp");
     struct timeval tv;
     tv.tv_sec = 1;
     tv.tv_usec = 0;

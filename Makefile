@@ -10,21 +10,24 @@ ELIB = \
 LIB = \
 	-lm \
 	-lasound \
+  -pthread \
 	-lpthread
 
+COPTS = \
+  -D_GNU_SOURCE \
+  -g
+
 sok1 : sok1.o $(ELIB)
-	gcc $^ -o $@ $(LIB)
+	gcc $(COPTS) $^ -o $@ $(LIB)
 
 skred : skred.o $(ELIB)
-	gcc -g $^ -o $@ $(LIB)
-
-old :
-	# gcc sok1.o linenoise.o -o sok1 $(LIB)
+	gcc $(COPTS) $^ -o $@ $(LIB)
 
 sok1.o: sok1.c	
-	gcc -c $<
+	gcc $(COPTS) -c $<
+
 skred.o: skred.c
-	gcc -g -c $<
+	gcc $(COPTS) -c $<
 
 linenoise.o: linenoise.c linenoise.h
 	gcc -c $<
