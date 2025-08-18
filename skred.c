@@ -11,7 +11,7 @@
 
 #define HISTORY_FILE ".sok1_history"
 #define MAIN_SAMPLE_RATE (44100)
-#define WT_MAX (99)
+#define WT_MAX (256)
 #define VOICE_MAX (16)
 #define CHANNEL_NUM (2)
 #define AFACTOR (0.025)
@@ -59,7 +59,10 @@ int show_audio(void) {
 float *wt_data[WT_MAX];
 int wt_size[WT_MAX];
 float wt_rate[WT_MAX];
-int wt_oneshot[WT_MAX];
+int wt_sampled[WT_MAX];
+int wt_loopstart[WT_MAX];
+int wt_loopend[WT_MAX];
+int wt_midinote[WT_MAX];
 
 // inspired by AMY :)
 enum {
@@ -141,7 +144,6 @@ int hide[VOICE_MAX];
 int decimate[VOICE_MAX];
 int quantize[VOICE_MAX];
 int direction[VOICE_MAX];
-int oneshot[VOICE_MAX];
 
 int wtsel[VOICE_MAX];
 
@@ -154,6 +156,10 @@ typedef struct {
     float table_rate;       // Native sample rate of the table
     float phase;            // Current position in table
     float phase_inc;        // Phase increment per host sample
+    int sampled;
+    int loopstart;
+    int loopend;
+    int midinote;
 } osc_t;
 
 osc_t osc[VOICE_MAX];
@@ -173,6 +179,10 @@ float osc_next(int n, float phase_inc) {
     int table_size = osc[n].table_size;
     float sample;
     
+    if (osc[n].sampled && osc[n].phase > table_size) {
+      return 0;
+    }
+
     int i = (int)osc[n].phase % table_size;
     
     if (i < 0) {
@@ -180,7 +190,10 @@ float osc_next(int n, float phase_inc) {
       sample = osc[n].table[table_size - 1];
       return sample;
     } else if (i >= table_size) {
-      // printf("!! index %d\n", i);
+      //printf("!! index %d\n", i);
+      if (osc[n].sampled) {
+        return 0;
+      }
       osc[n].phase = 0;
       sample = osc[n].table[0];
       return sample;
@@ -199,8 +212,12 @@ float osc_next(int n, float phase_inc) {
     } else {
       osc[n].phase += phase_inc;
     }
-    if (osc[n].phase > table_size)
+    if (osc[n].phase >= table_size) {
+      if (osc[n].sampled) {
+      } else {
         osc[n].phase -= table_size;
+      }
+    }
 
     return sample;
 }
@@ -221,7 +238,11 @@ void osc_set_wt(int voice, int n) {
     osc[voice].table_rate = wt_rate[n];
     osc[voice].table_size = wt_size[n];
     osc[voice].table = wt_data[n];
-    oneshot[voice] = wt_oneshot[n];
+    osc[voice].sampled = wt_sampled[n];
+    osc[voice].loopstart = wt_loopstart[n];
+    osc[voice].loopend = wt_loopend[n];
+    osc[voice].midinote = wt_midinote[n];
+    osc[voice].phase = 0;
     if (update_freq) {
       osc_set_freq(voice, freq[voice], MAIN_SAMPLE_RATE);
     }
@@ -520,7 +541,7 @@ enum {
   ERR_EMPTY_WAVE,
   ERR_INVALID_INTERPOLATE,
   ERR_INVALID_DIRECTION,
-  ERR_INVALID_ONESHOT,
+  ERR_INVALID_SAMPLED,
   ERR_PAN_OUT_OF_RANGE,
   ERR_INVALID_DELAY,
   ERR_INVALID_MODULATOR,
@@ -531,7 +552,7 @@ void show_voice(int v, char c) {
     v,
     wtsel[v],
     direction[v],
-    oneshot[v],
+    osc[v].sampled,
     note[v],
     freq[v],
     amp[v] / AFACTOR,
@@ -637,6 +658,8 @@ int wire(char *line, int *this_voice, int output) {
           r = ERR_AMPLITUDE_OUT_OF_RANGE;
         }
       }
+    } else if (c == 'T') {
+      osc[voice].phase = 0;
     } else if (c == 'l') {
       f = parse_double(&line[p], &valid, &next);
       if (!valid) {
@@ -647,6 +670,7 @@ int wire(char *line, int *this_voice, int output) {
         if (f == 0) {
           adsr_release(voice);
         } else {
+          osc[voice].phase = 0;
           use_adsr[voice] = 1;
           amp[voice] = f * AFACTOR;
           adsr_trigger(voice, f);
@@ -760,11 +784,11 @@ int wire(char *line, int *this_voice, int output) {
       }
     } else if (c == 'B') {
       c = line[p++];
-      if (c == '0') oneshot[voice] = 0;
-      else if (c == '1') oneshot[voice] = 1;
+      if (c == '0') osc[voice].sampled = 0;
+      else if (c == '1') osc[voice].sampled = 1;
       else {
         more = 0;
-        r = ERR_INVALID_ONESHOT;
+        r = ERR_INVALID_SAMPLED;
       }
     } else if (c == 'b') {
       c = line[p++];
@@ -926,7 +950,7 @@ int main(int argc, char *argv[]) {
         case ERR_EMPTY_WAVE: s = "empty wave"; break;
         case ERR_INVALID_INTERPOLATE: s = "invalid interpolate type"; break;
         case ERR_INVALID_DIRECTION: s = "invalid wave direction"; break;
-        case ERR_INVALID_ONESHOT: s = "invalid wave oneshot"; break;
+        case ERR_INVALID_SAMPLED: s = "invalid wave sampled flag"; break;
         case ERR_PAN_OUT_OF_RANGE: s = "pan out of range"; break;
         case ERR_INVALID_DELAY: s = "invalid delay"; break;
         case ERR_INVALID_MODULATOR: s = "invalid modulator"; break;
@@ -981,6 +1005,7 @@ void init_wt(void) {
   wt_data[EXWAVESINE] = table;
   wt_size[EXWAVESINE] = SIZE_SINE;
   wt_rate[EXWAVESINE] = MAIN_SAMPLE_RATE;
+  wt_sampled[EXWAVESINE] = 0;
 
   printf("# make square wave (%d)\n", EXWAVESQR);
   table = (float *)malloc(SIZE_SQR * sizeof(float));
@@ -991,6 +1016,7 @@ void init_wt(void) {
   wt_data[EXWAVESQR] = table;
   wt_size[EXWAVESQR] = SIZE_SQR;
   wt_rate[EXWAVESQR] = MAIN_SAMPLE_RATE;
+  wt_sampled[EXWAVESQR] = 0;
 
   printf("# make saw-down wave (%d)\n", EXWAVESAWDN);
   table = (float *)malloc(SIZE_SAWDN * sizeof(float));
@@ -1003,6 +1029,7 @@ void init_wt(void) {
   wt_data[EXWAVESAWDN] = table;
   wt_size[EXWAVESAWDN] = SIZE_SAWDN;
   wt_rate[EXWAVESAWDN] = MAIN_SAMPLE_RATE;
+  wt_sampled[EXWAVESAWDN] = 0;
 
   printf("# make saw-up wave (%d)\n", EXWAVESAWUP);
   table = (float *)malloc(SIZE_SAWUP * sizeof(float));
@@ -1015,6 +1042,7 @@ void init_wt(void) {
   wt_data[EXWAVESAWUP] = table;
   wt_size[EXWAVESAWUP] = SIZE_SAWUP;
   wt_rate[EXWAVESAWUP] = MAIN_SAMPLE_RATE;
+  wt_sampled[EXWAVESAWUP] = 0;
 
   printf("# make triangle wave (%d)\n", EXWAVETRI);
   //FILE *out = fopen("tri.dat", "w+");
@@ -1035,12 +1063,13 @@ void init_wt(void) {
   wt_data[EXWAVETRI] = table;
   wt_size[EXWAVETRI] = SIZE_TRI;
   wt_rate[EXWAVETRI] = MAIN_SAMPLE_RATE;
+  wt_sampled[EXWAVETRI] = 0;
 
-  printf("# load retro waves (%d to %d)\n", EXWAVEKRG1, EXWAVEKRG32);
+  printf("# load retro waves (%d to %d)\n", EXWAVEKRG1, EXWAVEKRG32-1);
 
   korg_init();
 
-  for (int i = EXWAVEKRG1; i <= EXWAVEKRG32; i++) {
+  for (int i = EXWAVEKRG1; i < EXWAVEKRG32; i++) {
     int k = i - EXWAVEKRG1;
     int s = kwave_size[k];
     table = malloc(s * sizeof(float));
@@ -1050,11 +1079,14 @@ void init_wt(void) {
     wt_data[i] = table;
     wt_size[i] = s;
     wt_rate[i] = MAIN_SAMPLE_RATE;
+    wt_sampled[i] = 0;
   }
 
-  for (int i = 0; i <= PCM_SAMPLES; i++) {
+  printf("# load AMY samples (%d to %d)\n", EXWAVEKRG32, EXWAVEKRG32 + PCM_SAMPLES);
+  
+  for (int i = 0; i < PCM_SAMPLES; i++) {
     int j = i + EXWAVEKRG32;
-    if (j > 99) {
+    if (j > EXWAVEKRG32 + WT_MAX - 1) {
       printf("# too many PCM samples... exit early\n");
       break;
     }
@@ -1066,7 +1098,10 @@ void init_wt(void) {
     wt_data[j] = table;
     wt_size[j] = pcm_map[i].length;
     wt_rate[j] = PCM_AMY_SAMPLE_RATE;
-    wt_oneshot[j] = 1;
+    wt_sampled[j] = 1;
+    wt_loopstart[j] = pcm_map[i].loopstart;
+    wt_loopend[j] = pcm_map[i].loopend;
+    wt_midinote[j] = pcm_map[i].midinote;
   }
 }
 
