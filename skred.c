@@ -1,4 +1,10 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <stdatomic.h>
+#include <linux/futex.h>
+#include <sys/syscall.h>
+#include <errno.h>
 
 #define SOKOL_AUDIO_IMPL
 #include "sokol_audio.h"
@@ -10,9 +16,28 @@
 #define CHANNEL_NUM (2)
 #define AFACTOR (0.025)
 
+unsigned long sample_count = 0;
+
+#if 0
+long futex_wait(uint32_t *uaddr, uint32_t val) {
+  return syscall(SYS_futex, uaddr, FUTEX_WAIT_PRIVATE, val, NULL, NULL, 0);
+}
+
+long futex_wake(uint32_t *uaddr, int num_wake) {
+  return syscall(SYS_futex, uaddr, FUTEX_WAKE_PRIVATE, num_wake, NULL, NULL, 0);
+}
+#endif
+
+// Shared state
+atomic_ullong clock_tick = ATOMIC_VAR_INIT(0);  // Monotonic tick counter (advances by 1 every M samples)
+atomic_uint signal_version = ATOMIC_VAR_INIT(0); // Version for signaling changes (futex wait/wake target)
+uint64_t main_modulus = 44;
+
 int show_audio(void) {
   if (saudio_isvalid()) {
+    printf("# tick %lld / %u / %lu\n", clock_tick, signal_version, main_modulus);
     printf("# audio backend is running\n");
+    printf("# audio sample count %ld\n", sample_count);
     printf("# requested sample rate %d, actual sample rate %d\n",
       (int)MAIN_SAMPLE_RATE,
       saudio_sample_rate());
@@ -31,9 +56,10 @@ int show_audio(void) {
 #include <pthread.h>
 #include <time.h>
 
-float *wt_data[WT_MAX] = {NULL};
-int wt_size[WT_MAX] = {0};
-float wt_rate[WT_MAX] = {0};
+float *wt_data[WT_MAX];
+int wt_size[WT_MAX];
+float wt_rate[WT_MAX];
+int wt_oneshot[WT_MAX];
 
 // inspired by AMY :)
 enum {
@@ -115,6 +141,7 @@ int hide[VOICE_MAX];
 int decimate[VOICE_MAX];
 int quantize[VOICE_MAX];
 int direction[VOICE_MAX];
+int oneshot[VOICE_MAX];
 
 int wtsel[VOICE_MAX];
 
@@ -194,6 +221,7 @@ void osc_set_wt(int voice, int n) {
     osc[voice].table_rate = wt_rate[n];
     osc[voice].table_size = wt_size[n];
     osc[voice].table = wt_data[n];
+    oneshot[voice] = wt_oneshot[n];
     if (update_freq) {
       osc_set_freq(voice, freq[voice], MAIN_SAMPLE_RATE);
     }
@@ -336,16 +364,23 @@ float quantize_bits_int(float v, int bits) {
   int iv = (int)(v * levels + 0.5);
   return iv * (1.0 / levels);
 }
-int sample_count = 0;
-
 
 // Stream callback function
+void engine(float *buffer, int num_frames, int num_channels, void *user_data) { // , void *user_data) {
 #if 0
-void stream_cb(float *buffer, int num_frames, int num_channels) { // , void *user_data) {
-#else
-void stream_userdata_cb(float *buffer, int num_frames, int num_channels, void *user_data) { // , void *user_data) {
+  static uint64_t local_sample_acc = 0;
 #endif
   for (int i = 0; i < num_frames; i++) {
+#if 0
+    uint64_t new_ticks = local_sample_acc / main_modulus;
+    if (new_ticks > 0) {
+      atomic_fetch_add_explicit(&clock_tick, new_ticks, memory_order_relaxed);
+      atomic_fetch_add_explicit(&signal_version, 1, memory_order_release);
+      futex_wake((uint32_t*)&signal_version, 1);  // Wake 1 waiter; use INT_MAX for multiple
+      local_sample_acc -= new_ticks * main_modulus;  // Reset accumulator
+    }
+    local_sample_acc++;
+#endif
     sample_count++;
     float samplel = 0;
     float sampler = 0;
@@ -406,6 +441,7 @@ void init_wt(void);
 
 int main_running = 1;
 int udp_running = 1;
+int seq_running = 1;
 
 int current_voice = 0;
 
@@ -484,16 +520,18 @@ enum {
   ERR_EMPTY_WAVE,
   ERR_INVALID_INTERPOLATE,
   ERR_INVALID_DIRECTION,
+  ERR_INVALID_ONESHOT,
   ERR_PAN_OUT_OF_RANGE,
   ERR_INVALID_DELAY,
   ERR_INVALID_MODULATOR,
 };
 
 void show_voice(int v, char c) {
-  printf("# v%d w%d b%d n%g f%g a%g p%g I%d d%d q%d",
+  printf("# v%d w%d b%d B%d n%g f%g a%g p%g I%d d%d q%d",
     v,
     wtsel[v],
     direction[v],
+    oneshot[v],
     note[v],
     freq[v],
     amp[v] / AFACTOR,
@@ -614,6 +652,17 @@ int wire(char *line, int *this_voice, int output) {
           adsr_trigger(voice, f);
         }
       }
+    } else if (c == 'M') {
+      n = parse_int(&line[p], &valid, &next);
+      if (!valid) {
+        more = 0;
+        r = ERR_EXPECTED_INT;
+      } else {
+        p += next-1;
+        if (n > 0) {
+          main_modulus = n;
+        }
+      }
     } else if (c == 'm') {
       n = parse_int(&line[p], &valid, &next);
       if (!valid) {
@@ -702,12 +751,20 @@ int wire(char *line, int *this_voice, int output) {
         r = ERR_EXPECTED_INT;
       } else {
         p += next-1;
-        if (n >= 0 && n < EXWAVMAX) {
+        if (n >= 0 && n < WT_MAX) {
           osc_set_wt(voice, n);
         } else {
           more = 0;
           r = ERR_INVALID_WAVE;
         }
+      }
+    } else if (c == 'B') {
+      c = line[p++];
+      if (c == '0') oneshot[voice] = 0;
+      else if (c == '1') oneshot[voice] = 1;
+      else {
+        more = 0;
+        r = ERR_INVALID_ONESHOT;
       }
     } else if (c == 'b') {
       c = line[p++];
@@ -817,6 +874,7 @@ int wire(char *line, int *this_voice, int output) {
 char my_data[] = "hello";
 
 void *udp(void *arg);
+void *seq(void *arg);
 
 int main(int argc, char *argv[]) {
   linenoiseHistoryLoad(HISTORY_FILE);
@@ -826,7 +884,7 @@ int main(int argc, char *argv[]) {
   // Initialize Sokol Audio
   saudio_setup(&(saudio_desc){
     // .stream_cb = stream_cb,
-    .stream_userdata_cb = stream_userdata_cb,
+    .stream_userdata_cb = engine,
     .user_data = &my_data,
     .sample_rate = MAIN_SAMPLE_RATE,
     .num_channels = CHANNEL_NUM, // Stereo
@@ -840,6 +898,10 @@ int main(int argc, char *argv[]) {
   pthread_t udp_thread;
   pthread_create(&udp_thread, NULL, udp, NULL);
   pthread_detach(udp_thread);
+
+  pthread_t seq_thread;
+  pthread_create(&seq_thread, NULL, seq, NULL);
+  pthread_detach(seq_thread);
 
   while (main_running) {
     char *line = linenoise("# ");
@@ -864,6 +926,7 @@ int main(int argc, char *argv[]) {
         case ERR_EMPTY_WAVE: s = "empty wave"; break;
         case ERR_INVALID_INTERPOLATE: s = "invalid interpolate type"; break;
         case ERR_INVALID_DIRECTION: s = "invalid wave direction"; break;
+        case ERR_INVALID_ONESHOT: s = "invalid wave oneshot"; break;
         case ERR_PAN_OUT_OF_RANGE: s = "pan out of range"; break;
         case ERR_INVALID_DELAY: s = "invalid delay"; break;
         case ERR_INVALID_MODULATOR: s = "invalid modulator"; break;
@@ -877,15 +940,21 @@ int main(int argc, char *argv[]) {
 
   // Cleanup
   saudio_shutdown();
+  
   udp_running = 0;
   pthread_join(udp_thread, NULL);
+  
+  seq_running = 0;
+  //pthread_join(seq_thread, NULL);
 
   sleep(1); // make sure we don't crash the callback b/c thread timing and wt_data
+  
   wt_free();
+  
   show_threads();
+  
   return 0;
 }
-
 
 #define SIZE_SINE (4096)
 #define SIZE_SQR (4096)
@@ -893,6 +962,10 @@ int main(int argc, char *argv[]) {
 #define SIZE_SAWUP (4096)
 #define SIZE_TRI (4096)
 #include "retro/korg.h"
+
+#include "notamy/pcm.h"
+#include "notamy/pcm_large.h"
+#include "notamy/pcm_samples_large.h"
 
 void init_wt(void) {
   float *table;
@@ -977,6 +1050,23 @@ void init_wt(void) {
     wt_data[i] = table;
     wt_size[i] = s;
     wt_rate[i] = MAIN_SAMPLE_RATE;
+  }
+
+  for (int i = 0; i <= PCM_SAMPLES; i++) {
+    int j = i + EXWAVEKRG32;
+    if (j > 99) {
+      printf("# too many PCM samples... exit early\n");
+      break;
+    }
+    //printf("[%d] offset:%d length:%d rate:%d\n", j, pcm_map[i].offset, pcm_map[i].length, PCM_AMY_SAMPLE_RATE);
+    table = malloc(pcm_map[i].length * sizeof(float));
+    for (int k = 0; k < pcm_map[i].length; k++) {
+      table[k] = (float)pcm[pcm_map[i].offset + k] / 32767.0;
+    }
+    wt_data[j] = table;
+    wt_size[j] = pcm_map[i].length;
+    wt_rate[j] = PCM_AMY_SAMPLE_RATE;
+    wt_oneshot[j] = 1;
   }
 }
 
@@ -1074,4 +1164,13 @@ void *udp(void *arg) {
     //udp_stop();
     //user_stop();
     return NULL;
+}
+
+void *seq(void *arg) {
+  pthread_setname_np(pthread_self(), "skred-udp");
+  while (seq_running) {
+    //futex_wait(&signal_version, 1);
+    sleep(1);
+  }
+  return NULL;
 }
