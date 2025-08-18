@@ -60,6 +60,7 @@ float *wt_data[WT_MAX];
 int wt_size[WT_MAX];
 float wt_rate[WT_MAX];
 int wt_sampled[WT_MAX];
+int wt_looping[WT_MAX];
 int wt_loopstart[WT_MAX];
 int wt_loopend[WT_MAX];
 int wt_midinote[WT_MAX];
@@ -157,9 +158,11 @@ typedef struct {
     float phase;            // Current position in table
     float phase_inc;        // Phase increment per host sample
     int sampled;
+    int looping;
     int loopstart;
     int loopend;
     int midinote;
+    int inactive;
 } osc_t;
 
 osc_t osc[VOICE_MAX];
@@ -169,18 +172,25 @@ float osc_get_phase_inc(int v, float freq) {
     return phase_inc;
 }
 
-void osc_set_freq(int v, float freq, float system_sample_rate) {
+void osc_set_freq(int v, float freq) {
     // Compute the frequency in "table samples per system sample"
     // This works even if table_rate ≠ system rate
-    osc[v].phase_inc = (freq * osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / system_sample_rate);
+    osc[v].phase_inc = (freq * osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / MAIN_SAMPLE_RATE);
 }
 
 float osc_next(int n, float phase_inc) {
     int table_size = osc[n].table_size;
     float sample;
     
-    if (osc[n].sampled && osc[n].phase > table_size) {
-      return 0;
+    if (osc[n].sampled) {
+      if (direction[n] == 0 && osc[n].phase > table_size) {
+        osc[n].inactive = 1;
+        return 0;
+      }
+      if (direction[n] == 1 && osc[n].phase < 0) {
+        osc[n].inactive = 1;
+        return 0;
+      }
     }
 
     int i = (int)osc[n].phase % table_size;
@@ -190,7 +200,6 @@ float osc_next(int n, float phase_inc) {
       sample = osc[n].table[table_size - 1];
       return sample;
     } else if (i >= table_size) {
-      //printf("!! index %d\n", i);
       if (osc[n].sampled) {
         return 0;
       }
@@ -198,6 +207,9 @@ float osc_next(int n, float phase_inc) {
       sample = osc[n].table[0];
       return sample;
     }
+#if 1
+    sample = osc[n].table[i];      
+#else
     if (interp[n]) {
       int i_next = (i + 1) % table_size;
       float frac = 0.0;
@@ -206,15 +218,33 @@ float osc_next(int n, float phase_inc) {
     } else {
       sample = osc[n].table[i];      
     }
+#endif
 
     if (direction[n]) {
+      // backwards
       osc[n].phase -= phase_inc;
     } else {
+      // forwards
       osc[n].phase += phase_inc;
     }
-    if (osc[n].phase >= table_size) {
-      if (osc[n].sampled) {
+    
+    if (osc[n].sampled) {
+      if (osc[n].looping) {
+        if (direction[n]) {
+          // backwards
+          if (osc[n].phase <= osc[n].loopstart) {
+            osc[n].phase = osc[n].loopend;
+          }
+        } else {
+          // forwards
+          if (osc[n].phase >= osc[n].loopend) {
+            osc[n].phase = osc[n].loopstart;
+          }
+        }
       } else {
+      }
+    } else {
+      if (osc[n].phase >= table_size) {
         osc[n].phase -= table_size;
       }
     }
@@ -240,11 +270,12 @@ void osc_set_wt(int voice, int n) {
     osc[voice].table = wt_data[n];
     osc[voice].sampled = wt_sampled[n];
     osc[voice].loopstart = wt_loopstart[n];
+    osc[voice].looping = wt_looping[n];
     osc[voice].loopend = wt_loopend[n];
     osc[voice].midinote = wt_midinote[n];
     osc[voice].phase = 0;
     if (update_freq) {
-      osc_set_freq(voice, freq[voice], MAIN_SAMPLE_RATE);
+      osc_set_freq(voice, freq[voice]);
     }
   }
 }
@@ -541,7 +572,7 @@ enum {
   ERR_EMPTY_WAVE,
   ERR_INVALID_INTERPOLATE,
   ERR_INVALID_DIRECTION,
-  ERR_INVALID_SAMPLED,
+  ERR_INVALID_LOOPING,
   ERR_PAN_OUT_OF_RANGE,
   ERR_INVALID_DELAY,
   ERR_INVALID_MODULATOR,
@@ -552,7 +583,7 @@ void show_voice(int v, char c) {
     v,
     wtsel[v],
     direction[v],
-    osc[v].sampled,
+    osc[v].looping,
     note[v],
     freq[v],
     amp[v] / AFACTOR,
@@ -570,7 +601,7 @@ void show_voice(int v, char c) {
     amp_env[v].decay_time,
     amp_env[v].sustain_level,
     amp_env[v].release_time);
-  printf(" ## %c %g/%g", c, osc[v].phase, osc[v].phase_inc);
+  printf(" ## %c S%d %g/%g", c, osc[v].sampled, osc[v].phase, osc[v].phase_inc);
   puts("");
 }
 
@@ -637,7 +668,7 @@ int wire(char *line, int *this_voice, int output) {
         p += next-1;
         if (f > 0 && f < (double)MAIN_SAMPLE_RATE) {
           freq[voice] = f;
-          osc_set_freq(voice, f, MAIN_SAMPLE_RATE);
+          osc_set_freq(voice, f);
         } else {
           more = 0;
           r = ERR_FREQUENCY_OUT_OF_RANGE;
@@ -659,7 +690,12 @@ int wire(char *line, int *this_voice, int output) {
         }
       }
     } else if (c == 'T') {
-      osc[voice].phase = 0;
+      if (direction[voice]) {
+        osc[voice].phase = osc[voice].table_size - 1;
+      } else {
+        osc[voice].phase = 0;
+      }
+      osc[voice].inactive = 0;
     } else if (c == 'l') {
       f = parse_double(&line[p], &valid, &next);
       if (!valid) {
@@ -736,7 +772,7 @@ int wire(char *line, int *this_voice, int output) {
         float g = 440.0 * pow(2.0, (f - 69.0) / 12.0);
         note[voice] = f;
         freq[voice] = g;
-        osc_set_freq(voice, g, MAIN_SAMPLE_RATE);
+        osc_set_freq(voice, g);
       }
     } else if (c == 'F') {
       n = parse_int(&line[p], &valid, &next);
@@ -784,11 +820,11 @@ int wire(char *line, int *this_voice, int output) {
       }
     } else if (c == 'B') {
       c = line[p++];
-      if (c == '0') osc[voice].sampled = 0;
-      else if (c == '1') osc[voice].sampled = 1;
+      if (c == '0') osc[voice].looping = 0;
+      else if (c == '1') osc[voice].looping = 1;
       else {
         more = 0;
-        r = ERR_INVALID_SAMPLED;
+        r = ERR_INVALID_LOOPING;
       }
     } else if (c == 'b') {
       c = line[p++];
@@ -950,7 +986,7 @@ int main(int argc, char *argv[]) {
         case ERR_EMPTY_WAVE: s = "empty wave"; break;
         case ERR_INVALID_INTERPOLATE: s = "invalid interpolate type"; break;
         case ERR_INVALID_DIRECTION: s = "invalid wave direction"; break;
-        case ERR_INVALID_SAMPLED: s = "invalid wave sampled flag"; break;
+        case ERR_INVALID_LOOPING: s = "invalid wave looping flag"; break;
         case ERR_PAN_OUT_OF_RANGE: s = "pan out of range"; break;
         case ERR_INVALID_DELAY: s = "invalid delay"; break;
         case ERR_INVALID_MODULATOR: s = "invalid modulator"; break;
@@ -1090,7 +1126,8 @@ void init_wt(void) {
       printf("# too many PCM samples... exit early\n");
       break;
     }
-    //printf("[%d] offset:%d length:%d rate:%d\n", j, pcm_map[i].offset, pcm_map[i].length, PCM_AMY_SAMPLE_RATE);
+    printf("[%d] offset:%d length:%d loopstart:%d loopend:%d\n",
+      j, pcm_map[i].offset, pcm_map[i].length, pcm_map[i].loopstart, pcm_map[i].loopend);
     table = malloc(pcm_map[i].length * sizeof(float));
     for (int k = 0; k < pcm_map[i].length; k++) {
       table[k] = (float)pcm[pcm_map[i].offset + k] / 32767.0;
@@ -1100,6 +1137,7 @@ void init_wt(void) {
     wt_rate[j] = PCM_AMY_SAMPLE_RATE;
     wt_sampled[j] = 1;
     wt_loopstart[j] = pcm_map[i].loopstart;
+    wt_looping[j] = 0;
     wt_loopend[j] = pcm_map[i].loopend;
     wt_midinote[j] = pcm_map[i].midinote;
   }
@@ -1132,7 +1170,6 @@ void reset_voice(int i) {
   adsr_init(i, 1.1f, 0.2f, 0.7f, 0.5f, 44100.0f);
   freq[i] = 440.0;
   osc_set_wt(i, EXWAVESINE);
-  osc_set_freq(i, 440.0, MAIN_SAMPLE_RATE);
 }
 
 void init_voice(void) {
