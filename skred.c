@@ -64,6 +64,7 @@ int wt_looping[WT_MAX];
 int wt_loopstart[WT_MAX];
 int wt_loopend[WT_MAX];
 int wt_midinote[WT_MAX];
+float wt_offsethz[WT_MAX];
 
 // inspired by AMY :)
 enum {
@@ -163,6 +164,7 @@ typedef struct {
     int loopend;
     int midinote;
     int inactive;
+    float offsethz;
 } osc_t;
 
 osc_t osc[VOICE_MAX];
@@ -175,7 +177,9 @@ float osc_get_phase_inc(int v, float freq) {
 void osc_set_freq(int v, float freq) {
     // Compute the frequency in "table samples per system sample"
     // This works even if table_rate ≠ system rate
-    osc[v].phase_inc = (freq * osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / MAIN_SAMPLE_RATE);
+    float g = freq;
+    if (osc[v].sampled) g /= osc[v].offsethz;
+    osc[v].phase_inc = (g * osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / MAIN_SAMPLE_RATE);
 }
 
 float osc_next(int n, float phase_inc) {
@@ -273,6 +277,7 @@ void osc_set_wt(int voice, int n) {
     osc[voice].looping = wt_looping[n];
     osc[voice].loopend = wt_loopend[n];
     osc[voice].midinote = wt_midinote[n];
+    osc[voice].offsethz = wt_offsethz[n];
     osc[voice].phase = 0;
     if (update_freq) {
       osc_set_freq(voice, freq[voice]);
@@ -439,6 +444,7 @@ void engine(float *buffer, int num_frames, int num_channels, void *user_data) { 
     float f = 0;
     for (int n = 0; n < VOICE_MAX; n++) {
       if (amp[n] == 0) continue;
+      if (osc[n].sampled && osc[n].inactive) continue;
       if (fmod_osc[n] >= 0) {
         int m = fmod_osc[n];
         float g = sample[m] * fmod_depth[n];
@@ -601,9 +607,14 @@ void show_voice(int v, char c) {
     amp_env[v].decay_time,
     amp_env[v].sustain_level,
     amp_env[v].release_time);
-  printf(" ## %c S%d %g/%g", c, osc[v].sampled, osc[v].phase, osc[v].phase_inc);
+  printf(" ## %c %g/%g", c, osc[v].phase, osc[v].phase_inc);
+  if (osc[v].sampled) {
+    printf(" %d/%g", osc[v].midinote, osc[v].offsethz);
+  }
   puts("");
 }
+
+float midi2hz(int f);
 
 int wire(char *line, int *this_voice, int output) {
   int p = 0;
@@ -768,8 +779,8 @@ int wire(char *line, int *this_voice, int output) {
         more = 0;
         r = ERR_EXPECTED_FLOAT;
       } else {
+        float g = midi2hz(f);
         p += next-1;
-        float g = 440.0 * pow(2.0, (f - 69.0) / 12.0);
         note[voice] = f;
         freq[voice] = g;
         osc_set_freq(voice, g);
@@ -1023,9 +1034,7 @@ int main(int argc, char *argv[]) {
 #define SIZE_TRI (4096)
 #include "retro/korg.h"
 
-#include "notamy/pcm.h"
-#include "notamy/pcm_large.h"
-#include "notamy/pcm_samples_large.h"
+#include "amysamples.h"
 
 void init_wt(void) {
   float *table;
@@ -1126,8 +1135,9 @@ void init_wt(void) {
       printf("# too many PCM samples... exit early\n");
       break;
     }
-    printf("[%d] offset:%d length:%d loopstart:%d loopend:%d\n",
-      j, pcm_map[i].offset, pcm_map[i].length, pcm_map[i].loopstart, pcm_map[i].loopend);
+    printf("[%d] offset:%d length:%d loopstart:%d loopend:%d midinote:%d offsethz:%g\n",
+      j, pcm_map[i].offset, pcm_map[i].length, pcm_map[i].loopstart, pcm_map[i].loopend,
+      pcm_map[i].midinote, midi2hz(pcm_map[i].midinote));
     table = malloc(pcm_map[i].length * sizeof(float));
     for (int k = 0; k < pcm_map[i].length; k++) {
       table[k] = (float)pcm[pcm_map[i].offset + k] / 32767.0;
@@ -1140,6 +1150,7 @@ void init_wt(void) {
     wt_looping[j] = 0;
     wt_loopend[j] = pcm_map[i].loopend;
     wt_midinote[j] = pcm_map[i].midinote;
+    wt_offsethz[j] = midi2hz(pcm_map[i].midinote);
   }
 }
 
@@ -1245,4 +1256,9 @@ void *seq(void *arg) {
     sleep(1);
   }
   return NULL;
+}
+
+float midi2hz(int f) {
+  float g = 440.0 * pow(2.0, (f - 69.0) / 12.0);
+  return g;
 }
