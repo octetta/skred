@@ -9,62 +9,13 @@
 #define SOKOL_AUDIO_IMPL
 #include "sokol_audio.h"
 
+int debug = 0;
+
 #define HISTORY_FILE ".sok1_history"
 #define MAIN_SAMPLE_RATE (44100)
-#define WT_MAX (256)
 #define VOICE_MAX (16)
 #define CHANNEL_NUM (2)
 #define AFACTOR (0.025)
-
-unsigned long sample_count = 0;
-
-#if 0
-long futex_wait(uint32_t *uaddr, uint32_t val) {
-  return syscall(SYS_futex, uaddr, FUTEX_WAIT_PRIVATE, val, NULL, NULL, 0);
-}
-
-long futex_wake(uint32_t *uaddr, int num_wake) {
-  return syscall(SYS_futex, uaddr, FUTEX_WAKE_PRIVATE, num_wake, NULL, NULL, 0);
-}
-#endif
-
-// Shared state
-atomic_ullong clock_tick = ATOMIC_VAR_INIT(0);  // Monotonic tick counter (advances by 1 every M samples)
-atomic_uint signal_version = ATOMIC_VAR_INIT(0); // Version for signaling changes (futex wait/wake target)
-uint64_t main_modulus = 44;
-
-int show_audio(void) {
-  if (saudio_isvalid()) {
-    printf("# tick %lld / %u / %lu\n", clock_tick, signal_version, main_modulus);
-    printf("# audio backend is running\n");
-    printf("# audio sample count %ld\n", sample_count);
-    printf("# requested sample rate %d, actual sample rate %d\n",
-      (int)MAIN_SAMPLE_RATE,
-      saudio_sample_rate());
-    printf("# buffer frames %d\n", saudio_buffer_frames());
-    printf("# number of channels %d\n", saudio_channels());
-  } else {
-    printf("# did not start audio backend\n");
-    return 1;
-  }
-  return 0;
-}
-
-#include "linenoise.h"
-
-#include <math.h>
-#include <pthread.h>
-#include <time.h>
-
-float *wt_data[WT_MAX];
-int wt_size[WT_MAX];
-float wt_rate[WT_MAX];
-int wt_sampled[WT_MAX];
-int wt_looping[WT_MAX];
-int wt_loopstart[WT_MAX];
-int wt_loopend[WT_MAX];
-int wt_midinote[WT_MAX];
-float wt_offsethz[WT_MAX];
 
 // inspired by AMY :)
 enum {
@@ -86,45 +37,100 @@ enum {
     EXWAVEUSR6,     // 14
     EXWAVEUSR7,     // 15
     
-    EXWAVEKRG1,     // 16
-    EXWAVEKRG2,     // 17
-    EXWAVEKRG3,     // 18
-    EXWAVEKRG4,     // 19
-    EXWAVEKRG5,     // 10
-    EXWAVEKRG6,     // 21
-    EXWAVEKRG7,     // 22
-    EXWAVEKRG8,     // 23
-    EXWAVEKRG9,     // 24
-    EXWAVEKRG10,    // 25
-    EXWAVEKRG11,    // 26
-    EXWAVEKRG12,    // 27
-    EXWAVEKRG13,    // 28
-    EXWAVEKRG14,    // 29
-    EXWAVEKRG15,    // 30
-    EXWAVEKRG16,    // 31
+    AMYWAVE00  = 24,
+    AMYWAVE01,
+    AMYWAVE02,
+    AMYWAVE03,
+    AMYWAVE04,
 
-    EXWAVEKRG17,     // 32
-    EXWAVEKRG18,     // 33
-    EXWAVEKRG19,     // 34
-    EXWAVEKRG20,     // 35
-    EXWAVEKRG21,     // 36
-    EXWAVEKRG22,     // 37
-    EXWAVEKRG23,     // 38
-    EXWAVEKRG24,     // 39
-    EXWAVEKRG25,     // 40
-    EXWAVEKRG26,    // 41
-    EXWAVEKRG27,    // 42
-    EXWAVEKRG28,    // 43
-    EXWAVEKRG29,    // 44
-    EXWAVEKRG30,    // 45
-    EXWAVEKRG31,    // 46
-    EXWAVEKRG32,    // 47
+    EXWAVEKRG1 = 32,
+    EXWAVEKRG2,
+    EXWAVEKRG3,
+    EXWAVEKRG4,
+    EXWAVEKRG5,
+    EXWAVEKRG6,
+    EXWAVEKRG7,
+    EXWAVEKRG8,
+    EXWAVEKRG9,
+    EXWAVEKRG10,
+    EXWAVEKRG11,
+    EXWAVEKRG12,
+    EXWAVEKRG13,
+    EXWAVEKRG14,
+    EXWAVEKRG15,
+    EXWAVEKRG16,
 
-    EXWAVEOUT,      // 48
+    EXWAVEKRG17,
+    EXWAVEKRG18,
+    EXWAVEKRG19,
+    EXWAVEKRG20,
+    EXWAVEKRG21,
+    EXWAVEKRG22,
+    EXWAVEKRG23,
+    EXWAVEKRG24,
+    EXWAVEKRG25,
+    EXWAVEKRG26,
+    EXWAVEKRG27,
+    EXWAVEKRG28,
+    EXWAVEKRG29,
+    EXWAVEKRG30,
+    EXWAVEKRG31,
+    EXWAVEKRG32,
 
-    EXWAVMAX
+    AMYSAMPLE00 = 100,
+    AMYSAMPLE99 = 100+99,
+    EXWAVEMAX
 };
 
+unsigned long sample_count = 0;
+
+#if 0
+long futex_wait(uint32_t *uaddr, uint32_t val) {
+  return syscall(SYS_futex, uaddr, FUTEX_WAIT_PRIVATE, val, NULL, NULL, 0);
+}
+
+long futex_wake(uint32_t *uaddr, int num_wake) {
+  return syscall(SYS_futex, uaddr, FUTEX_WAKE_PRIVATE, num_wake, NULL, NULL, 0);
+}
+#endif
+
+// Shared state
+atomic_ullong clock_tick = ATOMIC_VAR_INIT(0);  // Monotonic tick counter (advances by 1 every M samples)
+atomic_uint signal_version = ATOMIC_VAR_INIT(0); // Version for signaling changes (futex wait/wake target)
+uint64_t tempo_modulus = 44;
+
+int show_audio(void) {
+  if (saudio_isvalid()) {
+    printf("# tick %lld / %u / %lu\n", clock_tick, signal_version, tempo_modulus);
+    printf("# audio backend is running\n");
+    printf("# audio sample count %ld\n", sample_count);
+    printf("# requested sample rate %d, actual sample rate %d\n",
+      (int)MAIN_SAMPLE_RATE,
+      saudio_sample_rate());
+    printf("# buffer frames %d\n", saudio_buffer_frames());
+    printf("# number of channels %d\n", saudio_channels());
+  } else {
+    printf("# did not start audio backend\n");
+    return 1;
+  }
+  return 0;
+}
+
+#include "linenoise.h"
+
+#include <math.h>
+#include <pthread.h>
+#include <time.h>
+
+float *wt_data[EXWAVEMAX];
+int wt_size[EXWAVEMAX];
+float wt_rate[EXWAVEMAX];
+int wt_sampled[EXWAVEMAX];
+int wt_looping[EXWAVEMAX];
+int wt_loopstart[EXWAVEMAX];
+int wt_loopend[EXWAVEMAX];
+int wt_midinote[EXWAVEMAX];
+float wt_offsethz[EXWAVEMAX];
 
 void wt_free(void);
 
@@ -285,6 +291,17 @@ void osc_set_wt(int voice, int n) {
   }
 }
 
+void osc_trigger(int voice) {
+  if (osc[voice].sampled) {
+    if (direction[voice]) {
+      osc[voice].phase = osc[voice].table_size - 1;
+    } else {
+      osc[voice].phase = 0;
+    }
+    osc[voice].inactive = 0;
+  }
+}
+
 typedef enum {
     ADSR_OFF,
     ADSR_ATTACK,
@@ -429,12 +446,12 @@ void engine(float *buffer, int num_frames, int num_channels, void *user_data) { 
 #endif
   for (int i = 0; i < num_frames; i++) {
 #if 0
-    uint64_t new_ticks = local_sample_acc / main_modulus;
+    uint64_t new_ticks = local_sample_acc / tempo_modulus;
     if (new_ticks > 0) {
       atomic_fetch_add_explicit(&clock_tick, new_ticks, memory_order_relaxed);
       atomic_fetch_add_explicit(&signal_version, 1, memory_order_release);
       futex_wake((uint32_t*)&signal_version, 1);  // Wake 1 waiter; use INT_MAX for multiple
-      local_sample_acc -= new_ticks * main_modulus;  // Reset accumulator
+      local_sample_acc -= new_ticks * tempo_modulus;  // Reset accumulator
     }
     local_sample_acc++;
 #endif
@@ -634,7 +651,7 @@ int wire(char *line, int *this_voice, int output) {
       more = 0;
       break;
     }
-    // printf("# %c / %d / %x [%d]\n", c, c, c, p);
+    if (debug) printf("# %c / %d / %x [%d]\n", c, c, c, p);
     if (c == '#') {
       break;
     } else if (c == ' ' || c == '\t' || c == ';' || c == '\n' || c == '\r') {
@@ -701,26 +718,27 @@ int wire(char *line, int *this_voice, int output) {
         }
       }
     } else if (c == 'T') {
-      if (direction[voice]) {
-        osc[voice].phase = osc[voice].table_size - 1;
-      } else {
-        osc[voice].phase = 0;
-      }
-      osc[voice].inactive = 0;
+      osc_trigger(voice);
     } else if (c == 'l') {
-      f = parse_double(&line[p], &valid, &next);
-      if (!valid) {
-        more = 0;
-        r = ERR_EXPECTED_FLOAT;
+      char peek = line[p];
+      if (peek == '+') {
+        p++;
       } else {
-        p += next-1;
-        if (f == 0) {
-          adsr_release(voice);
+        f = parse_double(&line[p], &valid, &next);
+        if (!valid) {
+          more = 0;
+          r = ERR_EXPECTED_FLOAT;
         } else {
-          osc[voice].phase = 0;
-          use_adsr[voice] = 1;
-          amp[voice] = f * AFACTOR;
-          adsr_trigger(voice, f);
+          p += next-1;
+          if (f == 0) {
+            adsr_release(voice);
+          } else {
+            osc[voice].phase = 0;
+            use_adsr[voice] = 1;
+            amp[voice] = f; // * AFACTOR;
+            osc_trigger(voice);
+            adsr_trigger(voice, f);
+          }
         }
       }
     } else if (c == 'M') {
@@ -731,7 +749,7 @@ int wire(char *line, int *this_voice, int output) {
       } else {
         p += next-1;
         if (n > 0) {
-          main_modulus = n;
+          tempo_modulus = n;
         }
       }
     } else if (c == 'm') {
@@ -813,6 +831,7 @@ int wire(char *line, int *this_voice, int output) {
             more = 0;
             r = ERR_INVALID_MODULATOR;
           }
+          p++;
         }
       }
     } else if (c == 'w') {
@@ -822,8 +841,16 @@ int wire(char *line, int *this_voice, int output) {
         r = ERR_EXPECTED_INT;
       } else {
         p += next-1;
-        if (n >= 0 && n < WT_MAX) {
+        if (n >= 0 && n < EXWAVEMAX) {
           osc_set_wt(voice, n);
+          char peek = line[p];
+          if (peek == '+') {
+            p++;
+            float g = midi2hz(osc[voice].midinote);
+            freq[voice] = g;
+            note[voice] = osc[voice].midinote;
+            osc_set_freq(voice, g);
+          }
         } else {
           more = 0;
           r = ERR_INVALID_WAVE;
@@ -948,6 +975,16 @@ void *udp(void *arg);
 void *seq(void *arg);
 
 int main(int argc, char *argv[]) {
+  if (argc > 1) {
+    for (int i=1; i<argc; i++) {
+      if (argv[i][0] == '-') {
+        switch (argv[i][1]) {
+          case 'd': debug = 1; break;
+        }
+      }
+    }
+  }
+  show_threads();
   linenoiseHistoryLoad(HISTORY_FILE);
   init_wt();
   init_voice();
@@ -1013,7 +1050,7 @@ int main(int argc, char *argv[]) {
   saudio_shutdown();
   
   udp_running = 0;
-  pthread_join(udp_thread, NULL);
+  //pthread_join(udp_thread, NULL);
   
   seq_running = 0;
   //pthread_join(seq_thread, NULL);
@@ -1127,15 +1164,33 @@ void init_wt(void) {
     wt_sampled[i] = 0;
   }
 
-  printf("# load AMY samples (%d to %d)\n", EXWAVEKRG32, EXWAVEKRG32 + PCM_SAMPLES);
+
+  #define PROGMEM
   
+  #include "notamy/impulse_lutset_fxpt.h"
+
+  printf("# load AMY waves (%d to %d)\n", AMYWAVE00, AMYWAVE04);
+  FILE *out = fopen("amyimpulse.dat", "w+");
+  table = (float *)malloc(1024 * sizeof(float));
+  for (int i = 0; i < 1024; i++) {
+    float g = (float)impulse_fxpt_lutable_0[i] / 32767.0;
+    table[i] = g;
+    fprintf(out, "%g\n", g);
+  }
+  fclose(out);
+  wt_data[AMYWAVE00] = table;
+  wt_size[AMYWAVE00] = 1024;
+  wt_rate[AMYWAVE00] = MAIN_SAMPLE_RATE;
+  wt_sampled[AMYWAVE00] = 0;
+  
+  printf("# load AMY samples (%d to %d)\n", AMYSAMPLE00, AMYSAMPLE99);
   for (int i = 0; i < PCM_SAMPLES; i++) {
-    int j = i + EXWAVEKRG32;
-    if (j > EXWAVEKRG32 + WT_MAX - 1) {
+    int j = i + AMYSAMPLE00;
+    if (j > AMYSAMPLE99-1) {
       printf("# too many PCM samples... exit early\n");
       break;
     }
-    printf("[%d] offset:%d length:%d loopstart:%d loopend:%d midinote:%d offsethz:%g\n",
+    if (debug) printf("[%d] offset:%d length:%d loopstart:%d loopend:%d midinote:%d offsethz:%g\n",
       j, pcm_map[i].offset, pcm_map[i].length, pcm_map[i].loopstart, pcm_map[i].loopend,
       pcm_map[i].midinote, midi2hz(pcm_map[i].midinote));
     table = malloc(pcm_map[i].length * sizeof(float));
@@ -1155,8 +1210,9 @@ void init_wt(void) {
 }
 
 void wt_free(void) {
-  for (int i = 0; i < EXWAVMAX; i++) {
+  for (int i = 0; i < EXWAVEMAX; i++) {
     if (wt_data[i]) {
+      if (debug) printf("[%d] freeing...\n", i);
       free(wt_data[i]);
       wt_size[i] = 0;
     }
@@ -1218,43 +1274,43 @@ int udp_open(int port) {
 #define PORT 60440
 
 void *udp(void *arg) {
-    int sock = udp_open(PORT);
-    if (sock < 0) {
-      puts("udp thread cannot run");
-      return NULL;
-    }
-    pthread_setname_np(pthread_self(), "skred-udp");
-    struct timeval tv;
-    tv.tv_sec = 1;
-    tv.tv_usec = 0;
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (struct timeval *)&tv, sizeof(struct timeval));
-    int voice = 0;
-    struct sockaddr_in client;
-    unsigned int client_len = sizeof(client);
-    char line[1024];
-    int output = 0;
-    while (udp_running) {
-        int n = recvfrom(sock, line, sizeof(line), 0, (struct sockaddr *)&client, &client_len);
-        if (n > 0) {
-          line[n] = '\0';
-          int r = wire(line, &voice, output);
-        } else {
-          if (errno = EAGAIN) continue;
-          printf("recvfrom = %d ; errno = %d\n", n, errno);
-          perror("recvfrom");
-        }
-    }
-    //udp_stop();
-    //user_stop();
+  int sock = udp_open(PORT);
+  if (sock < 0) {
+    puts("# udp thread cannot run");
     return NULL;
+  }
+  pthread_setname_np(pthread_self(), "skred-udp");
+  struct timeval tv;
+  tv.tv_sec = 1;
+  tv.tv_usec = 0;
+  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (struct timeval *)&tv, sizeof(struct timeval));
+  int voice = 0;
+  struct sockaddr_in client;
+  unsigned int client_len = sizeof(client);
+  char line[1024];
+  int output = 0;
+  while (udp_running) {
+    int n = recvfrom(sock, line, sizeof(line), 0, (struct sockaddr *)&client, &client_len);
+    if (n > 0) {
+      line[n] = '\0';
+      int r = wire(line, &voice, output);
+    } else {
+      if (errno = EAGAIN) continue;
+      printf("# recvfrom = %d ; errno = %d\n", n, errno);
+      perror("# recvfrom");
+    }
+  }
+  if (debug) printf("# udp stopping\n");
+  return NULL;
 }
 
 void *seq(void *arg) {
-  pthread_setname_np(pthread_self(), "skred-udp");
+  pthread_setname_np(pthread_self(), "skred-seq");
   while (seq_running) {
     //futex_wait(&signal_version, 1);
     sleep(1);
   }
+  if (debug) printf("# seq stopping\n");
   return NULL;
 }
 
