@@ -176,7 +176,9 @@ typedef struct {
 osc_t osc[VOICE_MAX];
 
 float osc_get_phase_inc(int v, float freq) {
-    float phase_inc = (freq * osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / MAIN_SAMPLE_RATE);
+    float g = freq;
+    if (osc[v].sampled) g /= osc[v].offsethz;
+    float phase_inc = (g * osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / MAIN_SAMPLE_RATE);
     return phase_inc;
 }
 
@@ -320,6 +322,7 @@ typedef struct {
     adsr_state_t state;  // Current state
     float value;         // Current envelope output (0.0 to 1.0)
     float time;          // Time elapsed in current stage (seconds)
+    float save_sustain_level;
 } adsr_t;
 
 adsr_t amp_env[VOICE_MAX];
@@ -338,6 +341,7 @@ void adsr_init(int n, float attack_time, float decay_time, float sustain_level, 
 
 // Trigger the envelope (start attack)
 void adsr_trigger(int n, float a) {
+    amp_env[n].save_sustain_level = amp[n];
     amp_env[n].sustain_level = a;
     amp_env[n].state = ADSR_ATTACK;
     amp_env[n].value = 0.0f;
@@ -356,6 +360,7 @@ void adsr_release(int n) {
 // Compute one sample of the envelope
 float adsr_step(int n) {
     if (amp_env[n].state == ADSR_OFF) {
+        amp[n] = amp_env[n].save_sustain_level;
         return 0.0f;
     }
 
@@ -424,6 +429,7 @@ float adsr_step(int n) {
         default:
             amp_env[n].value = 0.0f;
             amp_env[n].state = ADSR_OFF;
+            amp[n] = amp_env[n].save_sustain_level;
     }
 
     // Clamp value to [0.0, 1.0]
@@ -460,7 +466,7 @@ void engine(float *buffer, int num_frames, int num_channels, void *user_data) { 
     float sampler = 0;
     float f = 0;
     for (int n = 0; n < VOICE_MAX; n++) {
-      if (amp[n] == 0) continue;
+      // if (amp[n] == 0) continue;
       if (osc[n].sampled && osc[n].inactive) continue;
       if (fmod_osc[n] >= 0) {
         int m = fmod_osc[n];
@@ -480,10 +486,10 @@ void engine(float *buffer, int num_frames, int num_channels, void *user_data) { 
       }
 
       // apply amp to sample
-      // sample[n] *= amp[n];
       if (use_adsr[n]) {
         float amod = adsr_step(n);
-        sample[n] *= amod * amp[n]; // * AFACTOR;
+        sample[n] *= amod; // * AFACTOR;
+        //sample[n] *= amod * amp[n]; // * AFACTOR;
       } else {
         sample[n] *= amp[n];
       }
@@ -624,9 +630,12 @@ void show_voice(int v, char c) {
     amp_env[v].decay_time,
     amp_env[v].sustain_level,
     amp_env[v].release_time);
-  printf(" ## %c %g/%g", c, osc[v].phase, osc[v].phase_inc);
+  printf(" # %g/%g", osc[v].phase, osc[v].phase_inc);
   if (osc[v].sampled) {
     printf(" %d/%g", osc[v].midinote, osc[v].offsethz);
+  }
+  if (c != ' ') {
+    printf(" *");
   }
   puts("");
 }
@@ -735,7 +744,7 @@ int wire(char *line, int *this_voice, int output) {
           } else {
             osc[voice].phase = 0;
             use_adsr[voice] = 1;
-            amp[voice] = f; // * AFACTOR;
+            //amp[voice] = f; // * AFACTOR;
             osc_trigger(voice);
             adsr_trigger(voice, f);
           }
@@ -804,34 +813,39 @@ int wire(char *line, int *this_voice, int output) {
         osc_set_freq(voice, g);
       }
     } else if (c == 'F') {
-      n = parse_int(&line[p], &valid, &next);
-      if (!valid) {
-        more = 0;
-        r = ERR_EXPECTED_INT;
+      char peek = line[p];
+      if (peek == '-') {
+        p++;
       } else {
-        if (n < 0) {
-          fmod_osc[voice] = -1;
+        n = parse_int(&line[p], &valid, &next);
+        if (!valid) {
+          more = 0;
+          r = ERR_EXPECTED_INT;
         } else {
-          if (n < VOICE_MAX) {
-            fmod_osc[voice] = n;
-            char peek = line[p+1];
-            if (peek == ',') {
-              p++;
-              p++;
-              f = parse_double(&line[p], &valid, &next);
-              if (!valid) {
-                more = 0;
-                r = ERR_EXPECTED_FLOAT;
-              } else {
-                fmod_depth[voice] = f;
-                p += next-1;
-              }
-            }
+          if (n < 0) {
+            fmod_osc[voice] = -1;
           } else {
-            more = 0;
-            r = ERR_INVALID_MODULATOR;
+            if (n < VOICE_MAX) {
+              fmod_osc[voice] = n;
+              char peek = line[p+1];
+              if (peek == ',') {
+                p++;
+                p++;
+                f = parse_double(&line[p], &valid, &next);
+                if (!valid) {
+                  more = 0;
+                  r = ERR_EXPECTED_FLOAT;
+                } else {
+                  fmod_depth[voice] = f;
+                  p += next-1;
+                }
+              }
+            } else {
+              more = 0;
+              r = ERR_INVALID_MODULATOR;
+            }
+            p++;
           }
-          p++;
         }
       }
     } else if (c == 'w') {
@@ -1073,6 +1087,46 @@ int main(int argc, char *argv[]) {
 
 #include "amysamples.h"
 
+void generate_moog_squarewave(int sample_count, float *waveform) {
+    if (!waveform) return;
+
+    // Square wave parameters
+    float period = sample_count; // One cycle over all samples
+    float half_period = period / 2.0f;
+
+    // Ringing parameters
+    float ring_amplitude = 0.3f; // Ringing amplitude (adjustable, < 1 to stay in bounds)
+    //float ring_freq = 20.0f * 2.0f * M_PI / sample_count; // Ringing frequency (fast oscillations)
+    float ring_freq = 40.0f * 2.0f * M_PI / sample_count; // Ringing frequency (fast oscillations)
+    //float decay_rate = 5.0f / sample_count; // Decay rate for ringing
+    float decay_rate = 40.0f / sample_count; // Decay rate for ringing
+
+    // Generate waveform
+    for (int i = 0; i < sample_count; i++) {
+        float t = (float)i;
+        // Base square wave: +1 for first half, -1 for second half
+        float square = (t < half_period) ? 1.0f : -1.0f;
+
+        // Add ringing at transitions (at t=0 and t=half_period)
+        float ringing = 0.0f;
+        if (t < half_period) {
+            // Ringing at t=0 (start of +1)
+            ringing = ring_amplitude * sin(ring_freq * t) * exp(-decay_rate * t);
+        } else {
+            // Ringing at t=half_period (start of -1)
+            ringing = ring_amplitude * sin(ring_freq * (t - half_period)) * 
+                     exp(-decay_rate * (t - half_period));
+        }
+
+        // Combine square wave and ringing
+        waveform[i] = square + ringing;
+
+        // Normalize to [-1, 1] (clip if necessary)
+        if (waveform[i] > 1.0f) waveform[i] = 1.0f;
+        if (waveform[i] < -1.0f) waveform[i] = -1.0f;
+    }
+}
+
 void init_wt(void) {
   float *table;
   float f;
@@ -1169,8 +1223,10 @@ void init_wt(void) {
   
   #include "notamy/impulse_lutset_fxpt.h"
 
+  FILE *out = NULL;
+
   printf("# load AMY waves (%d to %d)\n", AMYWAVE00, AMYWAVE04);
-  FILE *out = fopen("amyimpulse.dat", "w+");
+  out = fopen("amyimpulse.dat", "w+");
   table = (float *)malloc(1024 * sizeof(float));
   for (int i = 0; i < 1024; i++) {
     float g = (float)impulse_fxpt_lutable_0[i] / 32767.0;
@@ -1183,9 +1239,25 @@ void init_wt(void) {
   wt_rate[AMYWAVE00] = MAIN_SAMPLE_RATE;
   wt_sampled[AMYWAVE00] = 0;
   
-  printf("# load AMY samples (%d to %d)\n", AMYSAMPLE00, AMYSAMPLE99);
+  printf("# generate moog-like squarewave at %d\n", AMYWAVE01);
+#define GENSIZE (2048)
+  table = (float *)malloc(GENSIZE * sizeof(float));
+  generate_moog_squarewave(GENSIZE, table);
+  out = fopen("moog_squarewave.dat", "w+");
+  for (int i = 0; i < GENSIZE; i++) {
+    fprintf(out, "%g\n", table[i]);
+  }
+  fclose(out);
+  wt_data[AMYWAVE01] = table;
+  wt_size[AMYWAVE01] = GENSIZE;
+  wt_rate[AMYWAVE01] = MAIN_SAMPLE_RATE;
+  wt_sampled[AMYWAVE01] = 0;
+  
+
+  // load AMY samples
+  int j = AMYSAMPLE99;
   for (int i = 0; i < PCM_SAMPLES; i++) {
-    int j = i + AMYSAMPLE00;
+    j = i + AMYSAMPLE00;
     if (j > AMYSAMPLE99-1) {
       printf("# too many PCM samples... exit early\n");
       break;
@@ -1207,6 +1279,7 @@ void init_wt(void) {
     wt_midinote[j] = pcm_map[i].midinote;
     wt_offsethz[j] = midi2hz(pcm_map[i].midinote);
   }
+  printf("# load AMY samples (%d to %d)\n", AMYSAMPLE00, j);
 }
 
 void wt_free(void) {
