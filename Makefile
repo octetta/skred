@@ -1,6 +1,7 @@
 EXE = \
 	sok1 \
-	skred
+	skred \
+  rle1
 
 all : $(EXE)
 
@@ -32,6 +33,12 @@ skred.o: skred.c
 linenoise.o: linenoise.c linenoise.h
 	gcc -c $<
 
+RLINC = -I raylib-quickstart-main/build/external/raylib-master/src
+RLLIB = -L raylib-quickstart-main/bin/Debug
+
+rle1: rle1.c
+	gcc $(RLINC) $(RLLIB) rle1.c -o rle1 -lraylib -lm
+ 
 clean :
 	rm -f *.o
 	rm -f $(EXE)
