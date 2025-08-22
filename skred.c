@@ -445,6 +445,21 @@ float quantize_bits_int(float v, int bits) {
   return iv * (1.0 / levels);
 }
 
+int main_running = 1;
+int udp_running = 1;
+int seq_running = 1;
+
+int oscope_running = 0;
+int oscope_cross = 0;
+#define OSCOPE_LEN (44100)
+int oscope_len = OSCOPE_LEN;
+float oscope_bufferl[OSCOPE_LEN];
+float oscope_bufferr[OSCOPE_LEN];
+int oscope_buffer_pointer = 0;
+float oscope_display_pointer = 0.0;
+float oscope_display_inc = 1.0;
+float oscope_display_mag = 1.0;
+
 // Stream callback function
 void engine(float *buffer, int num_frames, int num_channels, void *user_data) { // , void *user_data) {
 #if 0
@@ -507,6 +522,10 @@ void engine(float *buffer, int num_frames, int num_channels, void *user_data) { 
     // Write to all channels
     buffer[i * num_channels + 0] = samplel;
     buffer[i * num_channels + 1] = sampler;
+    oscope_bufferl[oscope_buffer_pointer] = samplel;
+    oscope_bufferr[oscope_buffer_pointer] = sampler;
+    oscope_buffer_pointer++;
+    if (oscope_buffer_pointer >= oscope_len) oscope_buffer_pointer = 0;
   }
 }
 
@@ -520,9 +539,9 @@ void fsleep(double seconds) {
 
 void init_wt(void);
 
-int main_running = 1;
-int udp_running = 1;
-int seq_running = 1;
+void *udp(void *arg);
+void *seq(void *arg);
+void *oscope(void *arg);
 
 int current_voice = 0;
 
@@ -642,6 +661,10 @@ void show_voice(int v, char c) {
 
 float midi2hz(int f);
 
+pthread_t udp_thread;
+pthread_t seq_thread;
+pthread_t oscope_thread;
+
 int wire(char *line, int *this_voice, int output) {
   int p = 0;
   int more = 1;
@@ -689,6 +712,22 @@ int wire(char *line, int *this_voice, int output) {
           if (output) {
             show_threads();
             show_audio();
+          }
+          break;
+        case 'o':
+          if (oscope_running) {
+            if (output) printf("# oscope already running\n");
+          } else {
+            oscope_running = 1;
+            pthread_create(&oscope_thread, NULL, oscope, NULL);
+            pthread_detach(oscope_thread);
+          }
+          {
+            char peek = line[p];
+            if (peek == 'x') {
+              p++;
+              oscope_cross = 1;
+            }
           }
           break;
         default:
@@ -985,9 +1024,6 @@ int wire(char *line, int *this_voice, int output) {
 
 char my_data[] = "hello";
 
-void *udp(void *arg);
-void *seq(void *arg);
-
 int main(int argc, char *argv[]) {
   if (argc > 1) {
     for (int i=1; i<argc; i++) {
@@ -1017,14 +1053,13 @@ int main(int argc, char *argv[]) {
 
   pthread_setname_np(pthread_self(), "skred-main");
 
-  pthread_t udp_thread;
   pthread_create(&udp_thread, NULL, udp, NULL);
   pthread_detach(udp_thread);
 
-  pthread_t seq_thread;
   pthread_create(&seq_thread, NULL, seq, NULL);
   pthread_detach(seq_thread);
 
+  
   while (main_running) {
     char *line = linenoise("# ");
     if (line == NULL) {
@@ -1064,10 +1099,8 @@ int main(int argc, char *argv[]) {
   saudio_shutdown();
   
   udp_running = 0;
-  //pthread_join(udp_thread, NULL);
-  
   seq_running = 0;
-  //pthread_join(seq_thread, NULL);
+  oscope_running = 0;
 
   sleep(1); // make sure we don't crash the callback b/c thread timing and wt_data
   
@@ -1384,6 +1417,104 @@ void *seq(void *arg) {
     sleep(1);
   }
   if (debug) printf("# seq stopping\n");
+  return NULL;
+}
+
+void *oscope(void *arg) {
+  pthread_setname_np(pthread_self(), "skred-oscope");
+#ifndef USE_RAYLIB
+  while (oscope_running) {
+    //futex_wait(&signal_version, 1);
+    sleep(1);
+  }
+#else
+#include "raylib.h"
+#include "rlgl.h"
+  const int screenWidth = 800;
+  const int screenHeight = 450;
+  SetTraceLogLevel(LOG_NONE);
+  InitWindow(screenWidth, screenHeight, "skred-oscope");
+  Vector2 ballPosition = { (float)screenWidth/2, (float)screenHeight/2 };
+  SetTargetFPS(60);
+  float sw = (float)screenWidth;
+  float sh = (float)screenHeight;
+  float h0 = screenHeight / 2.0;
+  char osd[1024] = "?";
+  int osd_dirty = 1;
+  float y = h0;
+  float x = 1.0;
+  float a = 1.0;
+  int show_l = 1;
+  int show_r = 1;
+  Color tRed = {255, 0, 0, 128};
+  Color tGreen = {0, 255, 0, 128};
+  while (oscope_running && !WindowShouldClose()) {
+    int shifted = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+    if (IsKeyDown(KEY_ONE)) {
+      if (show_l == 1) show_l = 0; else show_l = 1;
+    }
+    if (IsKeyDown(KEY_TWO)) {
+      if (show_r == 1) show_r = 0; else show_r = 1;
+    }
+    if (IsKeyDown(KEY_A)) {
+      if (shifted) {
+        oscope_display_mag -= 0.1;
+        a -= 0.1;
+      } else {
+        oscope_display_mag += 0.1;
+        a += 0.1;
+      }
+      osd_dirty++;
+    }
+    if (IsKeyDown(KEY_RIGHT)) {
+      //oscope_display_inc += 0.1;
+      x += 0.1;
+      osd_dirty++;
+    }
+    if (IsKeyDown(KEY_LEFT)) {
+      //oscope_display_inc -= 0.1;
+      x -= 0.1;
+      osd_dirty++;
+    }
+    if (IsKeyDown(KEY_UP)) {
+      y += 1.0;
+      osd_dirty++;
+    }
+    if (IsKeyDown(KEY_DOWN)) {
+      y -= 1.0;
+      osd_dirty++;
+    }
+    if (osd_dirty) {
+      sprintf(osd, "x:%g y:%g a:%g mag:%g inc:%g", x, y, a, oscope_display_mag, oscope_display_inc);
+    }
+    BeginDrawing();
+    ClearBackground(BLACK);
+    DrawText(osd, 10, 10, 20, DARKGRAY);
+    rlPushMatrix();
+    rlTranslatef(0.0, y, 0.0); // x,y,z
+    rlScalef(x,oscope_display_mag,1.0);
+      int j = (int)oscope_display_pointer;
+      for (int i = 0; i < screenWidth; i++) {
+        if (j >= oscope_len) j = 0;
+        ballPosition.x = (float)i;
+        if (show_l) {
+          ballPosition.y = oscope_bufferl[j] * h0 * oscope_display_mag;
+          DrawCircleV(ballPosition, 1, tGreen);
+        }
+        if (show_r) {
+          ballPosition.y = oscope_bufferr[j] * h0 * oscope_display_mag;
+          DrawCircleV(ballPosition, 1, tRed);
+        }
+        j++;
+      }
+      oscope_display_pointer += (sw / oscope_display_inc);
+      if (oscope_display_pointer > oscope_len) oscope_display_pointer = 0;
+    rlPopMatrix();
+    EndDrawing();
+  }
+  oscope_running = 0;
+#endif
+  if (debug) printf("# oscope stopping\n");
   return NULL;
 }
 
