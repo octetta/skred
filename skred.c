@@ -17,6 +17,9 @@ int debug = 0;
 #define CHANNEL_NUM (2)
 #define AFACTOR (0.025)
 
+#define SCREENWIDTH (800)
+#define SCREENHEIGHT (480)
+
 // inspired by AMY :)
 enum {
     EXWAVESINE,     // 0
@@ -451,7 +454,7 @@ int seq_running = 1;
 
 int oscope_running = 0;
 int oscope_cross = 0;
-#define OSCOPE_LEN (44100)
+#define OSCOPE_LEN (44100 / 2)
 int oscope_len = OSCOPE_LEN;
 float oscope_bufferl[OSCOPE_LEN];
 float oscope_bufferr[OSCOPE_LEN];
@@ -459,6 +462,10 @@ int oscope_buffer_pointer = 0;
 float oscope_display_pointer = 0.0;
 float oscope_display_inc = 1.0;
 float oscope_display_mag = 1.0;
+#define OWWIDTH (SCREENWIDTH/4)
+#define OWHEIGHT (SCREENWIDTH/4)
+float oscope_wave[OWWIDTH];
+int oscope_wave_len = 0;
 
 // Stream callback function
 void engine(float *buffer, int num_frames, int num_channels, void *user_data) { // , void *user_data) {
@@ -665,6 +672,38 @@ pthread_t udp_thread;
 pthread_t seq_thread;
 pthread_t oscope_thread;
 
+void downsample_block_average(float *source, int source_len, float *dest, int dest_len) {
+  if (dest_len >= source_len) {
+    // If dest is same size or larger, just copy
+    for (int i = 0; i < dest_len && i < source_len; i++) {
+      dest[i] = source[i];
+    }
+    return;
+  }
+    
+  float block_size = (float)source_len / dest_len;
+    
+  for (int i = 0; i < dest_len; i++) {
+    float start = i * block_size;
+    float end = (i + 1) * block_size;
+        
+    int start_idx = (int)start;
+    int end_idx = (int)end;
+    if (end_idx >= source_len) end_idx = source_len - 1;
+        
+    float sum = 0.0;
+    int count = 0;
+        
+    // Average all values in this block
+    for (int j = start_idx; j <= end_idx; j++) {
+      sum += source[j];
+      count++;
+    }
+        
+    dest[i] = (count > 0) ? sum / count : 0.0;
+  }
+}
+
 int wire(char *line, int *this_voice, int output) {
   int p = 0;
   int more = 1;
@@ -715,18 +754,18 @@ int wire(char *line, int *this_voice, int output) {
           }
           break;
         case 'o':
-          if (oscope_running) {
-            if (output) printf("# oscope already running\n");
-          } else {
+          if (oscope_running == 0) {
             oscope_running = 1;
             pthread_create(&oscope_thread, NULL, oscope, NULL);
             pthread_detach(oscope_thread);
-          }
-          {
+          } else {
             char peek = line[p];
             if (peek == 'x') {
               p++;
               oscope_cross = 1;
+            } else if (peek == '-') {
+              p++;
+              oscope_running = 0;
             }
           }
           break;
@@ -885,6 +924,43 @@ int wire(char *line, int *this_voice, int output) {
             }
             p++;
           }
+        }
+      }
+    } else if (c == 'W') {
+      n = parse_int(&line[p], &valid, &next);
+      if (!valid) {
+        more = 0;
+        r = ERR_EXPECTED_INT;
+      } else {
+        p += next-1;
+        if (n >= 0 && n < EXWAVEMAX && wt_data[n] && wt_size[n]) {
+          float *table = wt_data[n];
+          int size = wt_size[n];
+          int crossing = 0;
+          int zero = 0;
+          float min, max, ttl = 0, avg;
+          min = table[0];
+          max = table[0];
+          for (int i = 1; i < size; i++) {
+            if (table[i] < min) min = table[i];
+            if (table[i] > max) max = table[i];
+            ttl += table[i];
+            if (table[i-1] == 0.0 || table[i] == 0.0) {
+              // Prevent abiguity with multiple zeroes
+              zero++;
+            } else if ((table[i-1] > 0 && table[i] < 0) || (table[i-1] < 0 && table[i] > 0)) {
+              // Check for sign change
+              crossing++;
+            }
+          }
+          avg = ttl / (float)size;
+          printf("# w%d addr:%p size:%d min:%g max:%g ttl:%g avg:%g zero:%d crossing:%d\n",
+            n, table, size, min, max, ttl, avg, zero, crossing);
+          downsample_block_average(table, size, oscope_wave, OWWIDTH);
+          oscope_wave_len = OWWIDTH;
+        } else {
+          more = 0;
+          r = ERR_INVALID_WAVE;
         }
       }
     } else if (c == 'w') {
@@ -1160,6 +1236,30 @@ void generate_moog_squarewave(int sample_count, float *waveform) {
     }
 }
 
+void normalize_preserve_zero(float *data, int length) {
+  if (length == 0) return;
+    
+  // Find the maximum absolute value
+  float max_abs = 0.0;
+  for (int i = 0; i < length; i++) {
+    float abs_val = fabs(data[i]);
+    if (abs_val > max_abs) {
+      max_abs = abs_val;
+    }
+  }
+    
+  // Avoid division by zero
+  if (max_abs == 0.0) {
+    return;  // All values are zero, nothing to normalize
+  }
+    
+  // Scale all values by the same factor
+  float scale_factor = 1.0 / max_abs;
+  for (int i = 0; i < length; i++) {
+    data[i] *= scale_factor;
+  }
+}
+
 void init_wt(void) {
   float *table;
   float f;
@@ -1192,7 +1292,7 @@ void init_wt(void) {
   f = -1.0;
   d = 2.0 / (float)SIZE_SAWDN;
   for (int i=0; i<SIZE_SAWDN; i++) {
-    table[i] = f - 1.0;
+    table[i] = f;
     f += d;
   }
   wt_data[EXWAVESAWDN] = table;
@@ -1205,7 +1305,7 @@ void init_wt(void) {
   f = 1.0;
   d = 2.0 / (float)SIZE_SAWUP;
   for (int i=0; i<SIZE_SAWUP; i++) {
-    table[i] = f - 1.0;
+    table[i] = f;
     f -= d;
   }
   wt_data[EXWAVESAWUP] = table;
@@ -1251,9 +1351,7 @@ void init_wt(void) {
     wt_sampled[i] = 0;
   }
 
-
   #define PROGMEM
-  
   #include "notamy/impulse_lutset_fxpt.h"
 
   FILE *out = NULL;
@@ -1286,7 +1384,6 @@ void init_wt(void) {
   wt_rate[AMYWAVE01] = MAIN_SAMPLE_RATE;
   wt_sampled[AMYWAVE01] = 0;
   
-
   // load AMY samples
   int j = AMYSAMPLE99;
   for (int i = 0; i < PCM_SAMPLES; i++) {
@@ -1302,6 +1399,7 @@ void init_wt(void) {
     for (int k = 0; k < pcm_map[i].length; k++) {
       table[k] = (float)pcm[pcm_map[i].offset + k] / 32767.0;
     }
+    normalize_preserve_zero(table, pcm_map[i].length);
     wt_data[j] = table;
     wt_size[j] = pcm_map[i].length;
     wt_rate[j] = PCM_AMY_SAMPLE_RATE;
@@ -1430,12 +1528,12 @@ void *oscope(void *arg) {
 #else
 #include "raylib.h"
 #include "rlgl.h"
-  const int screenWidth = 800;
-  const int screenHeight = 450;
+  const int screenWidth = SCREENWIDTH;
+  const int screenHeight = SCREENHEIGHT;
   SetTraceLogLevel(LOG_NONE);
   InitWindow(screenWidth, screenHeight, "skred-oscope");
   Vector2 ballPosition = { (float)screenWidth/2, (float)screenHeight/2 };
-  SetTargetFPS(60);
+  SetTargetFPS(25);
   float sw = (float)screenWidth;
   float sh = (float)screenHeight;
   float h0 = screenHeight / 2.0;
@@ -1487,16 +1585,34 @@ void *oscope(void *arg) {
     if (osd_dirty) {
       sprintf(osd, "x:%g y:%g a:%g mag:%g inc:%g", x, y, a, oscope_display_mag, oscope_display_inc);
     }
+    int buffer_snap = oscope_buffer_pointer;
     BeginDrawing();
     ClearBackground(BLACK);
     DrawText(osd, 10, 10, 20, DARKGRAY);
+    for (int i = 0; i < oscope_wave_len; i++) {
+      float n = oscope_wave[i] / 2.0 + 0.5;
+      ballPosition.x = (float)i;
+      ballPosition.y = n * (float)OWWIDTH;
+      DrawCircleV(ballPosition, 1, YELLOW);
+    }
     rlPushMatrix();
     rlTranslatef(0.0, y, 0.0); // x,y,z
     rlScalef(x,oscope_display_mag,1.0);
-      int j = (int)oscope_display_pointer;
-      for (int i = 0; i < screenWidth; i++) {
+      //int j = (int)oscope_display_pointer;
+      //int j = (int)(oscope_buffer_pointer);
+      int j = (int)(buffer_snap - sw);
+      if (j < 0) {
+        j *= -1;
+      }
+      for (int i = 0; i < (screenWidth * 2); i++) {
         if (j >= oscope_len) j = 0;
         ballPosition.x = (float)i;
+        if (j == 0) {
+          DrawLine(ballPosition.x, -sh, ballPosition.x, sh, YELLOW);
+        }
+        if (j == buffer_snap) {
+          DrawLine(ballPosition.x, -sh, ballPosition.x, sh, BLUE);
+        }
         if (show_l) {
           ballPosition.y = oscope_bufferl[j] * h0 * oscope_display_mag;
           DrawCircleV(ballPosition, 1, tGreen);
