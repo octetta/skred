@@ -452,6 +452,14 @@ int main_running = 1;
 int udp_running = 1;
 int seq_running = 1;
 
+enum {
+  OSCOPE_TRIGGER_BOTH,
+  OSCOPE_TRIGGER_RISING,
+  OSCOPE_TRIGGER_FALLING,
+};
+
+int oscope_trigger = OSCOPE_TRIGGER_RISING;
+
 int oscope_running = 0;
 int oscope_cross = 0;
 #define OSCOPE_LEN (44100 / 2)
@@ -463,9 +471,22 @@ float oscope_display_pointer = 0.0;
 float oscope_display_inc = 1.0;
 float oscope_display_mag = 1.0;
 #define OWWIDTH (SCREENWIDTH/4)
-#define OWHEIGHT (SCREENWIDTH/4)
+#define OWHEIGHT (SCREENHEIGHT/2)
 float oscope_wave[OWWIDTH];
 int oscope_wave_len = 0;
+
+float get_oscope_buffer(int *index) {
+  if (index == NULL) return 0;
+  int i = *index;
+  if (i < 0) {
+    i = OSCOPE_LEN - 1;
+  } else if (i >= OSCOPE_LEN) {
+    i = 0;
+  }
+  float a = (oscope_bufferl[i] + oscope_bufferr[i]) / 2.0;
+  *index = i;
+  return a;
+}
 
 // Stream callback function
 void engine(float *buffer, int num_frames, int num_channels, void *user_data) { // , void *user_data) {
@@ -769,6 +790,34 @@ int wire(char *line, int *this_voice, int output) {
             }
           }
           break;
+        case 'l':
+          {
+            n = parse_int(&line[p], &valid, &next);
+            if (!valid) {
+              more = 0;
+              r = ERR_EXPECTED_INT;
+            } else {
+              p += next-1;
+              if (n >= 0) {
+                char file[1024];
+                sprintf(file, "exp%d.patch", n);
+                FILE *in = fopen(file, "r");
+                if (in) {
+                  char line[1024];
+                  while (fgets(line, sizeof(line), in) != NULL) {
+                    size_t len = strlen(line);
+                    if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
+                    printf("%s\n", line);
+                    int temp_voice = voice;
+                    wire(line, &temp_voice, 0);
+                  }
+                  fclose(in);
+                }
+                hide[voice] = 0;
+              }
+            }
+          }
+          break;
         default:
           more = 0;
           r = ERR_INVALID_COLON;
@@ -980,6 +1029,11 @@ int wire(char *line, int *this_voice, int output) {
             note[voice] = osc[voice].midinote;
             osc_set_freq(voice, g);
           }
+          oscope_wave_len = 0;
+          float *table = osc[voice].table;
+          int size = osc[voice].table_size;
+          downsample_block_average(table, size, oscope_wave, OWWIDTH);
+          oscope_wave_len = OWWIDTH;
         } else {
           more = 0;
           r = ERR_INVALID_WAVE;
@@ -1518,6 +1572,25 @@ void *seq(void *arg) {
   return NULL;
 }
 
+int find_starting_point(int buffer_snap, int sw) {
+  int j;
+  j = buffer_snap - sw;
+  float t0 = oscope_bufferl[j];
+  int i = j-1;
+  int c = 1;
+  while (c < OSCOPE_LEN) {
+    if (i < 0) i = OSCOPE_LEN-1;
+    float t1 = oscope_bufferl[i];
+    if (t0 == 0.0 && t1 == 0.0) {
+      // zero
+    } else if (t0 < 0 && t1 > 0) break;
+    i--;
+    c++;
+    t0 = t1;
+  }
+  return i;
+}
+
 void *oscope(void *arg) {
   pthread_setname_np(pthread_self(), "skred-oscope");
 #ifndef USE_RAYLIB
@@ -1532,7 +1605,7 @@ void *oscope(void *arg) {
   const int screenHeight = SCREENHEIGHT;
   SetTraceLogLevel(LOG_NONE);
   InitWindow(screenWidth, screenHeight, "skred-oscope");
-  Vector2 ballPosition = { (float)screenWidth/2, (float)screenHeight/2 };
+  Vector2 dot = { (float)screenWidth/2, (float)screenHeight/2 };
   SetTargetFPS(25);
   float sw = (float)screenWidth;
   float sh = (float)screenHeight;
@@ -1546,6 +1619,8 @@ void *oscope(void *arg) {
   int show_r = 1;
   Color tRed = {255, 0, 0, 128};
   Color tGreen = {0, 255, 0, 128};
+  Color green0 = {0, 255, 0, 128};
+  Color green1 = {0, 128, 0, 128};
   while (oscope_running && !WindowShouldClose()) {
     int shifted = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
     if (IsKeyDown(KEY_ONE)) {
@@ -1588,43 +1663,41 @@ void *oscope(void *arg) {
     int buffer_snap = oscope_buffer_pointer;
     BeginDrawing();
     ClearBackground(BLACK);
-    DrawText(osd, 10, 10, 20, DARKGRAY);
     for (int i = 0; i < oscope_wave_len; i++) {
       float n = oscope_wave[i] / 2.0 + 0.5;
-      ballPosition.x = (float)i;
-      ballPosition.y = n * (float)OWWIDTH;
-      DrawCircleV(ballPosition, 1, YELLOW);
+      dot.x = (float)i;
+      dot.y = n * (float)OWHEIGHT/2.0;
+      DrawLine(i, dot.y, i, OWHEIGHT/4.0, green1);
+      DrawCircleV(dot, 1, green0);
     }
+    // find starting point for display
+    int j = find_starting_point(buffer_snap, sw);
+    DrawText(osd, 10, 10, 20, DARKGRAY);
     rlPushMatrix();
     rlTranslatef(0.0, y, 0.0); // x,y,z
     rlScalef(x,oscope_display_mag,1.0);
-      //int j = (int)oscope_display_pointer;
-      //int j = (int)(oscope_buffer_pointer);
-      int j = (int)(buffer_snap - sw);
-      if (j < 0) {
-        j *= -1;
-      }
-      for (int i = 0; i < (screenWidth * 2); i++) {
+      DrawLine(j, -sh, j, sh, RED);
+      for (float i = 0.0; i < sw; i++) {
         if (j >= oscope_len) j = 0;
-        ballPosition.x = (float)i;
+        dot.x = i;
         if (j == 0) {
-          DrawLine(ballPosition.x, -sh, ballPosition.x, sh, YELLOW);
+          DrawLine(dot.x, -sh, dot.x, sh, YELLOW);
         }
         if (j == buffer_snap) {
-          DrawLine(ballPosition.x, -sh, ballPosition.x, sh, BLUE);
+          DrawLine(dot.x, -sh, dot.x, sh, BLUE);
         }
         if (show_l) {
-          ballPosition.y = oscope_bufferl[j] * h0 * oscope_display_mag;
-          DrawCircleV(ballPosition, 1, tGreen);
+          dot.y = oscope_bufferl[j] * h0 * oscope_display_mag;
+          DrawCircleV(dot, 1, tGreen);
         }
         if (show_r) {
-          ballPosition.y = oscope_bufferr[j] * h0 * oscope_display_mag;
-          DrawCircleV(ballPosition, 1, tRed);
+          dot.y = oscope_bufferr[j] * h0 * oscope_display_mag;
+          DrawCircleV(dot, 1, tRed);
         }
         j++;
       }
-      oscope_display_pointer += (sw / oscope_display_inc);
-      if (oscope_display_pointer > oscope_len) oscope_display_pointer = 0;
+      //oscope_display_pointer += (sw / oscope_display_inc);
+      //if (oscope_display_pointer > oscope_len) oscope_display_pointer = 0;
     rlPopMatrix();
     EndDrawing();
   }
