@@ -6,6 +6,8 @@
 #include <sys/syscall.h>
 #include <errno.h>
 
+#include "seq.h"
+
 #define SOKOL_AUDIO_IMPL
 #include "sokol_audio.h"
 
@@ -22,67 +24,67 @@ int debug = 0;
 
 // inspired by AMY :)
 enum {
-    EXWAVESINE,     // 0
-    EXWAVESQR,      // 1
-    EXWAVESAWDN,    // 2
-    EXWAVESAWUP,    // 3
-    EXWAVETRI,      // 4
-    EXWAVENOISE,    // 5
-    EXWAVEUSR0,     // 6
-    EXWAVEPCM,      // 7
-    EXWAVEUSR1,     // 8
-    EXWAVEUSR2,     // 9
-    EXWAVEUSR3,     // 10
-    EXWAVENONE,     // 11
+  EXWAVESINE,     // 0
+  EXWAVESQR,      // 1
+  EXWAVESAWDN,    // 2
+  EXWAVESAWUP,    // 3
+  EXWAVETRI,      // 4
+  EXWAVENOISE,    // 5
+  EXWAVEUSR0,     // 6
+  EXWAVEPCM,      // 7
+  EXWAVEUSR1,     // 8
+  EXWAVEUSR2,     // 9
+  EXWAVEUSR3,     // 10
+  EXWAVENONE,     // 11
     
-    EXWAVEUSR4,     // 12
-    EXWAVEUSR5,     // 13
-    EXWAVEUSR6,     // 14
-    EXWAVEUSR7,     // 15
-    
-    AMYWAVE00  = 24,
-    AMYWAVE01,
-    AMYWAVE02,
-    AMYWAVE03,
-    AMYWAVE04,
+  EXWAVEUSR4,     // 12
+  EXWAVEUSR5,     // 13
+  EXWAVEUSR6,     // 14
+  EXWAVEUSR7,     // 15
+  
+  AMYWAVE00  = 24,
+  AMYWAVE01,
+  AMYWAVE02,
+  AMYWAVE03,
+  AMYWAVE04,
 
-    EXWAVEKRG1 = 32,
-    EXWAVEKRG2,
-    EXWAVEKRG3,
-    EXWAVEKRG4,
-    EXWAVEKRG5,
-    EXWAVEKRG6,
-    EXWAVEKRG7,
-    EXWAVEKRG8,
-    EXWAVEKRG9,
-    EXWAVEKRG10,
-    EXWAVEKRG11,
-    EXWAVEKRG12,
-    EXWAVEKRG13,
-    EXWAVEKRG14,
-    EXWAVEKRG15,
-    EXWAVEKRG16,
+  EXWAVEKRG1 = 32,
+  EXWAVEKRG2,
+  EXWAVEKRG3,
+  EXWAVEKRG4,
+  EXWAVEKRG5,
+  EXWAVEKRG6,
+  EXWAVEKRG7,
+  EXWAVEKRG8,
+  EXWAVEKRG9,
+  EXWAVEKRG10,
+  EXWAVEKRG11,
+  EXWAVEKRG12,
+  EXWAVEKRG13,
+  EXWAVEKRG14,
+  EXWAVEKRG15,
+  EXWAVEKRG16,
 
-    EXWAVEKRG17,
-    EXWAVEKRG18,
-    EXWAVEKRG19,
-    EXWAVEKRG20,
-    EXWAVEKRG21,
-    EXWAVEKRG22,
-    EXWAVEKRG23,
-    EXWAVEKRG24,
-    EXWAVEKRG25,
-    EXWAVEKRG26,
-    EXWAVEKRG27,
-    EXWAVEKRG28,
-    EXWAVEKRG29,
-    EXWAVEKRG30,
-    EXWAVEKRG31,
-    EXWAVEKRG32,
+  EXWAVEKRG17,
+  EXWAVEKRG18,
+  EXWAVEKRG19,
+  EXWAVEKRG20,
+  EXWAVEKRG21,
+  EXWAVEKRG22,
+  EXWAVEKRG23,
+  EXWAVEKRG24,
+  EXWAVEKRG25,
+  EXWAVEKRG26,
+  EXWAVEKRG27,
+  EXWAVEKRG28,
+  EXWAVEKRG29,
+  EXWAVEKRG30,
+  EXWAVEKRG31,
+  EXWAVEKRG32,
 
-    AMYSAMPLE00 = 100,
-    AMYSAMPLE99 = 100+99,
-    EXWAVEMAX
+  AMYSAMPLE00 = 100,
+  AMYSAMPLE99 = 100+99,
+  EXWAVEMAX
 };
 
 unsigned long sample_count = 0;
@@ -118,6 +120,7 @@ int show_audio(void) {
   }
   return 0;
 }
+
 
 #include "linenoise.h"
 
@@ -162,109 +165,109 @@ void reset_voice(int i);
 void init_voice(void);
 
 typedef struct {
-    float *table;           // Pointer to waveform or sample
-    int table_size;         // Length of table
-    float table_rate;       // Native sample rate of the table
-    float phase;            // Current position in table
-    float phase_inc;        // Phase increment per host sample
-    int sampled;
-    int looping;
-    int loopstart;
-    int loopend;
-    int midinote;
-    int inactive;
-    float offsethz;
+  float *table;           // Pointer to waveform or sample
+  int table_size;         // Length of table
+  float table_rate;       // Native sample rate of the table
+  float phase;            // Current position in table
+  float phase_inc;        // Phase increment per host sample
+  int sampled;
+  int looping;
+  int loopstart;
+  int loopend;
+  int midinote;
+  int inactive;
+  float offsethz;
 } osc_t;
 
 osc_t osc[VOICE_MAX];
 
 float osc_get_phase_inc(int v, float freq) {
-    float g = freq;
-    if (osc[v].sampled) g /= osc[v].offsethz;
-    float phase_inc = (g * osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / MAIN_SAMPLE_RATE);
-    return phase_inc;
+  float g = freq;
+  if (osc[v].sampled) g /= osc[v].offsethz;
+  float phase_inc = (g * osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / MAIN_SAMPLE_RATE);
+  return phase_inc;
 }
 
 void osc_set_freq(int v, float freq) {
-    // Compute the frequency in "table samples per system sample"
-    // This works even if table_rate ≠ system rate
-    float g = freq;
-    if (osc[v].sampled) g /= osc[v].offsethz;
-    osc[v].phase_inc = (g * osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / MAIN_SAMPLE_RATE);
+  // Compute the frequency in "table samples per system sample"
+  // This works even if table_rate ≠ system rate
+  float g = freq;
+  if (osc[v].sampled) g /= osc[v].offsethz;
+  osc[v].phase_inc = (g * osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / MAIN_SAMPLE_RATE);
 }
 
 float osc_next(int n, float phase_inc) {
-    int table_size = osc[n].table_size;
-    float sample;
+  int table_size = osc[n].table_size;
+  float sample;
     
-    if (osc[n].sampled) {
-      if (direction[n] == 0 && osc[n].phase > table_size) {
-        osc[n].inactive = 1;
-        return 0;
-      }
-      if (direction[n] == 1 && osc[n].phase < 0) {
-        osc[n].inactive = 1;
-        return 0;
-      }
+  if (osc[n].sampled) {
+    if (direction[n] == 0 && osc[n].phase > table_size) {
+      osc[n].inactive = 1;
+      return 0;
     }
+    if (direction[n] == 1 && osc[n].phase < 0) {
+      osc[n].inactive = 1;
+      return 0;
+    }
+  }
 
-    int i = (int)osc[n].phase % table_size;
+  int i = (int)osc[n].phase % table_size;
     
-    if (i < 0) {
-      osc[n].phase = table_size - 1;
-      sample = osc[n].table[table_size - 1];
-      return sample;
-    } else if (i >= table_size) {
-      if (osc[n].sampled) {
-        return 0;
-      }
-      osc[n].phase = 0;
-      sample = osc[n].table[0];
-      return sample;
+  if (i < 0) {
+    osc[n].phase = table_size - 1;
+    sample = osc[n].table[table_size - 1];
+    return sample;
+  } else if (i >= table_size) {
+    if (osc[n].sampled) {
+      return 0;
     }
+    osc[n].phase = 0;
+    sample = osc[n].table[0];
+    return sample;
+  }
 #if 1
-    sample = osc[n].table[i];      
+  sample = osc[n].table[i];      
 #else
-    if (interp[n]) {
-      int i_next = (i + 1) % table_size;
-      float frac = 0.0;
-      frac = osc[n].phase - i;
-      sample = osc[n].table[i] + frac * (osc[n].table[i_next] - osc[n].table[i]);
-    } else {
-      sample = osc[n].table[i];      
-    }
+  if (interp[n]) {
+    int i_next = (i + 1) % table_size;
+    float frac = 0.0;
+    frac = osc[n].phase - i;
+    sample = osc[n].table[i] + frac * (osc[n].table[i_next] - osc[n].table[i]);
+  } else {
+    sample = osc[n].table[i];      
+  }
 #endif
 
-    if (direction[n]) {
-      // backwards
-      osc[n].phase -= phase_inc;
-    } else {
-      // forwards
-      osc[n].phase += phase_inc;
-    }
+  if (direction[n]) {
+    // backwards
+    osc[n].phase -= phase_inc;
+  } else {
+    // forwards
+    osc[n].phase += phase_inc;
+  }
     
-    if (osc[n].sampled) {
-      if (osc[n].looping) {
-        if (direction[n]) {
-          // backwards
-          if (osc[n].phase <= osc[n].loopstart) {
-            osc[n].phase = osc[n].loopend;
-          }
-        } else {
-          // forwards
-          if (osc[n].phase >= osc[n].loopend) {
-            osc[n].phase = osc[n].loopstart;
-          }
+  if (osc[n].sampled) {
+    if (osc[n].looping) {
+      if (direction[n]) {
+        // backwards
+        if (osc[n].phase <= osc[n].loopstart) {
+          osc[n].phase = osc[n].loopend;
         }
       } else {
+        // forwards
+        if (osc[n].phase >= osc[n].loopend) {
+          osc[n].phase = osc[n].loopstart;
+        }
       }
     } else {
-      if (osc[n].phase >= table_size) {
-        osc[n].phase -= table_size;
-      }
     }
+  } else {
+    if (osc[n].phase >= table_size) {
+      osc[n].phase -= table_size;
+    }
+  }
 
-    return sample;
+  return sample;
 }
 
 void osc_set_wt(int voice, int n) {
@@ -308,138 +311,138 @@ void osc_trigger(int voice) {
 }
 
 typedef enum {
-    ADSR_OFF,
-    ADSR_ATTACK,
-    ADSR_DECAY,
-    ADSR_SUSTAIN,
-    ADSR_RELEASE
+  ADSR_OFF,
+  ADSR_ATTACK,
+  ADSR_DECAY,
+  ADSR_SUSTAIN,
+  ADSR_RELEASE
 } adsr_state_t;
 
 typedef struct {
-    float attack_time;   // Attack duration in seconds
-    float decay_time;    // Decay duration in seconds
-    float sustain_level; // Sustain level (0.0 to 1.0)
-    float release_time;  // Release duration in seconds
-    float sample_rate;   // Samples per second (e.g., 44100.0)
+  float attack_time;   // Attack duration in seconds
+  float decay_time;    // Decay duration in seconds
+  float sustain_level; // Sustain level (0.0 to 1.0)
+  float release_time;  // Release duration in seconds
+  float sample_rate;   // Samples per second (e.g., 44100.0)
 
-    adsr_state_t state;  // Current state
-    float value;         // Current envelope output (0.0 to 1.0)
-    float time;          // Time elapsed in current stage (seconds)
-    float save_sustain_level;
+  adsr_state_t state;  // Current state
+  float value;         // Current envelope output (0.0 to 1.0)
+  float time;          // Time elapsed in current stage (seconds)
+  float save_sustain_level;
 } adsr_t;
 
 adsr_t amp_env[VOICE_MAX];
 
 // Initialize the ADSR envelope
 void adsr_init(int n, float attack_time, float decay_time, float sustain_level, float release_time, float sample_rate) {
-    amp_env[n].attack_time = attack_time;
-    amp_env[n].decay_time = decay_time;
-    amp_env[n].sustain_level = sustain_level;
-    amp_env[n].release_time = release_time;
-    amp_env[n].sample_rate = sample_rate;
-    amp_env[n].state = ADSR_OFF;
-    amp_env[n].value = 0.0f;
-    amp_env[n].time = 0.0f;
+  amp_env[n].attack_time = attack_time;
+  amp_env[n].decay_time = decay_time;
+  amp_env[n].sustain_level = sustain_level;
+  amp_env[n].release_time = release_time;
+  amp_env[n].sample_rate = sample_rate;
+  amp_env[n].state = ADSR_OFF;
+  amp_env[n].value = 0.0f;
+  amp_env[n].time = 0.0f;
 }
 
 // Trigger the envelope (start attack)
 void adsr_trigger(int n, float a) {
-    amp_env[n].save_sustain_level = amp[n];
-    amp_env[n].sustain_level = a;
-    amp_env[n].state = ADSR_ATTACK;
-    amp_env[n].value = 0.0f;
-    amp_env[n].time = 0.0f;
+  amp_env[n].save_sustain_level = amp[n];
+  amp_env[n].sustain_level = a;
+  amp_env[n].state = ADSR_ATTACK;
+  amp_env[n].value = 0.0f;
+  amp_env[n].time = 0.0f;
 }
 
 // Release the envelope (start release)
 void adsr_release(int n) {
-    if (amp_env[n].state != ADSR_OFF) {
-        amp_env[n].state = ADSR_RELEASE;
-        amp_env[n].time = 0.0f;
-    }
+  if (amp_env[n].state != ADSR_OFF) {
+    amp_env[n].state = ADSR_RELEASE;
+    amp_env[n].time = 0.0f;
+  }
 }
 
 
 // Compute one sample of the envelope
 float adsr_step(int n) {
-    if (amp_env[n].state == ADSR_OFF) {
-        amp[n] = amp_env[n].save_sustain_level;
-        return 0.0f;
-    }
+  if (amp_env[n].state == ADSR_OFF) {
+    amp[n] = amp_env[n].save_sustain_level;
+    return 0.0f;
+  }
 
-    // Increment time (in seconds)
-    amp_env[n].time += 1.0f / amp_env[n].sample_rate;
-    float t, target;
+  // Increment time (in seconds)
+  amp_env[n].time += 1.0f / amp_env[n].sample_rate;
+  float t, target;
 
-    switch (amp_env[n].state) {
-        case ADSR_ATTACK:
-            if (amp_env[n].attack_time <= 0.0f) {
-                amp_env[n].value = 1.0f;
-                amp_env[n].state = ADSR_DECAY;
-                amp_env[n].time = 0.0f;
-            } else {
-                t = amp_env[n].time / amp_env[n].attack_time;
-                if (t >= 1.0f) {
-                    amp_env[n].value = 1.0f;
-                    amp_env[n].state = ADSR_DECAY;
-                    amp_env[n].time = 0.0f;
-                } else {
-                    amp_env[n].value = t; // Linear ramp from 0 to 1
-                }
-            }
-            break;
+  switch (amp_env[n].state) {
+    case ADSR_ATTACK:
+      if (amp_env[n].attack_time <= 0.0f) {
+        amp_env[n].value = 1.0f;
+        amp_env[n].state = ADSR_DECAY;
+        amp_env[n].time = 0.0f;
+      } else {
+        t = amp_env[n].time / amp_env[n].attack_time;
+        if (t >= 1.0f) {
+          amp_env[n].value = 1.0f;
+          amp_env[n].state = ADSR_DECAY;
+          amp_env[n].time = 0.0f;
+        } else {
+          amp_env[n].value = t; // Linear ramp from 0 to 1
+        }
+      }
+      break;
 
-        case ADSR_DECAY:
-            if (amp_env[n].decay_time <= 0.0f) {
-                amp_env[n].value = amp_env[n].sustain_level;
-                amp_env[n].state = ADSR_SUSTAIN;
-                amp_env[n].time = 0.0f;
-            } else {
-                t = amp_env[n].time / amp_env[n].decay_time;
-                if (t >= 1.0f) {
-                    amp_env[n].value = amp_env[n].sustain_level;
-                    amp_env[n].state = ADSR_SUSTAIN;
-                    amp_env[n].time = 0.0f;
-                } else {
-                    // Linear ramp from 1 to sustain_level
-                    amp_env[n].value = 1.0f - t * (1.0f - amp_env[n].sustain_level);
-                }
-            }
-            break;
-
-        case ADSR_SUSTAIN:
+      case ADSR_DECAY:
+        if (amp_env[n].decay_time <= 0.0f) {
+          amp_env[n].value = amp_env[n].sustain_level;
+          amp_env[n].state = ADSR_SUSTAIN;
+          amp_env[n].time = 0.0f;
+        } else {
+          t = amp_env[n].time / amp_env[n].decay_time;
+          if (t >= 1.0f) {
             amp_env[n].value = amp_env[n].sustain_level;
-            break;
+            amp_env[n].state = ADSR_SUSTAIN;
+            amp_env[n].time = 0.0f;
+          } else {
+            // Linear ramp from 1 to sustain_level
+            amp_env[n].value = 1.0f - t * (1.0f - amp_env[n].sustain_level);
+          }
+        }
+        break;
 
-        case ADSR_RELEASE:
-            if (amp_env[n].release_time <= 0.0f) {
-                amp_env[n].value = 0.0f;
-                amp_env[n].state = ADSR_OFF;
-                amp_env[n].time = 0.0f;
-            } else {
-                t = amp_env[n].time / amp_env[n].release_time;
-                if (t >= 1.0f) {
-                    amp_env[n].value = 0.0f;
-                    amp_env[n].state = ADSR_OFF;
-                    amp_env[n].time = 0.0f;
-                } else {
-                    // Linear ramp from current value to 0
-                    amp_env[n].value = amp_env[n].sustain_level * (1.0f - t);
-                }
-            }
-            break;
+      case ADSR_SUSTAIN:
+        amp_env[n].value = amp_env[n].sustain_level;
+        break;
 
-        default:
+      case ADSR_RELEASE:
+        if (amp_env[n].release_time <= 0.0f) {
+          amp_env[n].value = 0.0f;
+          amp_env[n].state = ADSR_OFF;
+          amp_env[n].time = 0.0f;
+        } else {
+          t = amp_env[n].time / amp_env[n].release_time;
+          if (t >= 1.0f) {
             amp_env[n].value = 0.0f;
             amp_env[n].state = ADSR_OFF;
-            amp[n] = amp_env[n].save_sustain_level;
-    }
+            amp_env[n].time = 0.0f;
+          } else {
+            // Linear ramp from current value to 0
+            amp_env[n].value = amp_env[n].sustain_level * (1.0f - t);
+          }
+        }
+        break;
 
-    // Clamp value to [0.0, 1.0]
-    if (amp_env[n].value < 0.0f) amp_env[n].value = 0.0f;
-    if (amp_env[n].value > 1.0f) amp_env[n].value = 1.0f;
+      default:
+        amp_env[n].value = 0.0f;
+        amp_env[n].state = ADSR_OFF;
+        amp[n] = amp_env[n].save_sustain_level;
+  }
 
-    return amp_env[n].value;
+  // Clamp value to [0.0, 1.0]
+  if (amp_env[n].value < 0.0f) amp_env[n].value = 0.0f;
+  if (amp_env[n].value > 1.0f) amp_env[n].value = 1.0f;
+
+  return amp_env[n].value;
 }
 
 float quantize_bits_int(float v, int bits) {
@@ -473,7 +476,18 @@ float oscope_display_mag = 1.0;
 #define OWWIDTH (SCREENWIDTH/4)
 #define OWHEIGHT (SCREENHEIGHT/2)
 float oscope_wave[OWWIDTH];
+float oscope_min[OWWIDTH];
+float oscope_max[OWWIDTH];
 int oscope_wave_len = 0;
+
+void show_stats(void) {
+  for (int i = 0; i < OWWIDTH; i++) {
+    float avg = (oscope_wave[i] / 2.0 + 0.5) * (float)OWHEIGHT/2.0;
+    float min = (oscope_min[i] / 2.0 + 0.5) * (float)OWHEIGHT/2.0;
+    float max = (oscope_max[i] / 2.0 + 0.5) * (float)OWHEIGHT/2.0;
+    printf("# [%d] min:%g avg:%g max:%g\n", i, min, avg, max);
+  }
+}
 
 float get_oscope_buffer(int *index) {
   if (index == NULL) return 0;
@@ -490,6 +504,9 @@ float get_oscope_buffer(int *index) {
 
 // Stream callback function
 void engine(float *buffer, int num_frames, int num_channels, void *user_data) { // , void *user_data) {
+#if 1
+  inside_audio_callback();
+#endif
 #if 0
   static uint64_t local_sample_acc = 0;
 #endif
@@ -693,11 +710,16 @@ pthread_t udp_thread;
 pthread_t seq_thread;
 pthread_t oscope_thread;
 
-void downsample_block_average(float *source, int source_len, float *dest, int dest_len) {
+void downsample_block_average_min_max(
+  float *source, int source_len, float *dest, int dest_len,
+  float *min, float *max) {
   if (dest_len >= source_len) {
     // If dest is same size or larger, just copy
     for (int i = 0; i < dest_len && i < source_len; i++) {
+      puts("####100####\n");
       dest[i] = source[i];
+      if (min) min[i] = source[i];
+      if (max) max[i] = source[i];
     }
     return;
   }
@@ -715,14 +737,23 @@ void downsample_block_average(float *source, int source_len, float *dest, int de
     float sum = 0.0;
     int count = 0;
         
+    float thismin = source[start_idx];
+    float thismax = thismin;
     // Average all values in this block
     for (int j = start_idx; j <= end_idx; j++) {
       sum += source[j];
       count++;
+      if (source[j] < thismin) thismin = source[j];
+      if (source[j] > thismin) thismax = source[j];
     }
-        
+    if (min) min[i] = thismin;
+    if (max) max[i] = thismax;
     dest[i] = (count > 0) ? sum / count : 0.0;
   }
+}
+
+void downsample_block_average(float *source, int source_len, float *dest, int dest_len) {
+  downsample_block_average_min_max(source, source_len, dest, dest_len, NULL, NULL);
 }
 
 int wire(char *line, int *this_voice, int output) {
@@ -764,9 +795,28 @@ int wire(char *line, int *this_voice, int output) {
     } else if (c == ':') {
       t = line[p++];
       switch (t) {
+        case '?':
+          {
+            sequencer_stats_t s = sequencer_get_stats();
+            printf("# beat position %g\n", sequencer_get_beat_position());
+            printf("# bpm:%g beat:%g count:%d elapsed:%ld running:%d\n",
+              s.current_bpm, s.current_beat_position, s.beat_count, s.elapsed_time_ms, s.running);
+          }
+          break;
+        case '+':
+          sequencer_start(120);
+          break;
+        case '-':
+          sequencer_stop();
+          break;
         case 'q':
           more = 0;
           r = -1;
+          break;
+        case 'S':
+          if (output) {
+            show_stats();
+          }
           break;
         case 's':
           if (output) {
@@ -1005,7 +1055,8 @@ int wire(char *line, int *this_voice, int output) {
           avg = ttl / (float)size;
           printf("# w%d addr:%p size:%d min:%g max:%g ttl:%g avg:%g zero:%d crossing:%d\n",
             n, table, size, min, max, ttl, avg, zero, crossing);
-          downsample_block_average(table, size, oscope_wave, OWWIDTH);
+          //downsample_block_average(table, size, oscope_wave, OWWIDTH);
+          downsample_block_average_min_max(table, size, oscope_wave, OWWIDTH, oscope_min, oscope_max);
           oscope_wave_len = OWWIDTH;
         } else {
           more = 0;
@@ -1032,7 +1083,8 @@ int wire(char *line, int *this_voice, int output) {
           oscope_wave_len = 0;
           float *table = osc[voice].table;
           int size = osc[voice].table_size;
-          downsample_block_average(table, size, oscope_wave, OWWIDTH);
+          //downsample_block_average(table, size, oscope_wave, OWWIDTH);
+          downsample_block_average_min_max(table, size, oscope_wave, OWWIDTH, oscope_min, oscope_max);
           oscope_wave_len = OWWIDTH;
         } else {
           more = 0;
@@ -1564,6 +1616,10 @@ void *udp(void *arg) {
 
 void *seq(void *arg) {
   pthread_setname_np(pthread_self(), "skred-seq");
+  puts("##0##\n");
+  fflush(stdout);
+  timing_thread_loop();
+  puts("##1##\n");
   while (seq_running) {
     //futex_wait(&signal_version, 1);
     sleep(1);
@@ -1664,11 +1720,16 @@ void *oscope(void *arg) {
     BeginDrawing();
     ClearBackground(BLACK);
     for (int i = 0; i < oscope_wave_len; i++) {
-      float n = oscope_wave[i] / 2.0 + 0.5;
-      dot.x = (float)i;
-      dot.y = n * (float)OWHEIGHT/2.0;
-      DrawLine(i, dot.y, i, OWHEIGHT/4.0, green1);
-      DrawCircleV(dot, 1, green0);
+      float avg = (oscope_wave[i] / 2.0 + 0.5) * (float)OWHEIGHT/2.0;
+      float min = (oscope_min[i] / 2.0 + 0.5) * (float)OWHEIGHT/2.0;
+      float max = (oscope_max[i] / 2.0 + 0.5) * (float)OWHEIGHT/2.0;
+      dot.x = i;
+      DrawLine(i, max, i, OWHEIGHT/4.0, green1);
+      DrawLine(i, min, i, OWHEIGHT/4.0, green1);
+      //DrawLine(i, avg, i, OWHEIGHT/4.0, green1);
+      dot.y = max; DrawCircleV(dot, 1, green0);
+      //dot.y = avg; DrawCircleV(dot, 1, green0);
+      dot.y = min; DrawCircleV(dot, 1, green0);
     }
     // find starting point for display
     int j = find_starting_point(buffer_snap, sw);

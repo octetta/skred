@@ -33,7 +33,10 @@ sok1 : sok1.o $(ELIB)
 skred.o: skred.c
 	gcc -DUSE_RAYLIB $(RLINC) $(COPTS) -c $<
 
-skred : skred.o $(ELIB)
+seq.o: seq.c
+	gcc $(COPTS) -c $<
+
+skred : skred.o seq.o $(ELIB)
 	gcc -DUSE_RAYLIB $(RLINC) $(RLLIB) $(COPTS) $^ -o $@ $(LIB) -lraylib
 
 sok1.o: sok1.c	
