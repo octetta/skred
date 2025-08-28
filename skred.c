@@ -22,6 +22,8 @@ int debug = 0;
 #define SCREENWIDTH (800)
 #define SCREENHEIGHT (480)
 
+#define OSCOPE_LEN (MAIN_SAMPLE_RATE / 2)
+
 // inspired by AMY :)
 enum {
   EXWAVESINE,     // 0
@@ -143,6 +145,7 @@ void wt_free(void);
 double freq[VOICE_MAX];
 double note[VOICE_MAX];
 float sample[VOICE_MAX];
+float samples[VOICE_MAX][OSCOPE_LEN];
 float hold[VOICE_MAX];
 double amp[VOICE_MAX];
 double panl[VOICE_MAX];
@@ -180,6 +183,31 @@ typedef struct {
 } osc_t;
 
 osc_t osc[VOICE_MAX];
+
+enum {
+  OSCOPE_TRIGGER_BOTH,
+  OSCOPE_TRIGGER_RISING,
+  OSCOPE_TRIGGER_FALLING,
+};
+
+int oscope_trigger = OSCOPE_TRIGGER_RISING;
+
+int oscope_running = 0;
+int oscope_cross = 0;
+int oscope_len = OSCOPE_LEN;
+float oscope_bufferl[OSCOPE_LEN];
+float oscope_bufferr[OSCOPE_LEN];
+int oscope_buffer_pointer = 0;
+float oscope_display_pointer = 0.0;
+float oscope_display_inc = 1.0;
+float oscope_display_mag = 1.0;
+#define OWWIDTH (SCREENWIDTH/4)
+#define OWHEIGHT (SCREENHEIGHT/2)
+float oscope_wave[OWWIDTH];
+float oscope_min[OWWIDTH];
+float oscope_max[OWWIDTH];
+int oscope_wave_len = 0;
+int oscope_channel = -1; // -1 means all
 
 float osc_get_phase_inc(int v, float freq) {
   float g = freq;
@@ -455,30 +483,6 @@ int main_running = 1;
 int udp_running = 1;
 int seq_running = 1;
 
-enum {
-  OSCOPE_TRIGGER_BOTH,
-  OSCOPE_TRIGGER_RISING,
-  OSCOPE_TRIGGER_FALLING,
-};
-
-int oscope_trigger = OSCOPE_TRIGGER_RISING;
-
-int oscope_running = 0;
-int oscope_cross = 0;
-#define OSCOPE_LEN (44100 / 2)
-int oscope_len = OSCOPE_LEN;
-float oscope_bufferl[OSCOPE_LEN];
-float oscope_bufferr[OSCOPE_LEN];
-int oscope_buffer_pointer = 0;
-float oscope_display_pointer = 0.0;
-float oscope_display_inc = 1.0;
-float oscope_display_mag = 1.0;
-#define OWWIDTH (SCREENWIDTH/4)
-#define OWHEIGHT (SCREENHEIGHT/2)
-float oscope_wave[OWWIDTH];
-float oscope_min[OWWIDTH];
-float oscope_max[OWWIDTH];
-int oscope_wave_len = 0;
 
 void show_stats(void) {
   for (int i = 0; i < OWWIDTH; i++) {
@@ -560,15 +564,23 @@ void engine(float *buffer, int num_frames, int num_channels, void *user_data) { 
           panl[n] = (1.0 - q) / 2.0;
           panr[n] = (1.0 + q) / 2.0;          
         }
-        samplel += sample[n] * panl[n];
-        sampler += sample[n] * panr[n];
+        float left = sample[n] * panl[n];
+        float right = sample[n] * panr[n];
+        samplel += left;
+        sampler += right;
+        if (oscope_channel == n) {
+          oscope_bufferl[oscope_buffer_pointer] = left;
+          oscope_bufferr[oscope_buffer_pointer] = right;  
+        }
       }
     }
     // Write to all channels
     buffer[i * num_channels + 0] = samplel;
     buffer[i * num_channels + 1] = sampler;
-    oscope_bufferl[oscope_buffer_pointer] = samplel;
-    oscope_bufferr[oscope_buffer_pointer] = sampler;
+    if (oscope_channel < 0) {
+      oscope_bufferl[oscope_buffer_pointer] = samplel;
+      oscope_bufferr[oscope_buffer_pointer] = sampler;      
+    }
     oscope_buffer_pointer++;
     if (oscope_buffer_pointer >= oscope_len) oscope_buffer_pointer = 0;
   }
@@ -834,9 +846,26 @@ int wire(char *line, int *this_voice, int output) {
             if (peek == 'x') {
               p++;
               oscope_cross = 1;
-            } else if (peek == '-') {
+            } else if (peek == 'q') {
               p++;
               oscope_running = 0;
+            } else {
+              n = parse_int(&line[p], &valid, &next);
+              if (!valid) {
+                more = 0;
+                r = ERR_EXPECTED_INT;
+              } else {
+                p += next-1;
+                if (n < 0) {
+                  oscope_channel = -1;
+                } else {
+                  if (n < VOICE_MAX) {
+                    oscope_channel = n;
+                  } else {
+                    // some kind of error message
+                  }
+                }
+              }
             }
           }
           break;
@@ -1675,6 +1704,7 @@ void *oscope(void *arg) {
   int show_r = 1;
   Color tRed = {255, 0, 0, 128};
   Color tGreen = {0, 255, 0, 128};
+  Color tBlue = {0, 0, 255, 128};
   Color green0 = {0, 255, 0, 128};
   Color green1 = {0, 128, 0, 128};
   while (oscope_running && !WindowShouldClose()) {
@@ -1714,7 +1744,8 @@ void *oscope(void *arg) {
       osd_dirty++;
     }
     if (osd_dirty) {
-      sprintf(osd, "x:%g y:%g a:%g mag:%g inc:%g", x, y, a, oscope_display_mag, oscope_display_inc);
+      sprintf(osd, "x:%g y:%g a:%g mag:%g inc:%g ch:%d",
+        x, y, a, oscope_display_mag, oscope_display_inc, oscope_channel);
     }
     int buffer_snap = oscope_buffer_pointer;
     BeginDrawing();
@@ -1733,7 +1764,7 @@ void *oscope(void *arg) {
     }
     // find starting point for display
     int j = find_starting_point(buffer_snap, sw);
-    DrawText(osd, 10, 10, 20, DARKGRAY);
+    DrawText(osd, 10, SCREENHEIGHT-20, 20, YELLOW);
     rlPushMatrix();
     rlTranslatef(0.0, y, 0.0); // x,y,z
     rlScalef(x,oscope_display_mag,1.0);
@@ -1749,7 +1780,7 @@ void *oscope(void *arg) {
         }
         if (show_l) {
           dot.y = oscope_bufferl[j] * h0 * oscope_display_mag;
-          DrawCircleV(dot, 1, tGreen);
+          DrawCircleV(dot, 1, tBlue);
         }
         if (show_r) {
           dot.y = oscope_bufferr[j] * h0 * oscope_display_mag;
@@ -1762,6 +1793,7 @@ void *oscope(void *arg) {
     rlPopMatrix();
     EndDrawing();
   }
+  CloseWindow();
   oscope_running = 0;
 #endif
   if (debug) printf("# oscope stopping\n");
