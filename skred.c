@@ -728,7 +728,7 @@ void downsample_block_average_min_max(
   if (dest_len >= source_len) {
     // If dest is same size or larger, just copy
     for (int i = 0; i < dest_len && i < source_len; i++) {
-      puts("####100####\n");
+      //puts("####100####\n");
       dest[i] = source[i];
       if (min) min[i] = source[i];
       if (max) max[i] = source[i];
@@ -987,10 +987,10 @@ int wire(char *line, int *this_voice, int output) {
         r = ERR_EXPECTED_INT;
       } else {
         if (n < 0) {
+          pmod_osc[voice] = -1;
+          continue;
         } else if (n >= 0 && n < VOICE_MAX) {
           pmod_osc[voice] = n;
-        } else {
-          pmod_osc[voice] = -1;
         }
         char peek = line[p+1];
         if (peek == ',') {
@@ -1021,6 +1021,7 @@ int wire(char *line, int *this_voice, int output) {
     } else if (c == 'F') {
       char peek = line[p];
       if (peek == '-') {
+        fmod_osc[voice] = -1;
         p++;
       } else {
         n = parse_int(&line[p], &valid, &next);
@@ -1645,10 +1646,10 @@ void *udp(void *arg) {
 
 void *seq(void *arg) {
   pthread_setname_np(pthread_self(), "skred-seq");
-  puts("##0##\n");
+  //puts("##0##\n");
   fflush(stdout);
   timing_thread_loop();
-  puts("##1##\n");
+  //puts("##1##\n");
   while (seq_running) {
     //futex_wait(&signal_version, 1);
     sleep(1);
@@ -1660,12 +1661,12 @@ void *seq(void *arg) {
 int find_starting_point(int buffer_snap, int sw) {
   int j;
   j = buffer_snap - sw;
-  float t0 = oscope_bufferl[j];
+  float t0 = (oscope_bufferl[j] + oscope_bufferr[j]) / 2.0;
   int i = j-1;
   int c = 1;
   while (c < OSCOPE_LEN) {
     if (i < 0) i = OSCOPE_LEN-1;
-    float t1 = oscope_bufferl[i];
+    float t1 = (oscope_bufferl[i] + oscope_bufferr[i]) / 2.0;
     if (t0 == 0.0 && t1 == 0.0) {
       // zero
     } else if (t0 < 0 && t1 > 0) break;
