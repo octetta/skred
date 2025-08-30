@@ -12,6 +12,7 @@
 #include "sokol_audio.h"
 
 int debug = 0;
+int trace = 0;
 
 #define HISTORY_FILE ".sok1_history"
 #define MAIN_SAMPLE_RATE (44100)
@@ -22,7 +23,7 @@ int debug = 0;
 #define SCREENWIDTH (800)
 #define SCREENHEIGHT (480)
 
-#define OSCOPE_LEN (MAIN_SAMPLE_RATE / 2)
+#define OSCOPE_LEN (MAIN_SAMPLE_RATE)
 
 // inspired by AMY :)
 enum {
@@ -193,7 +194,6 @@ enum {
 int oscope_trigger = OSCOPE_TRIGGER_RISING;
 
 int oscope_running = 0;
-int oscope_cross = 0;
 int oscope_len = OSCOPE_LEN;
 float oscope_bufferl[OSCOPE_LEN];
 float oscope_bufferr[OSCOPE_LEN];
@@ -328,7 +328,7 @@ void osc_set_wt(int voice, int n) {
 }
 
 void osc_trigger(int voice) {
-  if (osc[voice].sampled) {
+  if (1 || osc[voice].sampled) {
     if (direction[voice]) {
       osc[voice].phase = osc[voice].table_size - 1;
     } else {
@@ -681,6 +681,8 @@ enum {
   ERR_PAN_OUT_OF_RANGE,
   ERR_INVALID_DELAY,
   ERR_INVALID_MODULATOR,
+  ERR_UNKNOWN_FUNC,
+  ERR_UNKNOWN_SYS,
 };
 
 void show_voice(int v, char c) {
@@ -768,6 +770,66 @@ void downsample_block_average(float *source, int source_len, float *dest, int de
   downsample_block_average_min_max(source, source_len, dest, dest_len, NULL, NULL);
 }
 
+enum {
+  WR_NULL,
+  WR_ERR,
+  WR_SYS,
+  WR_VOICE,
+  WR_FREQ,
+  WR_AMP,
+  WR_TRIGGER,
+  WR_VELOCITY,
+  WR_MUTE,
+  WR_PMOD,
+  WR_MIDI,
+  WR_FMOD,
+  WR_WAVE,
+  WR_LOOP,
+  WR_DIR,
+  WR_INTER,
+  WR_PAN,
+  WR_ADSR,
+  WR_DECI,
+  WR_QUANT,
+  WR_RESET,
+  //
+  WR_UNKNOWN
+};
+
+char *_wr_func_str[WR_UNKNOWN+1] = {
+  [WR_NULL] = "null",
+  [WR_ERR] = "err",
+  [WR_SYS] = "sys",
+  [WR_VOICE] = "voice",
+  [WR_FREQ] = "freq",
+  [WR_AMP] = "amp",
+  [WR_TRIGGER] = "trigger",
+  [WR_VELOCITY] = "velocity",
+  [WR_MUTE] = "mute",
+  [WR_PMOD] = "pmod",
+  [WR_MIDI] = "midi",
+  [WR_FMOD] = "fmod",
+  [WR_WAVE] = "wave",
+  [WR_LOOP] = "loop",
+  [WR_DIR] = "dir",
+  [WR_INTER] = "inter",
+  [WR_PAN] = "pan",
+  [WR_ADSR] = "adsr",
+  [WR_DECI] = "deci",
+  [WR_QUANT] = "quant",
+  [WR_RESET] = "reset",
+  [WR_UNKNOWN] = "unknown",
+};
+
+char *wr_func_str(int n) {
+  if (n >= 0 && n <= WR_UNKNOWN) {
+    if (_wr_func_str[n]) {
+      return _wr_func_str[n];
+    }
+  }
+  return "no-string";
+}
+
 int wire(char *line, int *this_voice, int output) {
   int p = 0;
   int more = 1;
@@ -776,9 +838,11 @@ int wire(char *line, int *this_voice, int output) {
   int valid;
   int n, na[8];
   double f, fa[8];
+  int func = WR_NULL;
   int voice = 0;
   if (this_voice) voice = *this_voice;
   while (more) {
+    func = WR_NULL;
     valid = 1;
     char c = line[p++];
     char t = '\0';
@@ -798,14 +862,17 @@ int wire(char *line, int *this_voice, int output) {
         r = ERR_EXPECTED_INT;
       } else {
         p += next-1;
-        if (n >= 0 && n < VOICE_MAX) voice = n;
-        else {
+        if (n >= 0 && n < VOICE_MAX) {
+          voice = n;
+          func = WR_VOICE;
+        } else {
           more = 0;
           r = ERR_INVALID_VOICE;
         }
       }
     } else if (c == ':') {
       t = line[p++];
+      func = WR_SYS;
       switch (t) {
         case '?':
           {
@@ -836,6 +903,17 @@ int wire(char *line, int *this_voice, int output) {
             show_audio();
           }
           break;
+        case 't':
+          {
+            char peek = line[p];
+            if (peek == '0') {
+              trace = 0;
+            } else {
+              trace = 1;
+            }
+            p++;
+          }
+          break;
         case 'o':
           if (oscope_running == 0) {
             oscope_running = 1;
@@ -845,7 +923,7 @@ int wire(char *line, int *this_voice, int output) {
             char peek = line[p];
             if (peek == 'x') {
               p++;
-              oscope_cross = 1;
+              //oscope_cross = 1;
             } else if (peek == 'q') {
               p++;
               oscope_running = 0;
@@ -870,34 +948,33 @@ int wire(char *line, int *this_voice, int output) {
           }
           break;
         case 'l':
-          {
-            n = parse_int(&line[p], &valid, &next);
-            if (!valid) {
-              more = 0;
-              r = ERR_EXPECTED_INT;
-            } else {
-              p += next-1;
-              if (n >= 0) {
-                char file[1024];
-                sprintf(file, "exp%d.patch", n);
-                FILE *in = fopen(file, "r");
-                if (in) {
-                  char line[1024];
-                  while (fgets(line, sizeof(line), in) != NULL) {
-                    size_t len = strlen(line);
-                    if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
-                    printf("%s\n", line);
-                    int temp_voice = voice;
-                    wire(line, &temp_voice, 0);
-                  }
-                  fclose(in);
+          n = parse_int(&line[p], &valid, &next);
+          if (!valid) {
+            more = 0;
+            r = ERR_EXPECTED_INT;
+          } else {
+            p += next-1;
+            if (n >= 0) {
+              char file[1024];
+              sprintf(file, "exp%d.patch", n);
+              FILE *in = fopen(file, "r");
+              if (in) {
+                char line[1024];
+                while (fgets(line, sizeof(line), in) != NULL) {
+                  size_t len = strlen(line);
+                  if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
+                  if (output) printf("# %s\n", line);
+                  int temp_voice = voice;
+                  wire(line, &temp_voice, trace);
                 }
-                hide[voice] = 0;
+                fclose(in);
               }
+              hide[voice] = 0;
             }
           }
           break;
         default:
+          func = WR_ERR;
           more = 0;
           r = ERR_INVALID_COLON;
           break;
@@ -910,11 +987,27 @@ int wire(char *line, int *this_voice, int output) {
       } else {
         p += next-1;
         if (f > 0 && f < (double)MAIN_SAMPLE_RATE) {
+          func = WR_FREQ;
           freq[voice] = f;
           osc_set_freq(voice, f);
         } else {
           more = 0;
           r = ERR_FREQUENCY_OUT_OF_RANGE;
+        }
+      }
+    } else if (c == 'S') {
+      n = parse_int(&line[p], &valid, &next);
+      if (!valid) {
+        more = 0;
+        r = ERR_EXPECTED_INT;
+      } else {
+        p += next-1;
+        if (n >= 0 && n < VOICE_MAX) {
+          func = WR_RESET;
+          reset_voice(n);
+        } else {
+          func = WR_RESET;
+          init_voice();
         }
       }
     } else if (c == 'a') {
@@ -927,12 +1020,14 @@ int wire(char *line, int *this_voice, int output) {
         if (f >= 0) {
           use_adsr[voice] = 0;
           amp[voice] = f * AFACTOR;
+          func = WR_AMP;
         } else {
           more = 0;
           r = ERR_AMPLITUDE_OUT_OF_RANGE;
         }
       }
     } else if (c == 'T') {
+      func = WR_TRIGGER;
       osc_trigger(voice);
     } else if (c == 'l') {
       char peek = line[p];
@@ -944,6 +1039,7 @@ int wire(char *line, int *this_voice, int output) {
           more = 0;
           r = ERR_EXPECTED_FLOAT;
         } else {
+          func = WR_VELOCITY;
           p += next-1;
           if (f == 0) {
             adsr_release(voice);
@@ -974,9 +1070,12 @@ int wire(char *line, int *this_voice, int output) {
         r = ERR_EXPECTED_INT;
       } else {
         p += next-1;
+        func = WR_MUTE;
         if (n == 0) {
+          //printf("(v%dm0)", voice);
           hide[voice] = 0;
         } else {
+          //printf("(v%dm1)", voice);
           hide[voice] = 1;
         }
       }
@@ -986,6 +1085,7 @@ int wire(char *line, int *this_voice, int output) {
         more = 0;
         r = ERR_EXPECTED_INT;
       } else {
+        func = WR_PMOD;
         if (n < 0) {
           pmod_osc[voice] = -1;
           continue;
@@ -1012,6 +1112,7 @@ int wire(char *line, int *this_voice, int output) {
         more = 0;
         r = ERR_EXPECTED_FLOAT;
       } else {
+        func = WR_MIDI;
         float g = midi2hz(f);
         p += next-1;
         note[voice] = f;
@@ -1022,38 +1123,34 @@ int wire(char *line, int *this_voice, int output) {
       char peek = line[p];
       if (peek == '-') {
         fmod_osc[voice] = -1;
+        func = WR_FMOD;
         p++;
       } else {
         n = parse_int(&line[p], &valid, &next);
         if (!valid) {
           more = 0;
           r = ERR_EXPECTED_INT;
-        } else {
-          if (n < 0) {
-            fmod_osc[voice] = -1;
-          } else {
-            if (n < VOICE_MAX) {
-              fmod_osc[voice] = n;
-              char peek = line[p+1];
-              if (peek == ',') {
-                p++;
-                p++;
-                f = parse_double(&line[p], &valid, &next);
-                if (!valid) {
-                  more = 0;
-                  r = ERR_EXPECTED_FLOAT;
-                } else {
-                  fmod_depth[voice] = f;
-                  p += next-1;
-                }
-              }
-            } else {
-              more = 0;
-              r = ERR_INVALID_MODULATOR;
-            }
+        } else if (n < VOICE_MAX) {
+          func = WR_FMOD;
+          fmod_osc[voice] = n;
+          char peek = line[p+1];
+          if (peek == ',') {
             p++;
+            p++;
+            f = parse_double(&line[p], &valid, &next);
+            if (!valid) {
+              more = 0;
+              r = ERR_EXPECTED_FLOAT;
+            } else {
+              fmod_depth[voice] = f;
+              p += next-1;
+            }
           }
+        } else {
+          more = 0;
+          r = ERR_INVALID_MODULATOR;
         }
+        p++;
       }
     } else if (c == 'W') {
       n = parse_int(&line[p], &valid, &next);
@@ -1083,7 +1180,7 @@ int wire(char *line, int *this_voice, int output) {
             }
           }
           avg = ttl / (float)size;
-          printf("# w%d addr:%p size:%d min:%g max:%g ttl:%g avg:%g zero:%d crossing:%d\n",
+          printf("# w%d addr:%p size:%d min:%g max:%g ttl:%g avg:%g 0:%d x:%d\n",
             n, table, size, min, max, ttl, avg, zero, crossing);
           //downsample_block_average(table, size, oscope_wave, OWWIDTH);
           downsample_block_average_min_max(table, size, oscope_wave, OWWIDTH, oscope_min, oscope_max);
@@ -1101,6 +1198,7 @@ int wire(char *line, int *this_voice, int output) {
       } else {
         p += next-1;
         if (n >= 0 && n < EXWAVEMAX) {
+          func = WR_WAVE;
           osc_set_wt(voice, n);
           char peek = line[p];
           if (peek == '+') {
@@ -1123,25 +1221,28 @@ int wire(char *line, int *this_voice, int output) {
       }
     } else if (c == 'B') {
       c = line[p++];
-      if (c == '0') osc[voice].looping = 0;
-      else if (c == '1') osc[voice].looping = 1;
-      else {
+      if (c == '0' || c == '1') {
+        func = WR_LOOP;
+        osc[voice].looping = c - '0';
+      } else {
         more = 0;
         r = ERR_INVALID_LOOPING;
       }
     } else if (c == 'b') {
       c = line[p++];
-      if (c == '0') direction[voice] = 0;
-      else if (c == '1') direction[voice] = 1;
-      else {
+      if (c == '0' || c == '1') {
+        func = WR_DIR;
+        direction[voice] = '0' - c;
+      } else {
         more = 0;
         r = ERR_INVALID_DIRECTION;
       }
     } else if (c == 'I') {
       c = line[p++];
-      if (c == '0') interp[voice] = 0;
-      else if (c == '1') interp[voice] = 1;
-      else {
+      if (c == '0' || c == '1') {
+        func = WR_INTER;
+        interp[voice] = '0' - c;
+      } else {
         more = 0;
         r = ERR_INVALID_INTERPOLATE;
       }
@@ -1151,6 +1252,7 @@ int wire(char *line, int *this_voice, int output) {
         more = 0;
         r = ERR_EXPECTED_FLOAT;
       } else {
+        func = WR_PAN;
         p += next-1;
         if (f >= -1.0 && f <= 1.0) {
           pan[voice] = f;
@@ -1178,6 +1280,7 @@ int wire(char *line, int *this_voice, int output) {
     } else if (c == 'A') {
       for (int s = 0; s < 4; s++) {
         f = parse_double(&line[p], &valid, &next);
+        func = WR_ADSR;
         if (!valid) {
           more = 0;
           r = ERR_EXPECTED_FLOAT;
@@ -1207,6 +1310,7 @@ int wire(char *line, int *this_voice, int output) {
         more = 0;
         r = ERR_EXPECTED_INT;
       } else {
+        func = WR_DECI;
         decimate[voice] = n;
       }
     } else if (c == 'q') {
@@ -1215,6 +1319,7 @@ int wire(char *line, int *this_voice, int output) {
         more = 0;
         r = ERR_EXPECTED_INT;
       } else {
+        func = WR_QUANT;
         quantize[voice] = n;
       }
     } else if (c == '?') {
@@ -1228,6 +1333,11 @@ int wire(char *line, int *this_voice, int output) {
           if (output) show_voice(i, t);
         }
       } else if (output) show_voice(voice, ' ');
+    } else {
+      func = WR_ERR;
+    }
+    if (output && trace) {
+      printf("# %s\n", wr_func_str(func));
     }
   }
   if (this_voice) *this_voice = voice;
@@ -1299,6 +1409,8 @@ int main(int argc, char *argv[]) {
         case ERR_PAN_OUT_OF_RANGE: s = "pan out of range"; break;
         case ERR_INVALID_DELAY: s = "invalid delay"; break;
         case ERR_INVALID_MODULATOR: s = "invalid modulator"; break;
+        case ERR_UNKNOWN_FUNC: s = "unknown func"; break;
+        case ERR_UNKNOWN_SYS: s = "unknown sys"; break;
         default: s = "unknown return"; break;
       }
       printf("# %d %s \n", n, s);
@@ -1677,6 +1789,8 @@ int find_starting_point(int buffer_snap, int sw) {
   return i;
 }
 
+#define MAG_X_INC (0.05)
+
 void *oscope(void *arg) {
   pthread_setname_np(pthread_self(), "skred-oscope");
 #ifndef USE_RAYLIB
@@ -1693,22 +1807,25 @@ void *oscope(void *arg) {
   InitWindow(screenWidth, screenHeight, "skred-oscope");
   Vector2 dot = { (float)screenWidth/2, (float)screenHeight/2 };
   SetTargetFPS(25);
-  float sw = (float)screenWidth;
   float sh = (float)screenHeight;
   float h0 = screenHeight / 2.0;
   char osd[1024] = "?";
   int osd_dirty = 1;
   float y = h0;
-  float x = 1.0;
+  float mag_x = 1.0;
+  float sw = (float)screenWidth;
   float a = 1.0;
   int show_l = 1;
   int show_r = 1;
-  Color tRed = {255, 0, 0, 128};
+  Color color_left = {0, 255, 255, 128};
+  Color color_right = {255, 255, 0, 128};
   Color tGreen = {0, 255, 0, 128};
-  Color tBlue = {0, 0, 255, 128};
   Color green0 = {0, 255, 0, 128};
   Color green1 = {0, 128, 0, 128};
   while (oscope_running && !WindowShouldClose()) {
+    if (mag_x <= 0) mag_x = MAG_X_INC;
+    sw = (float)screenWidth / mag_x;
+    if (sw >= (OSCOPE_LEN/2)) sw = (float)(OSCOPE_LEN/2);
     int shifted = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
     if (IsKeyDown(KEY_ONE)) {
       if (show_l == 1) show_l = 0; else show_l = 1;
@@ -1728,12 +1845,12 @@ void *oscope(void *arg) {
     }
     if (IsKeyDown(KEY_RIGHT)) {
       //oscope_display_inc += 0.1;
-      x += 0.1;
+      mag_x += MAG_X_INC;
       osd_dirty++;
     }
     if (IsKeyDown(KEY_LEFT)) {
       //oscope_display_inc -= 0.1;
-      x -= 0.1;
+      mag_x -= MAG_X_INC;
       osd_dirty++;
     }
     if (IsKeyDown(KEY_UP)) {
@@ -1745,8 +1862,8 @@ void *oscope(void *arg) {
       osd_dirty++;
     }
     if (osd_dirty) {
-      sprintf(osd, "x:%g y:%g a:%g mag:%g inc:%g ch:%d",
-        x, y, a, oscope_display_mag, oscope_display_inc, oscope_channel);
+      sprintf(osd, "mag_x:%g sw:%g y:%g a:%g mag:%g inc:%g ch:%d",
+        mag_x, sw, y, a, oscope_display_mag, oscope_display_inc, oscope_channel);
     }
     int buffer_snap = oscope_buffer_pointer;
     BeginDrawing();
@@ -1764,33 +1881,46 @@ void *oscope(void *arg) {
       dot.y = min; DrawCircleV(dot, 1, green0);
     }
     // find starting point for display
-    int j = find_starting_point(buffer_snap, sw);
-    DrawText(osd, 10, SCREENHEIGHT-20, 20, YELLOW);
+    //int start = find_starting_point(buffer_snap, OSCOPE_LEN/2);
+    int start = find_starting_point(buffer_snap, screenWidth);
+    int actual = 0;
+    float xoffset = (float)SCREENWIDTH / 8.0;
+    //DrawLine(xoffset * oscope_display_inc, -sh, xoffset * oscope_display_inc, sh, WHITE);
+    start -= xoffset;
+    DrawText(osd, 10, SCREENHEIGHT-20, 20, GREEN);
     rlPushMatrix();
     rlTranslatef(0.0, y, 0.0); // x,y,z
-    rlScalef(x,oscope_display_mag,1.0);
-      DrawLine(j, -sh, j, sh, RED);
+    rlScalef(mag_x,oscope_display_mag,1.0);
+      DrawLine(0, 0, sw, 0, DARKGREEN);
       for (float i = 0.0; i < sw; i++) {
-        if (j >= oscope_len) j = 0;
+        if (start >= oscope_len) start = 0;
+        actual = start;
         dot.x = i;
-        if (j == 0) {
+#if 1
+        if (i == start) {
+          DrawLine(dot.x, -sh, dot.x, sh, PURPLE);
+        }
+        if (actual == 0) {
           DrawLine(dot.x, -sh, dot.x, sh, YELLOW);
         }
-        if (j == buffer_snap) {
+        if (actual == buffer_snap) {
           DrawLine(dot.x, -sh, dot.x, sh, BLUE);
         }
+        if (actual >= (OSCOPE_LEN-1)) {
+          DrawLine(dot.x, -sh, dot.x, sh, RED);
+        }
+#endif
         if (show_l) {
-          dot.y = oscope_bufferl[j] * h0 * oscope_display_mag;
-          DrawCircleV(dot, 1, tBlue);
+          dot.y = oscope_bufferl[actual] * h0 * oscope_display_mag;
+          DrawCircleV(dot, 1, color_right);
         }
         if (show_r) {
-          dot.y = oscope_bufferr[j] * h0 * oscope_display_mag;
-          DrawCircleV(dot, 1, tRed);
+          dot.y = oscope_bufferr[actual] * h0 * oscope_display_mag;
+          DrawCircleV(dot, 1, color_left);
         }
-        j++;
+        start++;
+        actual++;
       }
-      //oscope_display_pointer += (sw / oscope_display_inc);
-      //if (oscope_display_pointer > oscope_len) oscope_display_pointer = 0;
     rlPopMatrix();
     EndDrawing();
   }
