@@ -160,6 +160,9 @@ float fmod_depth[VOICE_MAX];
 float pmod_depth[VOICE_MAX];
 int hide[VOICE_MAX];
 int decimate[VOICE_MAX];
+int decicount[VOICE_MAX];
+float decihold[VOICE_MAX];
+float decittl[VOICE_MAX];
 int quantize[VOICE_MAX];
 int direction[VOICE_MAX];
 
@@ -540,9 +543,17 @@ void engine(float *buffer, int num_frames, int num_channels, void *user_data) { 
       } else {
         f = osc_next(n, osc[n].phase_inc);
       }
-      if (decimate[n] > 1) {
-        if ((sample_count % decimate[n]) == 1) sample[n] = f;
+      if (decimate[n]) {
+        decittl[n] += f;
+        sample[n] = decihold[n];
+        decicount[n]++;
+        if (decicount[n] >= decimate[n]) {
+          decicount[n] = 0;
+          decihold[n] = decittl[n] / (float)decimate[n];
+          decittl[n] = 0;
+        }
       } else {
+        decihold[n] = f;
         sample[n] = f;
       }
       if (quantize[n]) {
@@ -684,6 +695,7 @@ enum {
   ERR_UNKNOWN_SYS,
   ERR_INVALID_TRACE,
   ERR_INVALID_DEBUG,
+  ERR_INVALID_MUTE,
 };
 
 void show_voice(int v, char c) {
@@ -1174,12 +1186,12 @@ int wire(char *line, int *this_voice, int output) {
         r = ERR_EXPECTED_INT;
       } else {
         p += next-1;
-        if (n == 0) {
-          //printf("(v%dm0)", voice);
-          hide[voice] = 0;
+        if (n == 0 || n == 1) {
+          hide[voice] = n;
         } else {
-          //printf("(v%dm1)", voice);
-          hide[voice] = 1;
+          argc--;
+          more = 0;
+          r = ERR_INVALID_MUTE;
         }
       }
     } else if (c == 'P') {
@@ -1568,6 +1580,7 @@ int main(int argc, char *argv[]) {
         case ERR_UNKNOWN_SYS: s = "unknown sys"; break;
         case ERR_INVALID_TRACE: s = "invalid trace"; break;
         case ERR_INVALID_DEBUG: s = "invalid debug"; break;
+        case ERR_INVALID_MUTE: s = "invalid mute"; break;
         default: s = "unknown return"; break;
       }
       printf("# %s ERR-%d\n", s, n);
@@ -1841,6 +1854,8 @@ void reset_voice(int i) {
   pmod_osc[i] = -1;
   hide[i] = 0;
   decimate[i] = 0;
+  decicount[i] = 0;
+  decittl[i] = 0.0;
   quantize[i] = 0;
   direction[i] = 0;
   adsr_init(i, 1.1f, 0.2f, 0.7f, 0.5f, 44100.0f);
