@@ -1,6 +1,6 @@
 v0 w25 b0 B0 n0 f55 a2 p0 I0 d0 q0 F1,100 P2,10 m0
-v1 w41 b-1 B0 n45 f110 a20 p0 I0 d0 q0 F-1,0 P-1,0 m1
-v2 w0 b0 B0 n0 f2 a10 p0 I0 d0 q0 F-1,0 P-1,0 m1
-v3 w37 b0 B0 n0 f56 a2 p0 I0 d0 q0 F1,100 P-1,0 m0
+v1 w41 b-1 B0 n45 f110 a20 p0 I0 d0 q0 F- P- m1
+v2 w0 b0 B0 n0 f2 a10 p0 I0 d0 q0 F- P- m1
+v3 w37 b0 B0 n0 f56 a2 p0 I0 d0 q0 F1,100 P- m0
 v0f110v3f111
 
