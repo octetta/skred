@@ -156,8 +156,10 @@ int interp[VOICE_MAX];
 int use_adsr[VOICE_MAX];
 int fmod_osc[VOICE_MAX];
 int pmod_osc[VOICE_MAX];
+int amod_osc[VOICE_MAX];
 float fmod_depth[VOICE_MAX];
 float pmod_depth[VOICE_MAX];
+float amod_depth[VOICE_MAX];
 int hide[VOICE_MAX];
 int decimate[VOICE_MAX];
 int decicount[VOICE_MAX];
@@ -207,6 +209,7 @@ float oscope_display_mag = 1.0;
 #define OWWIDTH (SCREENWIDTH/4)
 #define OWHEIGHT (SCREENHEIGHT/2)
 float oscope_wave[OWWIDTH];
+int oscope_wave_index = 0;
 float oscope_min[OWWIDTH];
 float oscope_max[OWWIDTH];
 int oscope_wave_len = 0;
@@ -562,11 +565,16 @@ void engine(float *buffer, int num_frames, int num_channels, void *user_data) { 
 
       // apply amp to sample
       if (use_adsr[n]) {
-        float amod = adsr_step(n);
-        sample[n] *= amod; // * AFACTOR;
-        //sample[n] *= amod * amp[n]; // * AFACTOR;
+        float env = adsr_step(n);
+        sample[n] *= env; // * AFACTOR;
+        //sample[n] *= env * amp[n]; // * AFACTOR;
       } else {
         sample[n] *= amp[n];
+      }
+      if (amod_osc[n] >= 0) {
+        int m = amod_osc[n];
+        float g = sample[m] * amod_depth[n];
+        sample[n] *= g;
       }
       // accumulate samples
       if (hide[n] == 0) {
@@ -711,6 +719,11 @@ void show_voice(int v, char c) {
     interp[v],
     decimate[v],
     quantize[v]);
+  if (amod_osc[v] < 0) {
+    printf(" A-");
+  } else {
+    printf(" A%d,%g", amod_osc[v], amod_depth[v]);
+  }
   if (fmod_osc[v] < 0) {
     printf(" F-");
   } else {
@@ -721,7 +734,7 @@ void show_voice(int v, char c) {
   } else {
     printf(" P%d,%g", pmod_osc[v], pmod_depth[v]);
   }
-  printf(" m%d A%g,%g,%g,%g",
+  printf(" m%d E%g,%g,%g,%g",
     hide[v],
     amp_env[v].attack_time,
     amp_env[v].decay_time,
@@ -794,15 +807,17 @@ enum {
   FUNC_ERR,
   FUNC_SYS,
   FUNC_IMM,
+  //
   FUNC_VOICE,
   FUNC_FREQ,
   FUNC_AMP,
   FUNC_TRIGGER,
   FUNC_VELOCITY,
   FUNC_MUTE,
+  FUNC_AMOD,
+  FUNC_FMOD,
   FUNC_PMOD,
   FUNC_MIDI,
-  FUNC_FMOD,
   FUNC_WAVE,
   FUNC_LOOP,
   FUNC_DIR,
@@ -847,9 +862,10 @@ char *_func_func_str[FUNC_UNKNOWN+1] = {
   [FUNC_TRIGGER] = "trigger",
   [FUNC_VELOCITY] = "velocity",
   [FUNC_MUTE] = "mute",
+  [FUNC_AMOD] = "amod",
+  [FUNC_FMOD] = "fmod",
   [FUNC_PMOD] = "pmod",
   [FUNC_MIDI] = "midi",
-  [FUNC_FMOD] = "fmod",
   [FUNC_WAVE] = "wave",
   [FUNC_LOOP] = "loop",
   [FUNC_DIR] = "dir",
@@ -1246,6 +1262,42 @@ int wire(char *line, int *this_voice, int output) {
         freq[voice] = g;
         osc_set_freq(voice, g);
       }
+    } else if (c == 'A') {
+      func = FUNC_AMOD;
+      char peek = line[p];
+      if (peek == '-') {
+        amod_osc[voice] = -1;
+        args[argc++] = -1;
+        p++;
+      } else {
+        n = parse_int(&line[p], &valid, &next);
+        args[argc++] = n;
+        if (!valid) {
+          argc--;
+          more = 0;
+          r = ERR_EXPECTED_INT;
+        } else if (n < VOICE_MAX) {
+          amod_osc[voice] = n;
+          char peek = line[p+1];
+          if (peek == ',') {
+            p++; p++;
+            f = parse_double(&line[p], &valid, &next);
+            args[argc++] = f;
+            if (!valid) {
+              argc--;
+              more = 0;
+              r = ERR_EXPECTED_FLOAT;
+            } else {
+              amod_depth[voice] = f;
+              p += next-2;
+            }
+          }
+        } else {
+          more = 0;
+          r = ERR_INVALID_MODULATOR;
+        }
+        p++;
+      }
     } else if (c == 'F') {
       func = FUNC_FMOD;
       char peek = line[p];
@@ -1294,6 +1346,7 @@ int wire(char *line, int *this_voice, int output) {
       } else {
         p += next-1;
         if (n >= 0 && n < EXWAVEMAX && wt_data[n] && wt_size[n]) {
+          oscope_wave_index = n;
           float *table = wt_data[n];
           int size = wt_size[n];
           int crossing = 0;
@@ -1347,7 +1400,6 @@ int wire(char *line, int *this_voice, int output) {
           oscope_wave_len = 0;
           float *table = osc[voice].table;
           int size = osc[voice].table_size;
-          //downsample_block_average(table, size, oscope_wave, OWWIDTH);
           downsample_block_average_min_max(table, size, oscope_wave, OWWIDTH, oscope_min, oscope_max);
           oscope_wave_len = OWWIDTH;
         } else {
@@ -1422,7 +1474,7 @@ int wire(char *line, int *this_voice, int output) {
           r = ERR_INVALID_DELAY;          
         }
       }
-    } else if (c == 'A') {
+    } else if (c == 'E') {
       func = FUNC_ADSR;
       for (int s = 0; s < 4; s++) {
         f = parse_double(&line[p], &valid, &next);
@@ -1850,6 +1902,7 @@ void reset_voice(int i) {
   panr[i] = 0.5;
   interp[i] = 0;
   use_adsr[i] = 0;
+  amod_osc[i] = -1;
   fmod_osc[i] = -1;
   pmod_osc[i] = -1;
   hide[i] = 0;
@@ -1978,23 +2031,26 @@ void *oscope(void *arg) {
   //
   Vector2 position;
   FILE *file = fopen(CONFIG_FILE, "r");
+  const int screenWidth = SCREENWIDTH;
+  const int screenHeight = SCREENHEIGHT;
+  float mag_x = 1.0;
+  float sw = (float)screenWidth;
   if (file != NULL) {
+    /*
+    x y oscope_display_mag mag_x
+    */
     int r;
-    r = fscanf(file, "%f %f", &position.x, &position.y);
-    if (r != 2) {
-      // If reading fails, use default position
-      printf("# %s fscanf fail (%d)\n", CONFIG_FILE, r);
-      position = (Vector2){100, 100};
-    } else {
-      // printf("# %s position (%g,%g)\n", CONFIG_FILE, position.x, position.y);
-    }
+    r = fscanf(file, "%f %f %f %f",
+      &position.x, &position.y, &oscope_display_mag, &mag_x);
+    if (position.x < 0) position.x = 0;
+    if (position.y < 0) position.y = 0;
+    if (oscope_display_mag <= 0) oscope_display_mag = 1;
+    // if (mag_x <= 0) mag_x = 1;
     fclose(file);
   } else {
     printf("# %s read fopen fail\n", CONFIG_FILE);
   }
   //
-  const int screenWidth = SCREENWIDTH;
-  const int screenHeight = SCREENHEIGHT;
   SetTraceLogLevel(LOG_NONE);
   InitWindow(screenWidth, screenHeight, "skred-oscope");
   //
@@ -2007,8 +2063,6 @@ void *oscope(void *arg) {
   char osd[1024] = "?";
   int osd_dirty = 1;
   float y = h0;
-  float mag_x = 1.0;
-  float sw = (float)screenWidth;
   float a = 1.0;
   int show_l = 1;
   int show_r = 1;
@@ -2057,8 +2111,8 @@ void *oscope(void *arg) {
       osd_dirty++;
     }
     if (osd_dirty) {
-      sprintf(osd, "mag_x:%g sw:%g y:%g a:%g mag:%g inc:%g ch:%d",
-        mag_x, sw, y, a, oscope_display_mag, oscope_display_inc, oscope_channel);
+      sprintf(osd, "mag_x:%g sw:%g y:%g a:%g mag:%g ch:%d",
+        mag_x, sw, y, a, oscope_display_mag, oscope_channel);
     }
     int buffer_snap = oscope_buffer_pointer;
     BeginDrawing();
@@ -2074,6 +2128,12 @@ void *oscope(void *arg) {
       dot.y = max; DrawCircleV(dot, 1, green0);
       //dot.y = avg; DrawCircleV(dot, 1, green0);
       dot.y = min; DrawCircleV(dot, 1, green0);
+    }
+    // show a wave table
+    if (oscope_wave_len) {
+      char s[32];
+      sprintf(s, "%d", oscope_wave_index);
+      DrawText(s, 10, 10, 20, YELLOW);
     }
     // find starting point for display
     //int start = find_starting_point(buffer_snap, OSCOPE_LEN/2);
@@ -2117,8 +2177,7 @@ void *oscope(void *arg) {
   file = fopen(CONFIG_FILE, "w");
   if (file != NULL) {
     Vector2 position = GetWindowPosition();
-    int r = fprintf(file, "%.0f %.0f\n", position.x, position.y);
-    if (r < 0) printf("# %s write fail (%d)\n", CONFIG_FILE, r);
+    fprintf(file, "%g %g %g %g", position.x, position.y, oscope_display_mag, mag_x);
     fclose(file);
   } else {
     printf("# %s write fopen fail\n", CONFIG_FILE);
