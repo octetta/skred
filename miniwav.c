@@ -5,30 +5,6 @@
 
 #include "miniwav.h"
 
-// typedef struct {
-//     char      RIFFChunkID[4];
-//     uint32_t  RIFFChunkSize;
-//     uint32_t  Manufacturer;
-//     uint32_t  Product;
-//     uint32_t  SamplePeriod;
-//     uint32_t  MIDIUnityNote;
-//     uint32_t  MIDIPitchFraction;
-//     uint32_t  SMPTEFormat;
-//     uint32_t  SMPTEOffset;
-//     uint32_t  SampleLoops;
-//     uint32_t  SamplerData;
-//     // hardcoded for one loop but SampleLoops by
-//     // the standard supports more than one
-//     // typedef struct {
-//     uint32_t Identifier;
-//     uint32_t Type;
-//     uint32_t Start;
-//     uint32_t End;
-//     uint32_t Fraction;
-//     uint32_t PlayCount;
-//     // } SampleLoop;
-// } sampler_t;
-
 //void capture_to_wav(char *name) {
 int mw_put(char *name, int16_t *capture, int frames) {
     // int16_t *capture = amy_captured();
@@ -111,22 +87,24 @@ FILE *mw_header(char *name, wav_t *wav) {
   return NULL;
 }
 
-float *mw_get(char *name, int *frames_out) {
+float *mw_get(char *name, int *frames_out, wav_t *w) {
     wav_t wav;
+    wav_t *this = &wav;
+    if (w) this = w;
     int r = -1;
     float *table = NULL;
-    FILE *in = mw_header(name, &wav);
+    FILE *in = mw_header(name, this);
     if (in) {
       int frames_current = 0;
-      int frames_total = wav.DataSubchunkSize / wav.Channels / (wav.BitsPerSample / 8);
+      int frames_total = this->DataSubchunkSize / this->Channels / (this->BitsPerSample / 8);
       table = (float *)malloc(frames_total * sizeof(float));
       int16_t frameBlock[2];
       while (frames_current < frames_total) {
-        int n = fread(frameBlock, sizeof(int16_t) * wav.Channels, 1, in);
+        int n = fread(frameBlock, sizeof(int16_t) * this->Channels, 1, in);
         if (n < 0) break;
         if (n == 0) break;
         int32_t sample = frameBlock[0];
-        if (wav.Channels == 2) {
+        if (this->Channels == 2) {
           sample += frameBlock[1];
           sample /= 2;
         }
@@ -134,7 +112,7 @@ float *mw_get(char *name, int *frames_out) {
         if (sample < -32767) sample = -32767;
         float f = (float)sample / 32767;
         table[frames_current] = f;
-        // double rate = 1000.0 / (double)wav.SamplesRate;
+        // double rate = 1000.0 / (double)this->SamplesRate;
         // double msec = rate * (double)frames;
         // int16_t *dest;
         frames_current++;

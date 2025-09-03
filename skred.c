@@ -16,7 +16,7 @@ int trace = 0;
 
 #define HISTORY_FILE ".sok1_history"
 #define MAIN_SAMPLE_RATE (44100)
-#define VOICE_MAX (16)
+#define VOICE_MAX (32)
 #define CHANNEL_NUM (2)
 #define AFACTOR (0.025)
 
@@ -87,6 +87,9 @@ enum {
 
   AMYSAMPLE00 = 100,
   AMYSAMPLE99 = 100+99,
+
+  EXTSAMPLE00 = 200,
+  EXTSAMPLE99 = 200 + 99,
   EXWAVEMAX
 };
 
@@ -130,6 +133,10 @@ int show_audio(void) {
 #include <math.h>
 #include <pthread.h>
 #include <time.h>
+
+#define WT_FREE_LEN (8)
+float *wt_free_list[WT_FREE_LEN]; // to keep from crashing the engine, have a place to store free-ed waves
+int wt_free_ptr = 0;
 
 float *wt_data[EXWAVEMAX];
 int wt_size[EXWAVEMAX];
@@ -381,7 +388,7 @@ void adsr_init(int n, float attack_time, float decay_time, float sustain_level, 
 
 // Trigger the envelope (start attack)
 void adsr_trigger(int n, float a) {
-  amp_env[n].save_sustain_level = amp[n];
+  //amp_env[n].save_sustain_level = amp[n];
   amp_env[n].sustain_level = a;
   amp_env[n].state = ADSR_ATTACK;
   amp_env[n].value = 0.0f;
@@ -390,17 +397,17 @@ void adsr_trigger(int n, float a) {
 
 // Release the envelope (start release)
 void adsr_release(int n) {
-  if (amp_env[n].state != ADSR_OFF) {
+  //if (amp_env[n].state != ADSR_OFF) {
     amp_env[n].state = ADSR_RELEASE;
     amp_env[n].time = 0.0f;
-  }
+  //}
 }
 
 
 // Compute one sample of the envelope
 float adsr_step(int n) {
   if (amp_env[n].state == ADSR_OFF) {
-    amp[n] = amp_env[n].save_sustain_level;
+    //amp[n] = amp_env[n].save_sustain_level;
     return 0.0f;
   }
 
@@ -566,8 +573,8 @@ void engine(float *buffer, int num_frames, int num_channels, void *user_data) { 
       // apply amp to sample
       if (use_adsr[n]) {
         float env = adsr_step(n);
-        sample[n] *= env; // * AFACTOR;
-        //sample[n] *= env * amp[n]; // * AFACTOR;
+        //sample[n] *= env; // * AFACTOR;
+        sample[n] *= (env * amp[n]);
       } else {
         sample[n] *= amp[n];
       }
@@ -657,34 +664,6 @@ void show_threads(void) {
   closedir(dir);
 }
 
-long parse_int(char *str, int *valid, int *next) {
-  long val;
-  char *endptr;
-  val = strtol(str, &endptr, 10);
-  if (endptr == str) {
-    if (valid) *valid = 0;
-    if (next) *next = 0;
-    return 0;
-  }
-  if (valid) *valid = 1;
-  if (next) *next = endptr - str + 1;
-  return val;
-}
-
-double parse_double(char *str, int *valid, int *next) {
-  double val;
-  char *endptr;
-  val = strtod(str, &endptr);
-  if (endptr == str) {
-    if (valid) *valid = 0;
-    if (next) *next = 0;
-    return 0;
-  }
-  if (valid) *valid = 1;
-  if (next) *next = endptr - str + 1;
-  return val;
-}
-
 enum {
   ERR_EXPECTED_INT,
   ERR_EXPECTED_FLOAT,
@@ -704,9 +683,20 @@ enum {
   ERR_INVALID_TRACE,
   ERR_INVALID_DEBUG,
   ERR_INVALID_MUTE,
+  ERR_INVALID_EXTSAMPLE,
+  ERR_PARSING_ERROR,
+  ERR_INVALID_PATCH,
+  ERR_INVALID_MIDI_NOTE,
+  //
+  ERR_INVALID_AMP,
+  ERR_INVALID_PAN,
+  ERR_INVALID_QUANT,
+  ERR_INVALID_DECI,
+  ERR_INVALID_FREQ,
+  ERR_INVALID_WAVETABLE,
 };
 
-void show_voice(int v, char c) {
+void voice_show(int v, char c) {
   printf("# v%d w%d b%d B%d n%g f%g a%g p%g I%d d%d q%d",
     v,
     wtsel[v],
@@ -719,21 +709,9 @@ void show_voice(int v, char c) {
     interp[v],
     decimate[v],
     quantize[v]);
-  if (amod_osc[v] < 0) {
-    printf(" A-");
-  } else {
-    printf(" A%d,%g", amod_osc[v], amod_depth[v]);
-  }
-  if (fmod_osc[v] < 0) {
-    printf(" F-");
-  } else {
-    printf(" F%d,%g", fmod_osc[v], fmod_depth[v]);
-  }
-  if (pmod_osc[v] < 0) {
-    printf(" P-");
-  } else {
-    printf(" P%d,%g", pmod_osc[v], pmod_depth[v]);
-  }
+  printf(" A%d,%g", amod_osc[v], amod_depth[v]);
+  printf(" F%d,%g", fmod_osc[v], fmod_depth[v]);
+  printf(" P%d,%g", pmod_osc[v], pmod_depth[v]);
   printf(" m%d E%g,%g,%g,%g",
     hide[v],
     amp_env[v].attack_time,
@@ -748,6 +726,15 @@ void show_voice(int v, char c) {
     printf(" *");
   }
   puts("");
+}
+
+int voice_show_all(int voice) {
+  for (int i=0; i<VOICE_MAX; i++) {
+    if (amp[i] == 0) continue;
+    int t = ' ';
+    if (i == voice) t = '*';
+    voice_show(i, t);
+  }
 }
 
 float midi2hz(int f);
@@ -841,12 +828,14 @@ enum {
   FUNC_OSCOPE,
   FUNC_LOAD,
   FUNC_SAVE,
+  FUNC_WAVEREAD,
   //
   FUNC_SHOWWAVE,
   FUNC_DELAY,
   FUNC_COMMENT,
   FUNC_WHITESPACE,
   FUNC_METRO,
+  FUNC_WAVE_DEFAULT,
   //
   FUNC_UNKNOWN,
 };
@@ -886,6 +875,7 @@ char *_func_func_str[FUNC_UNKNOWN+1] = {
   [FUNC_STATS0] = "stats-0",
   [FUNC_STATS1] = "stats-1",
   [FUNC_TRACE] = "trace",
+  [FUNC_TRIGGER] = "trigger",
   [FUNC_DEBUG] = "debug",
   [FUNC_OSCOPE] = "oscope",
   [FUNC_LOAD] = "load",
@@ -895,6 +885,7 @@ char *_func_func_str[FUNC_UNKNOWN+1] = {
   [FUNC_COMMENT] = "comment",
   [FUNC_WHITESPACE] = "white-space",
   [FUNC_METRO] = "metro",
+  [FUNC_WAVEREAD] = "wave-read",
 };
 
 char *func_func_str(int n) {
@@ -906,659 +897,407 @@ char *func_func_str(int n) {
   return "no-string";
 }
 
-int wire(char *line, int *this_voice, int output) {
-  int p = 0;
-  int more = 1;
-  int r = 0;
+#include "miniwav.h"
+
+void update_oscope_wave(float *table, int size) {
+  oscope_wave_len = 0;
+  //float *table = osc[voice].table;
+  //int size = osc[voice].table_size;
+  downsample_block_average_min_max(table, size, oscope_wave, OWWIDTH, oscope_min, oscope_max);
+  oscope_wave_len = OWWIDTH;
+}
+
+int freq_set(int v, float f);
+int freq_midi(int voice, float f);
+int amp_set(int v, float f);
+int wave_set(int voice, int n);
+int wave_reset(int voice, int n);
+int wave_default(int voice);
+int wave_loop(int voice, int state);
+int wave_mute(int voice, int state);
+int wave_dir(int voice, int state);
+int wave_load(int which, int where);
+int wave_interp(int voice, int state);
+int wave_deci(int voice, int state);
+int wave_quant(int voice, int n);
+int voice_set(int voice, int *old_voice);
+int voice_trigger(int voice);
+int voice_show_all(int voice);
+int oscope_start(int sub);
+int amod_set(int voice, int osc, float f);
+int fmod_set(int voice, int osc, float f);
+int pmod_set(int voice, int osc, float f);
+int patch_load(int voice, int n, int output);
+int pan_set(int voice, float f);
+int adsr_set(int voice, float a, float d, float s, float r);
+int adsr_velocity(int voice, float f);
+int wavetable_show(int n);
+
+char *ignore = " \t\r\n;";
+
+typedef struct {
+  int func;
+  int subfunc;
   int next;
-  int valid;
-  int n, na[8];
-  double f, fa[8];
-  int func = FUNC_NULL;
-  int subfunc = FUNC_NULL;
+  int argc;
+  float args[8];
+} value_t;
+
+void dump(value_t v) {
+  printf("# %s", func_func_str(v.func));
+  if (v.subfunc != FUNC_NULL) printf(" %s", func_func_str(v.subfunc));
+  printf(" [");
+  for (int i=0; i<v.argc; i++) {
+    if (i) printf(" ");
+    printf("%g", v.args[i]);
+  }
+  puts("]");
+}
+
+value_t parse_none(int func, int subfunc) {
+  value_t v;
+  v.func = func;
+  v.subfunc = subfunc;
+  v.argc = 0;
+  v.next = 0;
+  if (trace) dump(v);
+}
+
+value_t parse(char *ptr, int func, int subfunc, int argc) {
+  value_t v;
+  v.func = func;
+  v.subfunc = subfunc;
+  int next[8];
+  int limit = argc;
+    switch (argc) {
+      case 1:
+        v.argc = sscanf(ptr, "%g%n", &v.args[0], &next[0]);
+        if (v.argc == 1) v.next = next[0];
+        break;
+      case 2:
+        v.argc = sscanf(ptr, "%g%n,%g%n", &v.args[0], &next[0], &v.args[1], &next[1]);
+        if (v.argc > 0) v.next = next[v.argc-1];
+      case 4:
+        v.argc = sscanf(ptr, "%g%n,%g%n,%g%n,%g%n",
+          &v.args[0], &next[0],
+          &v.args[1], &next[1],
+          &v.args[2], &next[2],
+          &v.args[3], &next[3]);
+        if (v.argc > 0) v.next = next[v.argc-1];
+        break;
+      default:
+        v.argc = 0;
+        v.next = 0;
+        break;
+    }
+  if (debug) {
+    printf("# argc:%d next:%d", v.argc, v.next);
+    puts("");
+  }
+  if (trace) dump(v);
+
+  return v;
+}
+
+int wire(char *line, int *this_voice, int output) {
+  int len = strlen(line);
+  if (len == 0) return 0;
+
+  char *ptr = line;
+  char *max = line + len;
+  
+  int func;
+  int subfunc;
+  
+  value_t v;
   int voice = 0;
   if (this_voice) voice = *this_voice;
-  double args[8];
-  int argc = 0;
+  
+  int more = 1;
+  int status = 0;
+  
+  int n;
+  int r = 0;
+
+  char c;
+  
   while (more) {
-    func = FUNC_NULL;
-    argc = 0;
-    valid = 1;
-    char c = line[p++];
-    char t = '\0';
-    if (debug) {
-      printf("# [%d] '%c' / %d / 0x%x", p, c, c, c);
-      if (c != '\0') printf(" \"%s\"", &line[p]);
-      puts("");
-    }
-    if (c == '\0') {
-      more = 0;
-      break;
-    }
-    if (c == '#') {
-      func = FUNC_IMM;
-      subfunc = FUNC_COMMENT;
-      break;
-    } else if (c == ' ' || c == '\t' || c == ';' || c == '\n' || c == '\r') {
-      func = FUNC_IMM;
-      subfunc = FUNC_WHITESPACE;
-      continue;
-    } else if (c == 'v') {
-      func = FUNC_VOICE;
-      n = parse_int(&line[p], &valid, &next);
-      args[argc++] = n;
-      if (!valid) {
-        argc--;
-        more = 0;
-        r = ERR_EXPECTED_INT;
-      } else {
-        p += next-1;
-        if (n >= 0 && n < VOICE_MAX) {
-          voice = n;
-        } else {
-          more = 0;
-          r = ERR_INVALID_VOICE;
-        }
-      }
-    } else if (c == ':') {
-      t = line[p++];
-      func = FUNC_SYS;
-      switch (t) {
-        case '?':
-          {
-            subfunc = FUNC_HELP;
-            sequencer_stats_t s = sequencer_get_stats();
-            printf("# beat position %g\n", sequencer_get_beat_position());
-            printf("# bpm:%g beat:%g count:%d elapsed:%ld running:%d\n",
-              s.current_bpm, s.current_beat_position, s.beat_count, s.elapsed_time_ms, s.running);
-          }
-          break;
-        case '+':
-          subfunc = FUNC_SEQSTART;
-          sequencer_start(120);
-          break;
-        case '-':
-          subfunc = FUNC_SEQSTOP;
-          sequencer_stop();
-          break;
-        case 'q':
-          subfunc = FUNC_QUIT;
-          more = 0;
-          r = -1;
-          break;
-        case 'S':
-          subfunc = FUNC_STATS0;
-          if (output) {
-            show_stats();
-          }
-          break;
-        case 's':
-          subfunc = FUNC_STATS1;
-          if (output) {
-            show_threads();
-            show_audio();
-          }
-          break;
-        case 'd':
-          subfunc = FUNC_DEBUG;
-          {
-            char peek = line[p];
-            if (peek == '0' || peek == '1') {
-              debug = peek-'0';
-              args[argc++] = debug;
-              p++;
+    if (ptr >= max) break;
+    if (*ptr == '\0') break;
+    // skip whitespace and semi-colons
+    ptr += strspn(ptr, ignore);
+    if (debug) printf("# [%ld] '%c' (%d)\n", ptr-line, *ptr, *ptr);
+    r = 0;
+    switch (*ptr++) {
+      case '#':
+        return 0;
+      case '\0':
+        if (output) puts("# NULL!");
+        break;
+      case ':':
+        //puts("# COLON");
+        switch (*ptr++) {
+          case '\0': return 100;
+          case 'q': return -1;
+          case 't':
+            v = parse_none(FUNC_SYS, FUNC_TRACE);
+            c = *ptr;
+            if (c == '0' || c == '1') {
+              trace = c - '0';
+              ptr++;
             } else {
-              more = 0;
-              r = ERR_INVALID_DEBUG;
+              if (trace) trace = 0; else trace = 1;
             }
-          }
-          break;
-        case 't':
-          subfunc = FUNC_TRACE;
-          {
-            char peek = line[p];
-            if (peek == '0' || peek == '1') {
-              trace = peek-'0';
-              args[argc++] = trace;
-              p++;
-            } else {
-              more = 0;
-              r = ERR_INVALID_TRACE;
-            }
-          }
-          break;
-        case 'o':
-          subfunc = FUNC_OSCOPE;
-          if (oscope_running == 0) {
-            oscope_running = 1;
-            pthread_create(&oscope_thread, NULL, oscope, NULL);
-            pthread_detach(oscope_thread);
-          } else {
-            char peek = line[p];
-            if (peek == 'x') {
-              p++;
-              //oscope_cross = 1;
-            } else if (peek == 'q') {
-              p++;
-              oscope_running = 0;
-            } else {
-              n = parse_int(&line[p], &valid, &next);
-              if (!valid) {
-                argc--;
-                more = 0;
-                r = ERR_EXPECTED_INT;
-              } else {
-                p += next-1;
-                if (n < 0) {
-                  oscope_channel = -1;
-                } else {
-                  if (n < VOICE_MAX) {
-                    oscope_channel = n;
-                  } else {
-                    // some kind of error message
-                  }
-                }
-              }
-            }
-          }
-          break;
-        case 'l':
-          subfunc = FUNC_LOAD;
-          n = parse_int(&line[p], &valid, &next);
-          args[argc++] = n;
-          if (!valid) {
-        argc--;
-            more = 0;
-            r = ERR_EXPECTED_INT;
-          } else {
-            p += next-1;
-            if (n >= 0) {
-              char file[1024];
-              sprintf(file, "exp%d.patch", n);
-              FILE *in = fopen(file, "r");
-              if (in) {
-                char line[1024];
-                while (fgets(line, sizeof(line), in) != NULL) {
-                  size_t len = strlen(line);
-                  if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
-                  if (output) printf("# %s\n", line);
-                  int temp_voice = voice;
-                  wire(line, &temp_voice, trace);
-                }
-                fclose(in);
-              }
-              hide[voice] = 0;
-            }
-          }
-          break;
-        default:
-          func = FUNC_ERR;
-          more = 0;
-          r = ERR_UNKNOWN_SYS;
-          break;
-      }
-    } else if (c == 'f') {
-      func = FUNC_FREQ;
-      f = parse_double(&line[p], &valid, &next);
-      args[argc++] = f;
-      if (!valid) {
-        argc--;
-        more = 0;
-        r = ERR_EXPECTED_FLOAT;
-      } else {
-        p += next-1;
-        if (f > 0 && f < (double)MAIN_SAMPLE_RATE) {
-          freq[voice] = f;
-          osc_set_freq(voice, f);
-        } else {
-          more = 0;
-          r = ERR_FREQUENCY_OUT_OF_RANGE;
-        }
-      }
-    } else if (c == 'S') {
-      func = FUNC_RESET;
-      n = parse_int(&line[p], &valid, &next);
-      args[argc++] = n;
-      if (!valid) {
-        argc--;
-        more = 0;
-        r = ERR_EXPECTED_INT;
-      } else {
-        p += next-1;
-        if (n >= 0 && n < VOICE_MAX) {
-          reset_voice(n);
-        } else {
-          init_voice();
-        }
-      }
-    } else if (c == 'a') {
-      func = FUNC_AMP;
-      f = parse_double(&line[p], &valid, &next);
-      args[argc++] = f;
-      if (!valid) {
-        argc--;
-        more = 0;
-        r = ERR_EXPECTED_FLOAT;
-      } else {
-        p += next-1;
-        if (f >= 0) {
-          use_adsr[voice] = 0;
-          amp[voice] = f * AFACTOR;
-        } else {
-          more = 0;
-          r = ERR_AMPLITUDE_OUT_OF_RANGE;
-        }
-      }
-    } else if (c == 'T') {
-      func = FUNC_TRIGGER;
-      osc_trigger(voice);
-    } else if (c == 'l') {
-      func = FUNC_VELOCITY;
-      char peek = line[p];
-      if (peek == '+') {
-        p++;
-      } else {
-        f = parse_double(&line[p], &valid, &next);
-        args[argc++] = f;
-        if (!valid) {
-          argc--;
-          more = 0;
-          r = ERR_EXPECTED_FLOAT;
-        } else {
-          p += next-1;
-          if (f == 0) {
-            adsr_release(voice);
-          } else {
-            osc[voice].phase = 0;
-            use_adsr[voice] = 1;
-            //amp[voice] = f; // * AFACTOR;
-            osc_trigger(voice);
-            adsr_trigger(voice, f);
-          }
-        }
-      }
-    } else if (c == 'M') {
-      func = FUNC_IMM;
-      subfunc = FUNC_METRO;
-      n = parse_int(&line[p], &valid, &next);
-      args[argc++] = n;
-      if (!valid) {
-        argc--;
-        more = 0;
-        r = ERR_EXPECTED_INT;
-      } else {
-        p += next-1;
-        if (n > 0) {
-          tempo_modulus = n;
-        }
-      }
-    } else if (c == 'm') {
-      func = FUNC_MUTE;
-      n = parse_int(&line[p], &valid, &next);
-      args[argc++] = n;
-      if (!valid) {
-        argc--;
-        more = 0;
-        r = ERR_EXPECTED_INT;
-      } else {
-        p += next-1;
-        if (n == 0 || n == 1) {
-          hide[voice] = n;
-        } else {
-          argc--;
-          more = 0;
-          r = ERR_INVALID_MUTE;
-        }
-      }
-    } else if (c == 'P') {
-      func = FUNC_PMOD;
-      char peek = line[p];
-      if (peek == '-') {
-        pmod_osc[voice] = -1;
-        args[argc++] = -1;
-        p++;
-      } else {
-        n = parse_int(&line[p], &valid, &next);
-        args[argc++] = n;
-        if (!valid) {
-          argc--;
-          more = 0;
-          r = ERR_EXPECTED_INT;
-        } else if (n >= 0 && n < VOICE_MAX) {
-          pmod_osc[voice] = n;
-          char peek = line[p+1];
-          if (peek == ',') {
-            p++;
-            p++;
-            f = parse_double(&line[p], &valid, &next);
-            args[argc++] = f;
-            if (!valid) {
-              argc--;
-              more = 0;
-              r = ERR_EXPECTED_FLOAT;
-            } else {
-              pmod_depth[voice] = f;
-              p += next-1;
-            }
-          }
-        } else {
-          more = 0;
-          r = ERR_INVALID_MODULATOR;
-        }
-        p++;
-      }
-    } else if (c == 'n') {
-      func = FUNC_MIDI;
-      f = parse_double(&line[p], &valid, &next);
-      args[argc++] = f;
-      if (!valid) {
-        argc--;
-        more = 0;
-        r = ERR_EXPECTED_FLOAT;
-      } else {
-        float g = midi2hz(f);
-        p += next-1;
-        note[voice] = f;
-        freq[voice] = g;
-        osc_set_freq(voice, g);
-      }
-    } else if (c == 'A') {
-      func = FUNC_AMOD;
-      char peek = line[p];
-      if (peek == '-') {
-        amod_osc[voice] = -1;
-        args[argc++] = -1;
-        p++;
-      } else {
-        n = parse_int(&line[p], &valid, &next);
-        args[argc++] = n;
-        if (!valid) {
-          argc--;
-          more = 0;
-          r = ERR_EXPECTED_INT;
-        } else if (n < VOICE_MAX) {
-          amod_osc[voice] = n;
-          char peek = line[p+1];
-          if (peek == ',') {
-            p++; p++;
-            f = parse_double(&line[p], &valid, &next);
-            args[argc++] = f;
-            if (!valid) {
-              argc--;
-              more = 0;
-              r = ERR_EXPECTED_FLOAT;
-            } else {
-              amod_depth[voice] = f;
-              p += next-2;
-            }
-          }
-        } else {
-          more = 0;
-          r = ERR_INVALID_MODULATOR;
-        }
-        p++;
-      }
-    } else if (c == 'F') {
-      func = FUNC_FMOD;
-      char peek = line[p];
-      if (peek == '-') {
-        fmod_osc[voice] = -1;
-        args[argc++] = -1;
-        p++;
-      } else {
-        n = parse_int(&line[p], &valid, &next);
-        args[argc++] = n;
-        if (!valid) {
-          argc--;
-          more = 0;
-          r = ERR_EXPECTED_INT;
-        } else if (n < VOICE_MAX) {
-          fmod_osc[voice] = n;
-          char peek = line[p+1];
-          if (peek == ',') {
-            p++; p++;
-            f = parse_double(&line[p], &valid, &next);
-            args[argc++] = f;
-            if (!valid) {
-              argc--;
-              more = 0;
-              r = ERR_EXPECTED_FLOAT;
-            } else {
-              fmod_depth[voice] = f;
-              p += next-2;
-            }
-          }
-        } else {
-          more = 0;
-          r = ERR_INVALID_MODULATOR;
-        }
-        p++;
-      }
-    } else if (c == 'W') {
-      func = FUNC_IMM;
-      subfunc = FUNC_SHOWWAVE;
-      n = parse_int(&line[p], &valid, &next);
-      args[argc++] = n;
-      if (!valid) {
-        argc--;
-        more = 0;
-        r = ERR_EXPECTED_INT;
-      } else {
-        p += next-1;
-        if (n >= 0 && n < EXWAVEMAX && wt_data[n] && wt_size[n]) {
-          oscope_wave_index = n;
-          float *table = wt_data[n];
-          int size = wt_size[n];
-          int crossing = 0;
-          int zero = 0;
-          float min, max, ttl = 0, avg;
-          min = table[0];
-          max = table[0];
-          for (int i = 1; i < size; i++) {
-            if (table[i] < min) min = table[i];
-            if (table[i] > max) max = table[i];
-            ttl += table[i];
-            if (table[i-1] == 0.0 || table[i] == 0.0) {
-              // Prevent abiguity with multiple zeroes
-              zero++;
-            } else if ((table[i-1] > 0 && table[i] < 0) || (table[i-1] < 0 && table[i] > 0)) {
-              // Check for sign change
-              crossing++;
-            }
-          }
-          avg = ttl / (float)size;
-          printf("# w%d addr:%p size:%d min:%g max:%g ttl:%g avg:%g 0:%d x:%d\n",
-            n, table, size, min, max, ttl, avg, zero, crossing);
-          //downsample_block_average(table, size, oscope_wave, OWWIDTH);
-          downsample_block_average_min_max(table, size, oscope_wave, OWWIDTH, oscope_min, oscope_max);
-          oscope_wave_len = OWWIDTH;
-        } else {
-          more = 0;
-          r = ERR_INVALID_WAVE;
-        }
-      }
-    } else if (c == 'w') {
-      func = FUNC_WAVE;
-      n = parse_int(&line[p], &valid, &next);
-      args[argc++] = n;
-      if (!valid) {
-        argc--;
-        more = 0;
-        r = ERR_EXPECTED_INT;
-      } else {
-        p += next-1;
-        if (n >= 0 && n < EXWAVEMAX && wt_data[n] && wt_size[n]) {
-          osc_set_wt(voice, n);
-          char peek = line[p];
-          if (peek == '+') {
-            p++;
-            float g = midi2hz(osc[voice].midinote);
-            freq[voice] = g;
-            note[voice] = osc[voice].midinote;
-            osc_set_freq(voice, g);
-          }
-          oscope_wave_len = 0;
-          float *table = osc[voice].table;
-          int size = osc[voice].table_size;
-          downsample_block_average_min_max(table, size, oscope_wave, OWWIDTH, oscope_min, oscope_max);
-          oscope_wave_len = OWWIDTH;
-        } else {
-          more = 0;
-          r = ERR_INVALID_WAVE;
-        }
-      }
-    } else if (c == 'B') {
-      func = FUNC_LOOP;
-      c = line[p++];
-      if (c == '0' || c == '1') {
-        osc[voice].looping = c-'0';
-        args[argc++] = c-'0';
-      } else {
-        more = 0;
-        r = ERR_INVALID_LOOPING;
-      }
-    } else if (c == 'b') {
-      func = FUNC_DIR;
-      c = line[p++];
-      if (c == '0' || c == '1') {
-        direction[voice] = c-'0';
-        args[argc++] = c-'0';
-      } else {
-        more = 0;
-        r = ERR_INVALID_DIRECTION;
-      }
-    } else if (c == 'I') {
-      func = FUNC_INTER;
-      c = line[p++];
-      if (c == '0' || c == '1') {
-        interp[voice] = c-'0';
-        args[argc++] = c-'0';
-      } else {
-        more = 0;
-        r = ERR_INVALID_INTERPOLATE;
-      }
-    } else if (c == 'p') {
-      func = FUNC_PAN;
-      f = parse_double(&line[p], &valid, &next);
-      args[argc++] = f;
-      if (!valid) {
-        argc--;
-        more = 0;
-        r = ERR_EXPECTED_FLOAT;
-      } else {
-        p += next-1;
-        if (f >= -1.0 && f <= 1.0) {
-          pan[voice] = f;
-          panl[voice] = (1.0 - f) / 2.0;
-          panr[voice] = (1.0 + f) / 2.0;          
-        } else {
-          more = 0;
-          r = ERR_PAN_OUT_OF_RANGE;
-        }
-      }
-    } else if (c == '+') {
-      func = FUNC_IMM;
-      subfunc = FUNC_DELAY;
-      f = parse_double(&line[p], &valid, &next);
-      args[argc++] = f;
-      if (!valid) {
-        argc--;
-        more = 0;
-        r = ERR_EXPECTED_FLOAT;
-      } else {
-        p += next-1;
-        if (f > 0) {
-          fsleep(f);
-        } else {
-          more = 0;
-          r = ERR_INVALID_DELAY;          
-        }
-      }
-    } else if (c == 'E') {
-      func = FUNC_ADSR;
-      for (int s = 0; s < 4; s++) {
-        f = parse_double(&line[p], &valid, &next);
-        args[argc++] = f;
-        if (!valid) {
-          argc--;
-          more = 0;
-          r = ERR_EXPECTED_FLOAT;
-          break;
-        } else {
-          if (s == 0) {
-            amp_env[voice].attack_time = f;
-          } else if (s == 1) {
-            amp_env[voice].decay_time = f;
-          } else if (s == 2) {
-            amp_env[voice].sustain_level = f * 1; // AFACTOR;
-          } else if (s == 3) {
-            amp_env[voice].release_time = f;
-          }
-          p += next-1;
-          c = line[p];
-          if (c == ',') {
-            p++;
-          } else {
             break;
-          }
+          case 'S':
+            v = parse_none(FUNC_SYS, FUNC_STATS0);
+            if (output) show_stats();
+            break;
+          case 's':
+            v = parse_none(FUNC_SYS, FUNC_STATS1);
+            if (output) {
+              show_threads();
+              show_audio();
+            }
+            break;
+          case 'd':
+            v = parse_none(FUNC_SYS, FUNC_DEBUG);
+            c = *ptr;
+            if (c == '0' || c == '1') {
+              debug = c - '0';
+              ptr++;
+            } else {
+              if (debug) debug = 0; else debug = 1;
+            }
+            break;
+          case 'o':
+            v = parse_none(FUNC_SYS, FUNC_OSCOPE);
+            oscope_start(*ptr);
+            // sub x for oscope_cross = 1
+            // sub q for oscope_quit = 0
+            // sub 0..VOICE_MAX-1 for oscope_channel = n
+            // sub -1 for oscope_channel = -1 (all channels)
+            break;
+          case 'l':
+            // :l# load exp#.patch
+            v = parse(ptr, FUNC_SYS, FUNC_LOAD, 1);
+            {
+              int which;
+              if (v.argc == 1) {
+                ptr += v.next;
+                which = v.args[0];
+              } else return ERR_INVALID_PATCH;
+              r = patch_load(voice, which, output);
+              //if (r != 0) return r;
+            }
+            break;
+          case 'w':
+            // :w#,# load wave#.wav into wave slot #
+            v = parse(ptr, FUNC_SYS, FUNC_WAVEREAD, 2);
+            {
+              int which;
+              int where;
+              if (v.argc == 2) {
+                ptr += v.next;
+                which = v.args[0];
+                where = v.args[1];
+              } else if (v.argc == 1) {
+                ptr += v.next;
+                which = v.args[0];
+                where = EXTSAMPLE00;
+              } else return ERR_INVALID_EXTSAMPLE;
+              r = wave_load(which, where);
+            }
+            break;
+          default: return 999;
         }
-      }
-    } else if (c == 'd') {
-      func = FUNC_DECI;
-      n = parse_int(&line[p], &valid, &next);
-      args[argc++] = n;
-      if (!valid) {
-        argc--;
-        more = 0;
-        r = ERR_EXPECTED_INT;
-      } else {
-        p += next-1;
-        decimate[voice] = n;
-      }
-    } else if (c == 'q') {
-      func = FUNC_QUANT;
-      n = parse_int(&line[p], &valid, &next);
-      args[argc++] = n;
-      if (!valid) {
-        argc--;
-        more = 0;
-        r = ERR_EXPECTED_INT;
-      } else {
-        p += next-1;
-        quantize[voice] = n;
-      }
-    } else if (c == '?') {
-      func = FUNC_IMM;
-      subfunc = FUNC_HELP;
-      char peek = line[p];
-      if (peek == '?') {
-        p++;
-        for (int i=0; i<VOICE_MAX; i++) {
-          if (amp[i] == 0) continue;
-          int t = ' ';
-          if (i == current_voice) t = '*';
-          if (output) show_voice(i, t);
+        break;
+      case '~':
+        v = parse(ptr, FUNC_DELAY, FUNC_NULL, 1);
+        if (v.argc == 1) {
+          ptr += v.next;
+          if (v.args[0] >= 0 && v.args[0] <= 15) fsleep(v.args[0]);
         }
-      } else if (output) show_voice(voice, ' ');
-    } else {
-      func = FUNC_ERR;
-      more = 1;
-      r = ERR_UNKNOWN_FUNC;
+        break;
+      case '?':
+        v = parse_none(FUNC_HELP, FUNC_NULL);
+        if (*ptr == '?') {
+          voice_show_all(voice);
+          ptr++;
+        } else {
+          voice_show(voice, '*');
+        }
+        break;
+      case 'a':
+        v = parse(ptr, FUNC_AMP, FUNC_NULL, 1);
+        if (v.argc == 1) {
+          ptr += v.next;
+          r = amp_set(voice, v.args[0]);
+        } else return ERR_INVALID_AMP;
+        break;
+      case 'p':
+        v = parse(ptr, FUNC_PAN, FUNC_NULL, 1);
+        if (v.argc == 1) {
+          ptr += v.next;
+          r = pan_set(voice, v.args[0]);
+        } else return ERR_INVALID_PAN;
+        break;
+      case 'q':
+        v = parse(ptr, FUNC_QUANT, FUNC_NULL, 1);
+        if (v.argc == 1) {
+          ptr += v.next;
+          r = wave_quant(voice, v.args[0]);
+        } else return ERR_INVALID_QUANT;
+        break;
+      case 'd':
+        v = parse(ptr, FUNC_DECI, FUNC_NULL, 1);
+        if (v.argc == 1) {
+          ptr += v.next;
+          r = wave_deci(voice, v.args[0]);
+        } else return ERR_INVALID_DECI;
+        break;
+      case 'f':
+        v = parse(ptr, FUNC_FREQ, FUNC_NULL, 1);
+        if (v.argc == 1) {
+          ptr += v.next;
+          r = freq_set(voice, v.args[0]);
+        } else return ERR_INVALID_FREQ;
+        break;
+      case 'v':
+        v = parse(ptr, FUNC_VOICE, FUNC_NULL, 1);
+        if (v.argc == 1) {
+          ptr += v.next;
+          r = voice_set(v.args[0], &voice);
+        } else return ERR_INVALID_VOICE;
+        break;
+      case 'w':
+        v = parse(ptr, FUNC_WAVE, FUNC_NULL, 1);
+        if (v.argc == 1) {
+          ptr += v.next;
+          r = wave_set(voice, v.args[0]);
+        } else return ERR_INVALID_WAVE;
+        break;
+      case 'T':
+        v = parse_none(FUNC_TRIGGER, FUNC_NULL);
+        voice_trigger(voice);
+        break;
+      case '+':
+        v = parse_none(FUNC_WAVE_DEFAULT, FUNC_NULL);
+        wave_default(voice);
+        break;
+      case 'B':
+        v = parse_none(FUNC_LOOP, FUNC_NULL);
+        c = *ptr;
+        if (c == '0' || c == '1') {
+          wave_loop(voice, c == '1');
+          ptr++;
+        } else wave_loop(voice, -1);
+        break;
+      case 'W':
+        // show wavetable 0..WTMAX
+        // wavetable_show(n);
+        v = parse(ptr, FUNC_SHOWWAVE, FUNC_NULL, 1);
+        if (v.argc == 1) {
+          ptr += v.next;
+          r = wavetable_show(v.args[0]);
+        } else return ERR_INVALID_WAVETABLE;
+        break;
+      case 'M':
+        // metro int > 0
+        // tempo_modulus = n
+        break;
+      case 'm':
+        v = parse_none(FUNC_MUTE, FUNC_NULL);
+        c = *ptr;
+        if (c == '0' || c == '1') {
+          wave_mute(voice, c == '1');
+          ptr++;
+        } else wave_mute(voice, -1);
+        break;
+      case 'b':
+        v = parse_none(FUNC_DIR, FUNC_NULL);
+        c = *ptr;
+        if (c == '0' || c == '1') {
+          wave_dir(voice, c == '1');
+          ptr++;
+        } else wave_dir(voice, -1);
+        break;
+      case 'I':
+        v = parse_none(FUNC_INTER, FUNC_NULL);
+        c = *ptr;
+        if (c == '0' || c == '1') {
+          wave_interp(voice, c == '1');
+          ptr++;
+        } else wave_interp(voice, -1);
+        break;
+      case 'n':
+        v = parse(ptr, FUNC_MIDI, FUNC_NULL, 1);
+        if (v.argc == 1) {
+          ptr += v.next;
+          r = freq_midi(voice, v.args[0]);
+        } else return ERR_INVALID_MIDI_NOTE;
+        break;
+      case 'A':
+        v = parse(ptr, FUNC_AMOD, FUNC_NULL, 2);
+        if (v.argc == 2) {
+          ptr += v.next;
+          r = amod_set(voice, v.args[0], v.args[1]);
+        } else if (v.argc == 1) {
+          ptr += v.next;
+          r = amod_set(voice, -1, 0);
+        } else return ERR_PARSING_ERROR;
+        break;
+      case 'l':
+        v = parse(ptr, FUNC_VELOCITY, FUNC_NULL, 1);
+        if (v.argc == 1) {
+          ptr += v.next;
+          r = adsr_velocity(voice, v.args[0]);
+        } else return ERR_PARSING_ERROR;
+        break;
+      case 'E':
+        v = parse(ptr, FUNC_ADSR, FUNC_NULL, 4);
+        if (v.argc == 4) {
+          ptr += v.next;
+          r = adsr_set(voice, v.args[0], v.args[1], v.args[2], v.args[3]);
+        } else return ERR_PARSING_ERROR;
+        break;
+      case 'S':
+        v = parse(ptr, FUNC_RESET, FUNC_NULL, 1);
+        if (v.argc == 1) {
+          ptr += v.next;
+          r = wave_reset(voice, v.args[0]);
+        } else return ERR_PARSING_ERROR;
+        break;
+      case 'F':
+        v = parse(ptr, FUNC_FMOD, FUNC_NULL, 2);
+        if (v.argc == 2) {
+          ptr += v.next;
+          r = fmod_set(voice, v.args[0], v.args[1]);
+        } else if (v.argc == 1) {
+          ptr += v.next;
+          r = fmod_set(voice, -1, 0);
+        } else return ERR_PARSING_ERROR;
+        break;
+      case 'P':
+        v = parse(ptr, FUNC_PMOD, FUNC_NULL, 2);
+        if (v.argc == 2) {
+          ptr += v.next;
+          r = pmod_set(voice, v.args[0], v.args[1]);
+        } else if (v.argc == 1) {
+          ptr += v.next;
+          r = pmod_set(voice, -1, 0);
+        } else return ERR_PARSING_ERROR;
+        break;
+      //
+      default:
+        if (output) printf("# not sure\n");
+        return ERR_UNKNOWN_FUNC;
+        more = 0;
+        break;
     }
-    if (output && trace) {
-      printf("# %s", func_func_str(func));
-      if (func == FUNC_SYS) printf(" %s", func_func_str(subfunc));
-      if (func == FUNC_IMM) printf(" %s", func_func_str(subfunc));
-      if (argc) printf(" [");
-      for (int i = 0; i < argc; i++) {
-        char l = '\0';
-        if (i) l = ' ';
-        printf("%c%g", l, args[i]);
-      }
-      if (argc) printf("]");
-      if (r) printf(" ERR:%d", r);
-      puts("");
-    }
+    if (r != 0) break;
+    if (ptr >= max) break;
+    if (*ptr == '\0') break;
   }
   if (this_voice) *this_voice = voice;
   return r;
@@ -1633,6 +1372,17 @@ int main(int argc, char *argv[]) {
         case ERR_INVALID_TRACE: s = "invalid trace"; break;
         case ERR_INVALID_DEBUG: s = "invalid debug"; break;
         case ERR_INVALID_MUTE: s = "invalid mute"; break;
+        case ERR_INVALID_EXTSAMPLE: s = "invalid external sample"; break;
+        case ERR_PARSING_ERROR: s = "parsing error"; break;
+        case ERR_INVALID_PATCH: s = "invalid patch"; break;
+        case ERR_INVALID_MIDI_NOTE: s = "invalid midi note"; break;
+        //
+        case ERR_INVALID_AMP: s = "invalid amp"; break;
+        case ERR_INVALID_PAN: s = "invalid pan"; break;
+        case ERR_INVALID_QUANT: s = "invalid quant"; break;
+        case ERR_INVALID_DECI: s = "invalid deci"; break;
+        case ERR_INVALID_FREQ: s = "invalid freq"; break;
+        case ERR_INVALID_WAVETABLE: s = "invalid wave table"; break;
         default: s = "unknown return"; break;
       }
       printf("# %s ERR:%d\n", s, n);
@@ -1734,6 +1484,11 @@ void init_wt(void) {
   float *table;
   float f;
   float d;
+
+  for (int i = 0 ; i < EXWAVEMAX; i++) {
+    wt_data[i] = NULL;
+    wt_size[i] = 0;
+  }
 
   printf("# make sine wave (%d)\n", EXWAVESINE);
   table = (float *)malloc(SIZE_SINE * sizeof(float));
@@ -2193,4 +1948,275 @@ void *oscope(void *arg) {
 float midi2hz(int f) {
   float g = 440.0 * pow(2.0, (f - 69.0) / 12.0);
   return g;
+}
+
+int freq_set(int voice, float f) {
+  if (f > 0 && f < (double)MAIN_SAMPLE_RATE) {
+    freq[voice] = f;
+    osc_set_freq(voice, f);
+    return 0;
+  }
+  return ERR_FREQUENCY_OUT_OF_RANGE;
+}
+
+int amp_set(int voice, float f) {
+  if (f >= 0) {
+    use_adsr[voice] = 0;
+    amp[voice] = f * AFACTOR;
+  } else return ERR_AMPLITUDE_OUT_OF_RANGE;
+  return 0;
+}
+
+int wave_set(int voice, int n) {
+  if (n >= 0 && n < EXWAVEMAX && wt_data[n] && wt_size[n]) {
+    oscope_wave_index = n;
+    osc_set_wt(voice, n);
+    update_oscope_wave(osc[voice].table, osc[voice].table_size);
+  } else return ERR_INVALID_WAVE;
+  return 0;
+}
+
+int wave_reset(int voice, int n) {
+  if (n >= 0 && n < VOICE_MAX) {
+    reset_voice(n);
+  } else {
+    init_voice();
+  }
+  return 0;
+}
+
+int wave_default(int voice) {
+  float g = midi2hz(osc[voice].midinote);
+  freq[voice] = g;
+  note[voice] = osc[voice].midinote;
+  osc_set_freq(voice, g);
+  update_oscope_wave(osc[voice].table, osc[voice].table_size);
+  return 0;
+}
+
+int wave_loop(int voice, int state) {
+  if (state < 0) {
+    if (osc[voice].looping == 0) state = 1;
+    else state = 0;
+  }
+  osc[voice].looping = state;
+  return 0;
+}
+
+int wave_mute(int voice, int state) {
+  if (state < 0) {
+    if (hide[voice] == 0) state = 1;
+    else state = 0;
+  }
+  hide[voice] = state;
+  return 0;
+}
+
+int wave_dir(int voice, int state) {
+  if (state < 0) {
+    if (direction[voice] == 0) state = 1;
+    else state = 0;
+  }
+  direction[voice] = state;
+  return 0;
+}
+
+int wave_interp(int voice, int state) {
+  if (state < 0) {
+    if (interp[voice] == 0) state = 1;
+    else state = 0;
+  }
+  interp[voice] = state;
+  return 0;
+}
+
+int voice_set(int n, int *old_voice) {
+  if (n >= 0 && n < VOICE_MAX) {
+    if (old_voice) *old_voice = n;
+    return 0;
+  }
+  return ERR_INVALID_VOICE;
+}
+
+int voice_trigger(int voice) {
+  osc_trigger(voice);
+  return 0;
+}
+
+int oscope_start(int sub) {
+  if (oscope_running == 0) {
+    oscope_running = 1;
+    pthread_create(&oscope_thread, NULL, oscope, NULL);
+    pthread_detach(oscope_thread);
+  }
+  return 0;
+}
+
+int wave_load(int which, int where) {
+  if (where < EXTSAMPLE00 || where >= EXTSAMPLE99) return ERR_INVALID_EXTSAMPLE;
+  char name[1024];
+  sprintf(name, "wave%d.wav", which);
+  wav_t wav;
+  int len;
+  float *table = mw_get(name, &len, &wav);
+  if (table == NULL) {
+    printf("# can not read %s\n", name);
+    return ERR_INVALID_EXTSAMPLE;
+  } else {
+    if (wt_data[where]) {
+      if (wt_free_ptr >= WT_FREE_LEN) {
+        wt_free_ptr = 0;
+      }
+      if (wt_free_list[wt_free_ptr]) {
+        printf("# freeing old wave %d\n", wt_free_ptr);
+        free(wt_free_list[wt_free_ptr]);
+      }
+      wt_free_list[wt_free_ptr++] = wt_data[where];
+    }
+    wt_data[where] = table;
+    wt_size[where] = len;
+    wt_rate[where] = wav.SamplesRate;
+    wt_sampled[where] = 1;
+    wt_looping[where] = 0;
+    wt_loopstart[where] = 0;
+    wt_loopend[where] = len-1;
+    wt_midinote[where] = 69;
+    wt_offsethz[where] = (float)len / (float)wav.SamplesRate * 440.0;
+    printf("# read %d frames from %s to %d (ch:%d sr:%d)\n",
+      len, name, where, wav.Channels, wav.SamplesRate);
+  }
+  return 0;
+}
+
+int amod_set(int voice, int osc, float f) {
+  if (voice < 0 && voice >= VOICE_MAX) return ERR_INVALID_VOICE;
+  if (osc < 0 && osc >= VOICE_MAX) return ERR_INVALID_VOICE;
+  amod_osc[voice] = osc;
+  amod_depth[voice] = f;
+  return 0;
+}
+
+int fmod_set(int voice, int osc, float f) {
+  if (voice < 0 && voice >= VOICE_MAX) return ERR_INVALID_VOICE;
+  if (osc < 0 && osc >= VOICE_MAX) return ERR_INVALID_VOICE;
+  fmod_osc[voice] = osc;
+  fmod_depth[voice] = f;
+  return 0;
+}
+
+int pmod_set(int voice, int osc, float f) {
+  if (voice < 0 && voice >= VOICE_MAX) return ERR_INVALID_VOICE;
+  if (osc < 0 && osc >= VOICE_MAX) return ERR_INVALID_VOICE;
+  pmod_osc[voice] = osc;
+  pmod_depth[voice] = f;
+  return 0;
+}
+
+int patch_load(int voice, int n, int output) {
+  char file[1024];
+  sprintf(file, "exp%d.patch", n);
+  FILE *in = fopen(file, "r");
+  int r = 0;
+  if (in) {
+    char line[1024];
+    while (fgets(line, sizeof(line), in) != NULL) {
+      size_t len = strlen(line);
+      if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
+      if (output) printf("# %s\n", line);
+      int temp_voice = voice;
+      r = wire(line, &temp_voice, trace);
+      if (r != 0) {
+        if (output) printf("# error in patch\n");
+        break;
+      }
+    }
+    fclose(in);
+  }
+  //hide[voice] = 0;
+  return r;
+}
+
+int freq_midi(int voice, float f) {
+  if (f >= 0.0 && f <= 127.0) {
+    float g = midi2hz(f);
+    return freq_set(voice, g);
+  }
+  return ERR_INVALID_MIDI_NOTE;
+}
+
+int wave_deci(int voice, int n) {
+  decimate[voice] = n;
+  return 0;
+}
+
+int wave_quant(int voice, int n) {
+  quantize[voice] = n;
+  return 0;
+}
+
+int pan_set(int voice, float f) {
+  if (f >= -1.0 && f <= 1.0) {
+    pan[voice] = f;
+    panl[voice] = (1.0 - f) / 2.0;
+    panr[voice] = (1.0 + f) / 2.0;          
+  } else {
+    return ERR_PAN_OUT_OF_RANGE;
+  }
+  return 0;
+}
+
+int adsr_set(int voice, float a, float d, float s, float r) {
+  amp_env[voice].attack_time = a;
+  amp_env[voice].decay_time = d;
+  amp_env[voice].sustain_level = s * AFACTOR;
+  amp_env[voice].release_time = r;
+  return 0;
+}
+
+int adsr_velocity(int voice, float f) {
+  if (f == 0) {
+    adsr_release(voice);
+  } else {
+    use_adsr[voice] = 1;
+    amp_env[voice].sustain_level = f;
+    amp_env[voice].state = ADSR_ATTACK;
+    amp_env[voice].value = amp[voice];
+    amp_env[voice].time = 0.0f;
+    osc_trigger(voice);
+    //adsr_trigger(voice, f);
+  }
+  return 0;
+}
+
+int wavetable_show(int n) {
+  if (n >= 0 && n < EXWAVEMAX && wt_data[n] && wt_size[n]) {
+    oscope_wave_index = n;
+    float *table = wt_data[n];
+    int size = wt_size[n];
+    int crossing = 0;
+    int zero = 0;
+    float min, max, ttl = 0, avg;
+    min = table[0];
+    max = table[0];
+    for (int i = 1; i < size; i++) {
+      if (table[i] < min) min = table[i];
+      if (table[i] > max) max = table[i];
+      ttl += table[i];
+      if (table[i-1] == 0.0 || table[i] == 0.0) {
+        // Prevent abiguity with multiple zeroes
+        zero++;
+      } else if ((table[i-1] > 0 && table[i] < 0) || (table[i-1] < 0 && table[i] > 0)) {
+        // Check for sign change
+        crossing++;
+      }
+    }
+    avg = ttl / (float)size;
+    printf("# w%d size:%d", n, size);
+    //printf(" min:%g max:%g ttl:%g avg:%g 0:%d x:%d", min, max, ttl, avg, zero, crossing);
+    printf(" +hz:%g midi:%d", wt_offsethz[n], wt_midinote[n]);
+    puts("");
+    downsample_block_average_min_max(table, size, oscope_wave, OWWIDTH, oscope_min, oscope_max);
+    oscope_wave_len = OWWIDTH;
+  }
+  return 0;
 }

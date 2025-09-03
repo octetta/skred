@@ -19,8 +19,33 @@ typedef struct {
     // double* Data; 
 } wav_t;
 
+// interesting chunk that i might look for one day
+typedef struct {
+    char      RIFFChunkID[4];
+    uint32_t  RIFFChunkSize;
+    uint32_t  Manufacturer;
+    uint32_t  Product;
+    uint32_t  SamplePeriod;
+    uint32_t  MIDIUnityNote;
+    uint32_t  MIDIPitchFraction;
+    uint32_t  SMPTEFormat;
+    uint32_t  SMPTEOffset;
+    uint32_t  SampleLoops;
+    uint32_t  SamplerData;
+    // hardcoded for one loop but SampleLoops by
+    // the standard supports more than one
+    // typedef struct {
+    uint32_t Identifier;
+    uint32_t Type;
+    uint32_t Start;
+    uint32_t End;
+    uint32_t Fraction;
+    uint32_t PlayCount;
+    // } SampleLoop;
+} sampler_t;
+
 FILE *mw_header(char *name, wav_t *wav);
 
-float *mw_get(char *name, int *frames_out);
+float *mw_get(char *name, int *frames_out, wav_t *w);
 
 #endif
