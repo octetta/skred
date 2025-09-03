@@ -28,6 +28,9 @@ RLLIB = -L raylib-quickstart-main/bin/Debug
 miniwav.o : miniwav.c miniwav.h
 	gcc $(COPTS) -c $<
 
+amysamples.o : amysamples.c amysamples.h
+	gcc $(COPTS) -c $<
+
 sok1 : sok1.o $(ELIB)
 	gcc $(COPTS) $^ -o $@ $(LIB)
 
@@ -37,7 +40,7 @@ skred.o: skred.c
 seq.o: seq.c
 	gcc $(COPTS) -c $<
 
-skred : skred.o seq.o miniwav.o $(ELIB)
+skred : skred.o seq.o miniwav.o amysamples.o $(ELIB)
 	gcc -DUSE_RAYLIB $(RLINC) $(RLLIB) $(COPTS) $^ -o $@ $(LIB) -lraylib
 
 sok1.o: sok1.c	
