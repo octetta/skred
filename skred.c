@@ -1,12 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <stdatomic.h>
 #include <linux/futex.h>
 #include <sys/syscall.h>
 #include <errno.h>
+#include <unistd.h>
 
-#include "seq.h"
+#include "motor.h"
 
 #define SOKOL_AUDIO_IMPL
 #include "sokol_audio.h"
@@ -95,24 +95,8 @@ enum {
 
 unsigned long sample_count = 0;
 
-#if 0
-long futex_wait(uint32_t *uaddr, uint32_t val) {
-  return syscall(SYS_futex, uaddr, FUTEX_WAIT_PRIVATE, val, NULL, NULL, 0);
-}
-
-long futex_wake(uint32_t *uaddr, int num_wake) {
-  return syscall(SYS_futex, uaddr, FUTEX_WAKE_PRIVATE, num_wake, NULL, NULL, 0);
-}
-#endif
-
-// Shared state
-atomic_ullong clock_tick = ATOMIC_VAR_INIT(0);  // Monotonic tick counter (advances by 1 every M samples)
-atomic_uint signal_version = ATOMIC_VAR_INIT(0); // Version for signaling changes (futex wait/wake target)
-uint64_t tempo_modulus = 44;
-
 int show_audio(void) {
   if (saudio_isvalid()) {
-    printf("# tick %lld / %u / %lu\n", clock_tick, signal_version, tempo_modulus);
     printf("# audio backend is running\n");
     printf("# audio sample count %ld\n", sample_count);
     printf("# requested sample rate %d, actual sample rate %d\n",
@@ -494,8 +478,6 @@ float quantize_bits_int(float v, int bits) {
 
 int main_running = 1;
 int udp_running = 1;
-int seq_running = 1;
-
 
 void show_stats(void) {
   for (int i = 0; i < OWWIDTH; i++) {
@@ -521,23 +503,13 @@ float get_oscope_buffer(int *index) {
 
 // Stream callback function
 void engine(float *buffer, int num_frames, int num_channels, void *user_data) { // , void *user_data) {
-#if 1
+#if 0
   inside_audio_callback();
 #endif
 #if 0
   static uint64_t local_sample_acc = 0;
 #endif
   for (int i = 0; i < num_frames; i++) {
-#if 0
-    uint64_t new_ticks = local_sample_acc / tempo_modulus;
-    if (new_ticks > 0) {
-      atomic_fetch_add_explicit(&clock_tick, new_ticks, memory_order_relaxed);
-      atomic_fetch_add_explicit(&signal_version, 1, memory_order_release);
-      futex_wake((uint32_t*)&signal_version, 1);  // Wake 1 waiter; use INT_MAX for multiple
-      local_sample_acc -= new_ticks * tempo_modulus;  // Reset accumulator
-    }
-    local_sample_acc++;
-#endif
     sample_count++;
     float samplel = 0;
     float sampler = 0;
@@ -623,7 +595,6 @@ void fsleep(double seconds) {
 void init_wt(void);
 
 void *udp(void *arg);
-void *seq(void *arg);
 void *oscope(void *arg);
 
 int current_voice = 0;
@@ -740,7 +711,6 @@ int voice_show_all(int voice) {
 float midi2hz(int f);
 
 pthread_t udp_thread;
-pthread_t seq_thread;
 pthread_t oscope_thread;
 
 void downsample_block_average_min_max(
@@ -932,6 +902,8 @@ int pan_set(int voice, float f);
 int adsr_set(int voice, float a, float d, float s, float r);
 int adsr_velocity(int voice, float f);
 int wavetable_show(int n);
+void tick(void *arg);
+void tick_mod(int m);
 
 char *ignore = " \t\r\n;";
 
@@ -952,6 +924,30 @@ void dump(value_t v) {
     printf("%g", v.args[i]);
   }
   puts("]");
+}
+
+void float_to_timespec(double seconds, int64_t *sec, int64_t *nsec) {
+    double intpart;
+    double frac = modf(seconds, &intpart);
+
+    *sec  = (int64_t)intpart;
+    *nsec = (int64_t)llround(frac * 1e9);
+
+    // Normalize in case rounding pushed us to 1 second
+    if (*nsec >= 1000000000) {
+        *sec += 1;
+        *nsec -= 1000000000;
+    }
+    if (*nsec < 0) {
+        *sec -= 1;
+        *nsec += 1000000000;
+    }
+}
+
+void ms_to_timespec(int64_t ms, int64_t *sec, int64_t *ns) {
+  if (sec == NULL || ns == NULL) return;
+  *sec = ms / 1000;
+  *ns = (ms % 1000) * 1000000L;
 }
 
 value_t parse_none(int func, int subfunc) {
@@ -1203,8 +1199,12 @@ int wire(char *line, int *this_voice, int output) {
         } else return ERR_INVALID_WAVETABLE;
         break;
       case 'M':
-        // metro int > 0
-        // tempo_modulus = n
+        v = parse(ptr, FUNC_METRO, FUNC_NULL, 1);
+        if (v.argc == 1) {
+          ptr += v.next;
+          motor_update(v.args[0]);
+          // tick_mod(v.args[0]);
+        }
         break;
       case 'm':
         v = parse_none(FUNC_MUTE, FUNC_NULL);
@@ -1305,6 +1305,22 @@ int wire(char *line, int *this_voice, int output) {
 
 char my_data[] = "hello";
 
+static int _tick_count = 0;
+static int _tick_mod = 100;
+
+void tick_mod(int m) {
+  _tick_mod = m;
+}
+
+void tick(void *arg) {
+  _tick_count++;
+  //printf("tick %d\n", _tick_count);
+  //voice_trigger(20);
+  int voice = 20;
+  if (_tick_count & 1) wire("v20T", &voice, 0);
+  else wire("v21T", &voice, 0);
+}
+
 int main(int argc, char *argv[]) {
   if (argc > 1) {
     for (int i=1; i<argc; i++) {
@@ -1337,9 +1353,8 @@ int main(int argc, char *argv[]) {
   pthread_create(&udp_thread, NULL, udp, NULL);
   pthread_detach(udp_thread);
 
-  pthread_create(&seq_thread, NULL, seq, NULL);
-  pthread_detach(seq_thread);
-
+  int ms = 250;
+  motor_init(ms, tick);
   
   while (main_running) {
     char *line = linenoise("# ");
@@ -1395,7 +1410,7 @@ int main(int argc, char *argv[]) {
   saudio_shutdown();
   
   udp_running = 0;
-  seq_running = 0;
+  motor_fini();
   oscope_running = 0;
 
   sleep(1); // make sure we don't crash the callback b/c thread timing and wt_data
@@ -1733,20 +1748,6 @@ void *udp(void *arg) {
     }
   }
   if (debug) printf("# udp stopping\n");
-  return NULL;
-}
-
-void *seq(void *arg) {
-  pthread_setname_np(pthread_self(), "skred-seq");
-  //puts("##0##\n");
-  fflush(stdout);
-  timing_thread_loop();
-  //puts("##1##\n");
-  while (seq_running) {
-    //futex_wait(&signal_version, 1);
-    sleep(1);
-  }
-  if (debug) printf("# seq stopping\n");
   return NULL;
 }
 
