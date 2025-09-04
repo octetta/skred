@@ -1,8 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <linux/futex.h>
-#include <sys/syscall.h>
 #include <errno.h>
 #include <unistd.h>
 
@@ -10,6 +8,14 @@
 
 #define SOKOL_AUDIO_IMPL
 #include "sokol_audio.h"
+
+static volatile uint64_t tick_self_count = 0;
+static volatile uint64_t tick_engine_count = 0;
+static volatile uint64_t tick_mod = 22050;
+static volatile uint64_t sample_count = 0;
+
+void tick();
+void tick_mod_set(uint64_t);
 
 int debug = 0;
 int trace = 0;
@@ -93,8 +99,6 @@ enum {
   EXWAVEMAX
 };
 
-unsigned long sample_count = 0;
-
 int show_audio(void) {
   if (saudio_isvalid()) {
     printf("# audio backend is running\n");
@@ -158,6 +162,7 @@ float decihold[VOICE_MAX];
 float decittl[VOICE_MAX];
 int quantize[VOICE_MAX];
 int direction[VOICE_MAX];
+int phasereset[VOICE_MAX];
 
 int wtsel[VOICE_MAX];
 
@@ -296,17 +301,10 @@ float osc_next(int n, float phase_inc) {
 }
 
 void osc_set_wt(int voice, int n) {
-#if 0
-  static int first = 1;
-  if (first) {
-    first = 0;
-  } else {
-    if (wtsel[voice] == n) return;
-  }
-#endif
   if (wt_data[n] && wt_size[n] && wt_rate[n] > 0.0) {
     wtsel[voice] = n;
     int update_freq = 0;
+    if (wt_sampled[n]) osc[voice].inactive = 1;
     if (osc[voice].table_rate != wt_rate[n] || osc[voice].table_size != wt_size[n]) update_freq = 1;
     osc[voice].table_rate = wt_rate[n];
     osc[voice].table_size = wt_size[n];
@@ -501,15 +499,12 @@ float get_oscope_buffer(int *index) {
   return a;
 }
 
-// Stream callback function
 void engine(float *buffer, int num_frames, int num_channels, void *user_data) { // , void *user_data) {
-#if 0
-  inside_audio_callback();
-#endif
-#if 0
-  static uint64_t local_sample_acc = 0;
-#endif
   for (int i = 0; i < num_frames; i++) {
+    if ((sample_count % tick_mod) == 0) {
+      motor_trigger();
+      tick_engine_count++;
+    }
     sample_count++;
     float samplel = 0;
     float sampler = 0;
@@ -902,8 +897,6 @@ int pan_set(int voice, float f);
 int adsr_set(int voice, float a, float d, float s, float r);
 int adsr_velocity(int voice, float f);
 int wavetable_show(int n);
-void tick(void *arg);
-void tick_mod(int m);
 
 char *ignore = " \t\r\n;";
 
@@ -1202,8 +1195,7 @@ int wire(char *line, int *this_voice, int output) {
         v = parse(ptr, FUNC_METRO, FUNC_NULL, 1);
         if (v.argc == 1) {
           ptr += v.next;
-          motor_update(v.args[0]);
-          // tick_mod(v.args[0]);
+          tick_mod_set(v.args[0]);
         }
         break;
       case 'm':
@@ -1305,20 +1297,26 @@ int wire(char *line, int *this_voice, int output) {
 
 char my_data[] = "hello";
 
-static int _tick_count = 0;
-static int _tick_mod = 100;
-
-void tick_mod(int m) {
-  _tick_mod = m;
+void tick_mod_set(uint64_t m) {
+  tick_mod = m;
 }
 
-void tick(void *arg) {
-  _tick_count++;
-  //printf("tick %d\n", _tick_count);
-  //voice_trigger(20);
+void tick() {
+#if 0
+  static uint64_t last = 0;
+  static uint64_t diff = 0;
+  diff = sample_count - last;
+  last = sample_count;
+  if (diff >= tick_mod) {
+  }
+  if (tick_self_count & 1) voice_trigger(20);
+  //if (tick_engine_count & 1) voice_trigger(20);
+  else voice_trigger(21);
+  tick_self_count++;
+#else
   int voice = 20;
-  if (_tick_count & 1) wire("v20T", &voice, 0);
-  else wire("v21T", &voice, 0);
+  wire("v20T", &voice, 0);
+#endif
 }
 
 int main(int argc, char *argv[]) {
@@ -1778,7 +1776,6 @@ void *oscope(void *arg) {
   pthread_setname_np(pthread_self(), "skred-oscope");
 #ifndef USE_RAYLIB
   while (oscope_running) {
-    //futex_wait(&signal_version, 1);
     sleep(1);
   }
 #else
@@ -1927,6 +1924,18 @@ void *oscope(void *arg) {
         actual++;
       }
     rlPopMatrix();
+    char *bell = " ";
+    char *ding = " ";
+    if ((sample_count % tick_mod) == 0) bell = "!";
+    if (tick_self_count != tick_engine_count) ding = "*";
+    sprintf(osd, "%s %s %ld %ld %ld %ld",
+      bell,
+      ding,
+      tick_self_count,
+      tick_engine_count,
+      tick_mod,
+      sample_count);
+    DrawText(osd, SCREENWIDTH/5, SCREENHEIGHT/3, 40, BLUE);
     EndDrawing();
   }
   //
