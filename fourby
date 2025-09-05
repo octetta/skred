@@ -1,0 +1,93 @@
+#!/usr/bin/env tclsh
+package require Tk
+
+set window_title "4x4"
+
+package require udp
+
+set addr 127.0.0.1
+set port 60440
+
+set sock [udp_open]
+fconfigure $sock -buffering none -translation binary
+
+proc dest {addr port} {
+    # puts "-> $addr $port"
+    fconfigure $::sock -remote [list $addr $port]
+}
+
+dest $addr $port
+
+# Procedure to handle button clicks
+proc wire {msg} {
+  puts -nonewline $::sock $msg
+  .text_area configure -state normal
+  .text_area insert end "\n${msg}"
+  .text_area see "end-1c"
+  .text_area configure -state disabled
+}
+
+# Create the main window
+wm title . $window_title
+
+# Configure the grid to expand properly
+grid columnconfigure . 0 -weight 1
+grid columnconfigure . 1 -weight 1
+grid columnconfigure . 2 -weight 1
+grid columnconfigure . 3 -weight 1
+grid rowconfigure . 0 -weight 1
+grid rowconfigure . 1 -weight 1
+grid rowconfigure . 2 -weight 1
+grid rowconfigure . 3 -weight 1
+
+# Define button texts and parameters (configurable)
+set button_configs {}
+set k 0
+for {set i 0} {$i < 16} {incr i} {
+  if {$i < $argc} {
+    set cmd [lindex $argv $i]
+    lappend button_configs [dict create text $cmd param $cmd]
+  } else {
+    lappend button_configs [dict create text "v$k" param "v$k"]
+    incr k
+  }
+}
+
+# Create and place buttons in a 4x4 grid
+set index 0
+for {set row 0} {$row < 4} {incr row} {
+    for {set col 0} {$col < 4} {incr col} {
+        # Get the current button's configuration
+        set config [lindex $button_configs $index]
+        set btn_text [dict get $config text]
+        set btn_param [dict get $config param]
+
+        # Create square button with configurable text and command
+        button .btn_${row}_${col} -text $btn_text -command [list wire $btn_param] -width 10 -height 2
+        grid .btn_${row}_${col} -row $row -column $col -sticky nsew -padx 5 -pady 5
+
+        incr index
+    }
+}
+
+text .text_area -width 40 -height 3 -state normal -font {Courier 14}
+grid .text_area -row 4 -column 0 -columnspan 4 -sticky nsew -padx 10 -pady 10
+.text_area insert end "#"
+.text_area configure -state disabled
+
+proc backgroundSelf {} {
+  global argv0 argv
+  if {![info exists ::env(WISH_DETACHED)]} {
+    set ::env(WISH_DETACHED) 1
+    # Try to background using platform-appropriate method
+    if {$::tcl_platform(platform) eq "windows"} {
+      exec wish $argv0 {*}$argv &
+    } else {
+      # exec nohup wish $argv0 {*}$argv > /dev/null 2>&1 &
+      exec nohup wish $argv0 {*}$argv > /dev/null &
+    }
+    exit 0
+  }
+}
+# Call background function at startup
+backgroundSelf

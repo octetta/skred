@@ -234,24 +234,30 @@ float cz_phasor(int n, float p, float d, int table_size) {
   if (d < 0) d = 0;
   if (d > 1) d = 1;
   switch (n) {
-    case 1: // saw -> pulse
+    case 1: // 2 :: saw -> pulse
       if (phase < d) phase *= (0.5 / d);
       else phase = 0.5 + (phase - d) * (0.5 / (1.0 - d));
       break;
-    case 2: // square (folded sine)
+    case 2: // 3 :: square (folded sine)
       if (phase < 0.5) phase *= (0.5 / (0.5 - d * 0.5));
       else phase = 1.0 - (1.0 - phase) * (0.5 / (0.5 - d * 0.5));
       break;
-    case 3: // triangle
+    case 3: // 4 :: triangle
       if (phase < 0.5) phase *= (0.5 / (0.5 - d * 0.5));
       else phase = 0.5 + (phase - 0.5) * (0.5 / (0.5 - d * 0.5));
       break;
-    case 4: // double sine
+    case 4: // 5 :: double sine
       phase = fmodf(phase * 2.0, 1.0);
       break;
-    case 5: // saw -> triangle
+    case 5: // 6 :: saw -> triangle
       if (phase < 0.5) phase *= (0.5 / (0.5 - d * 0.5));
       else phase = 0.5 + (phase - 0.5) * (0.5 / (0.5 + d * 0.5));
+      break;
+    case 6: // 7 :: resonant 1
+      phase = powf(phase, 1.0 + 4.0 * d);
+      break;
+    case 7: // 8 :: resonant 2
+      phase = powf(phase, 1.0 + 8.0 * d);
       break;
     default:
       return p;
@@ -260,270 +266,98 @@ float cz_phasor(int n, float p, float d, int table_size) {
   return phase * (float)table_size;
 }
 
-#if 1
 
-float osc_next(int n, float phase_inc) {
-    if (osc[n].finished) return 0.0f;
+float osc_next(int voice, float phase_inc) {
+    if (osc[voice].finished) return 0.0f;
 
-    if (direction[n]) phase_inc *= -1.0;
+    if (direction[voice]) phase_inc *= -1.0;
 
     // Step phase
-    osc[n].phase += phase_inc;
+    osc[voice].phase += phase_inc;
 
     // NaN check
-    if (!isfinite(osc[n].phase)) {
-        osc[n].phase = 0.0f;
-        osc[n].finished = osc[n].one_shot;
+    if (!isfinite(osc[voice].phase)) {
+        osc[voice].phase = 0.0f;
+        osc[voice].finished = osc[voice].one_shot;
         return 0.0f;
     }
 
+    int table_size = osc[voice].table_size;
+
     // Clamp loop boundaries to valid range
-    float loop_start = osc[n].loop_enabled ? osc[n].loop_start : 0.0f;
-    float loop_end   = osc[n].loop_enabled ? osc[n].loop_end   : (float)osc[n].table_size;
-    if (loop_end <= loop_start) { loop_start = 0.0f; loop_end = (float)osc[n].table_size; }
+    float loop_start = osc[voice].loop_enabled ? osc[voice].loop_start : 0.0f;
+    float loop_end   = osc[voice].loop_enabled ? osc[voice].loop_end   : (float)table_size;
+    if (loop_end <= loop_start) { loop_start = 0.0f; loop_end = (float)table_size; }
 
     // Handle forward playback
     if (phase_inc >= 0.0f) {
         // One-shot forward
-        if (osc[n].one_shot && osc[n].phase >= loop_end) {
-            osc[n].phase = loop_end - 1e-6f;
-            osc[n].finished = 1;
+        if (osc[voice].one_shot && osc[voice].phase >= loop_end) {
+            osc[voice].phase = loop_end - 1e-6f;
+            osc[voice].finished = 1;
         }
         // Loop forward
-        else if (osc[n].loop_enabled && osc[n].phase >= loop_end) {
-            osc[n].phase = loop_start + fmodf(osc[n].phase - loop_start, loop_end - loop_start);
+        else if (osc[voice].loop_enabled && osc[voice].phase >= loop_end) {
+            osc[voice].phase = loop_start + fmodf(osc[voice].phase - loop_start, loop_end - loop_start);
         }
         // Wrap full table
-        else if (!osc[n].loop_enabled && osc[n].phase >= osc[n].table_size) {
-            osc[n].phase -= osc[n].table_size;
+        else if (!osc[voice].loop_enabled && osc[voice].phase >= table_size) {
+            osc[voice].phase -= table_size;
         }
     }
     // Handle backward playback
     else {
         // One-shot backward
-        if (osc[n].one_shot && osc[n].phase < loop_start) {
-            osc[n].phase = loop_start;
-            osc[n].finished = 1;
+        if (osc[voice].one_shot && osc[voice].phase < loop_start) {
+            osc[voice].phase = loop_start;
+            osc[voice].finished = 1;
         }
         // Loop backward
-        else if (osc[n].loop_enabled && osc[n].phase < loop_start) {
-            osc[n].phase = loop_end - fmodf(loop_start - osc[n].phase, loop_end - loop_start);
+        else if (osc[voice].loop_enabled && osc[voice].phase < loop_start) {
+            osc[voice].phase = loop_end - fmodf(loop_start - osc[voice].phase, loop_end - loop_start);
         }
         // Wrap full table
-        else if (!osc[n].loop_enabled && osc[n].phase < 0.0f) {
-            osc[n].phase += osc[n].table_size;
+        else if (!osc[voice].loop_enabled && osc[voice].phase < 0.0f) {
+            osc[voice].phase += osc[voice].table_size;
         }
     }
 
     float sample;
-    if (interp[n]) {
+    if (interp[voice]) {
       // Linear interpolation
       int idx;
-      if (cz[n]) {
-        idx = (int)cz_phasor(cz[n], osc[n].phase, czd[n], osc[n].table_size);
+      if (cz[voice]) {
+        idx = (int)cz_phasor(cz[voice], osc[voice].phase, czd[voice], table_size);
       } else {
-        idx = (int)osc[n].phase;
+        idx = (int)osc[voice].phase;
       }
       //
       int next_idx;
       float frac;
       if (phase_inc >= 0.0f) {
-          next_idx = (idx + 1) % osc[n].table_size;
-          frac = osc[n].phase - (float)idx;
+          next_idx = (idx + 1) % table_size;
+          frac = osc[voice].phase - (float)idx;
       } else {
-          next_idx = (idx == 0) ? osc[n].table_size - 1 : idx - 1;
-          frac = (float)idx - osc[n].phase;
+          next_idx = (idx == 0) ? table_size - 1 : idx - 1;
+          frac = (float)idx - osc[voice].phase;
       }
-      sample = osc[n].table[idx] * (1.0f - frac) + osc[n].table[next_idx] * frac;
+      sample = osc[voice].table[idx] * (1.0f - frac) + osc[voice].table[next_idx] * frac;
     } else {
       int idx;
       //
-      if (cz[n]) {
-        idx = (int)cz_phasor(cz[n], osc[n].phase, czd[n], osc[n].table_size);
+      if (cz[voice]) {
+        idx = (int)cz_phasor(cz[voice], osc[voice].phase, czd[voice], table_size);
       } else {
-        idx = (int)osc[n].phase;
+        idx = (int)osc[voice].phase;
       }
       //
-      if (idx >= osc->table_size) idx = osc->table_size - 1;
+      if (idx >= table_size) idx = table_size - 1;
       if (idx < 0) idx = 0;
-      sample = osc->table[idx];
+      sample = osc[voice].table[idx];
     }
 
     return sample;
 }
-
-
-
-#endif
-
-#if 0
-
-
-float osc_next(int n, float phase_inc) {
-    if (osc[n].finished) return 0.0f;
-    if (direction[n]) phase_inc *= -1.0;
-
-    // Step phase
-    osc[n].phase += phase_inc;
-
-    // Sanity check for NaN
-    if (!isfinite(osc[n].phase)) {
-        osc[n].phase = 0.0f;
-        osc[n].finished = osc[n].one_shot;
-        return 0.0f;
-    }
-
-    // Determine active boundaries
-    float start = osc[n].loop_enabled ? osc[n].loop_start : 0.0f;
-    float end   = osc[n].loop_enabled ? osc[n].loop_end   : (float)osc[n].table_size;
-
-    // Prevent invalid boundaries
-    if (end <= start) {
-        start = 0.0f;
-        end = (float)osc[n].table_size;
-    }
-
-    // Forward playback
-    if (phase_inc >= 0.0f) {
-        if (osc[n].phase >= end) {
-            if (osc[n].one_shot) {
-                osc[n].phase = end - 1e-6f; // clamp
-                osc[n].finished = 1;
-            } else if (osc[n].loop_enabled) {
-                osc[n].phase = start + fmodf(osc[n].phase - start, end - start);
-            } else {
-                osc[n].phase -= osc[n].table_size; // wrap entire table
-            }
-        }
-    }
-    // Backward playback
-    else {
-        if (osc[n].phase < start) {
-            if (osc[n].one_shot) {
-                osc[n].phase = start; // clamp
-                osc[n].finished = 1;
-            } else if (osc[n].loop_enabled) {
-                osc[n].phase = end - fmodf(start - osc[n].phase, end - start);
-            } else {
-                osc[n].phase += osc[n].table_size; // wrap entire table
-            }
-        }
-    }
-
-    // Linear interpolation
-    int idx = (int)osc[n].phase;
-    int next_idx;
-    float frac;
-    if (phase_inc >= 0.0f) {
-        next_idx = (idx + 1) % osc[n].table_size;
-        frac = osc[n].phase - (float)idx;
-    } else {
-        next_idx = (idx == 0) ? osc[n].table_size - 1 : idx - 1;
-        frac = (float)idx - osc[n].phase;
-    }
-
-    float sample = osc[n].table[idx] * (1.0f - frac) + osc[n].table[next_idx] * frac;
-
-    return sample;
-}
-
-
-
-#endif
-
-
-#if 0
-
-float osc_next(int n, float phase_inc) {
-    if (osc[n].finished) return 0.0f;
-
-    // Step phase
-    osc[n].phase += phase_inc;
-
-    // Determine active boundaries
-    float start = osc[n].loop_enabled ? osc[n].loop_start : 0.0f;
-    float end   = osc[n].loop_enabled ? osc[n].loop_end   : (float)osc[n].table_size;
-
-    // Forward playback
-    if (phase_inc >= 0.0f) {
-        if (osc[n].phase >= end) {
-            if (osc[n].one_shot) {
-                osc[n].phase = end - 1e-6f; // clamp to end
-                osc[n].finished = 1;
-            } else if (osc[n].loop_enabled) {
-                osc[n].phase = start + fmodf(osc[n].phase - start, end - start);
-            } else {
-                osc[n].phase -= osc[n].table_size; // wrap entire table
-            }
-        }
-    } else {
-    // Backward playback
-        if (osc[n].phase < start) {
-            if (osc[n].one_shot) {
-                osc[n].phase = start;
-                osc[n].finished = 1;
-            } else if (osc[n].loop_enabled) {
-                osc[n].phase = end - fmodf(start - osc[n].phase, end - start);
-            } else {
-                osc[n].phase += osc[n].table_size; // wrap entire table
-            }
-        }
-    }
-
-    float sample;
-    int idx = (int)osc[n].phase;
-    // Linear interpolation
-      int next_idx;
-      if (phase_inc >= 0.0f) {
-          next_idx = (idx + 1) % osc[n].table_size;
-      } else {
-          next_idx = (idx == 0) ? osc[n].table_size - 1 : idx - 1;
-      }
-      float frac = osc[n].phase - (float)idx;
-      sample = osc[n].table[idx] * (1.0f - frac) + osc[n].table[next_idx] * frac;
-    return sample;
-}
-
-
-#endif
-
-#if 0
-
-#define OFT float
-#define OFM fmodf
-
-float osc_next(int n, float phase_inc) {
-  int table_size = osc[n].table_size;
-  OFT fphase = OFM(osc[n].phase, table_size);
-  
-  if (cz[n]) fphase = cz_phasor(cz[n], fphase, czd[n], table_size);
-  
-  int iphase = fphase;
-  
-  float sample = osc[n].table[iphase];
-  
-  if (direction[n]) osc[n].phase -= phase_inc;
-  else osc[n].phase += phase_inc;
-  
-  if (osc[n].one_shot) {
-    if (osc[n].loop_enabled) {
-      if (direction[n]) {
-        if (osc[n].phase < osc[n].loop_start) osc[n].phase = osc[n].loop_end;
-      } else {
-        if (osc[n].phase >= osc[n].loop_end) osc[n].phase = osc[n].loop_start;
-      }
-    } else {
-      if (direction[n]) {
-        if (osc[n].phase < 0) osc[n].finished = 1;
-      } else {
-        if (osc[n].phase >= table_size) osc[n].finished = 1;
-      }
-    }
-  }
-  // osc[n].phase = fmodf(osc[n].phase, table_size);
-  return sample;
-}
-#endif
 
 #if 0
 float osc_next(int n, float phase_inc) {
@@ -614,22 +448,25 @@ float osc_next(int n, float phase_inc) {
 }
 #endif
 
-void osc_set_wt(int voice, int n) {
-  if (wt_data[n] && wt_size[n] && wt_rate[n] > 0.0) {
-    wtsel[voice] = n;
+void osc_set_wt(int voice, int wave) {
+  if (wt_data[wave] && wt_size[wave] && wt_rate[wave] > 0.0) {
+    wtsel[voice] = wave;
     int update_freq = 0;
-    if (wt_one_shot[n]) osc[voice].finished = 1;
-    if (osc[voice].table_rate != wt_rate[n] || osc[voice].table_size != wt_size[n]) update_freq = 1;
-    osc[voice].table_rate = wt_rate[n];
-    osc[voice].table_size = wt_size[n];
-    osc[voice].table = wt_data[n];
-    osc[voice].one_shot = wt_one_shot[n];
-    osc[voice].loop_start = wt_loop_start[n];
-    osc[voice].loop_enabled = wt_loop_enabled[n];
-    osc[voice].loop_end = wt_loop_end[n];
-    osc[voice].midinote = wt_midinote[n];
-    osc[voice].offsethz = wt_offsethz[n];
-    osc[voice].phase = 0;
+    if (wt_one_shot[wave]) osc[voice].finished = 1;
+    if (
+      osc[voice].table_rate != wt_rate[wave] ||
+      osc[voice].table_size != wt_size[wave]
+      ) update_freq = 1;
+    osc[voice].table_rate = wt_rate[wave];
+    osc[voice].table_size = wt_size[wave];
+    osc[voice].table = wt_data[wave];
+    osc[voice].one_shot = wt_one_shot[wave];
+    osc[voice].loop_start = wt_loop_start[wave];
+    osc[voice].loop_enabled = wt_loop_enabled[wave];
+    osc[voice].loop_end = wt_loop_end[wave];
+    osc[voice].midinote = wt_midinote[wave];
+    osc[voice].offsethz = wt_offsethz[wave];
+    // osc[voice].phase = 0;
     if (update_freq) {
       osc_set_freq(voice, freq[voice]);
     }
@@ -908,6 +745,7 @@ void *udp(void *arg);
 void *oscope(void *arg);
 
 int current_voice = 0;
+int save_voice = 0;
 
 #include <dirent.h>
 
@@ -1307,12 +1145,15 @@ value_t parse(char *ptr, int func, int subfunc, int argc) {
   return v;
 }
 
-int wire(char *line, int *this_voice, int output) {
+int wire(char *line, int *this_voice, int *save_voice, int output) {
   int len = strlen(line);
   if (len == 0) return 0;
 
   char *ptr = line;
   char *max = line + len;
+
+  int backup_save_voice = 0;
+  if (save_voice == NULL) save_voice = &backup_save_voice;
   
   int func;
   int subfunc;
@@ -1337,6 +1178,12 @@ int wire(char *line, int *this_voice, int output) {
     if (debug) printf("# [%ld] '%c' (%d)\n", ptr-line, *ptr, *ptr);
     r = 0;
     switch (*ptr++) {
+      case '[':
+        *save_voice = voice;
+        continue;
+      case ']':
+        voice = *save_voice;
+        continue;
       case '#':
         return 0;
       case '\0':
@@ -1641,7 +1488,7 @@ void tick() {
   tick_self_count++;
 #else
   int voice = 20;
-  wire("v20T", &voice, 0);
+  wire("v20T", &voice, NULL, 0);
 #endif
 }
 
@@ -1688,7 +1535,7 @@ int main(int argc, char *argv[]) {
     }
     if (strlen(line) == 0) continue;
     linenoiseHistoryAdd(line);
-    int n = wire(line, &current_voice, 1);
+    int n = wire(line, &current_voice, &save_voice, 1);
     if (n < 0) break; // request to stop or error
     if (n > 0) {
       char *s = "\0";
@@ -2068,6 +1915,7 @@ void *udp(void *arg) {
   tv.tv_usec = 0;
   setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (struct timeval *)&tv, sizeof(struct timeval));
   int voice = 0;
+  int save_voice = 0;
   struct sockaddr_in client;
   unsigned int client_len = sizeof(client);
   char line[1024];
@@ -2076,7 +1924,7 @@ void *udp(void *arg) {
     int n = recvfrom(sock, line, sizeof(line), 0, (struct sockaddr *)&client, &client_len);
     if (n > 0) {
       line[n] = '\0';
-      int r = wire(line, &voice, output);
+      int r = wire(line, &voice, &save_voice, output);
     } else {
       if (errno = EAGAIN) continue;
       printf("# recvfrom = %d ; errno = %d\n", n, errno);
@@ -2315,10 +2163,10 @@ int amp_set(int voice, float f) {
   return 0;
 }
 
-int wave_set(int voice, int n) {
-  if (n >= 0 && n < EXWAVEMAX && wt_data[n] && wt_size[n]) {
-    oscope_wave_index = n;
-    osc_set_wt(voice, n);
+int wave_set(int voice, int wave) {
+  if (wave >= 0 && wave < EXWAVEMAX) {
+    oscope_wave_index = wave;
+    osc_set_wt(voice, wave);
     update_oscope_wave(osc[voice].table, osc[voice].table_size);
   } else return ERR_INVALID_WAVE;
   return 0;
@@ -2465,6 +2313,7 @@ int patch_load(int voice, int n, int output) {
   sprintf(file, "exp%d.patch", n);
   FILE *in = fopen(file, "r");
   int r = 0;
+  int save_voice;
   if (in) {
     char line[1024];
     while (fgets(line, sizeof(line), in) != NULL) {
@@ -2472,7 +2321,7 @@ int patch_load(int voice, int n, int output) {
       if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
       if (output) printf("# %s\n", line);
       int temp_voice = voice;
-      r = wire(line, &temp_voice, trace);
+      r = wire(line, &temp_voice, &save_voice, trace);
       if (r != 0) {
         if (output) printf("# error in patch\n");
         break;

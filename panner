@@ -1,0 +1,2 @@
+#!/bin/bash
+wish fire.tcl -1 1 .001 p%s 0 "panner"

@@ -2,17 +2,20 @@
 
 # Global variables for slider configuration
 
-set minVal 0.0
-set maxVal 1.1
-set stepVal 0.0001
-set currentVal 0.5
-set formatString "c1,%s"
+set min_val 0.0
+set max_val 1.1
+set step_val 0.0001
+set current_val 0.5
+set wire_string "c1,%s"
 
-if {$argc > 0} {set minVal [lindex $argv 0]}
-if {$argc > 1} {set maxVal [lindex $argv 1]}
-if {$argc > 2} {set stepVal [lindex $argv 2]}
-if {$argc > 3} {set formatString [lindex $argv 3]}
-if {$argc > 4} {set currentString [lindex $argv 4]}
+set window_title "fire"
+
+if {$argc > 0} {set min_val [lindex $argv 0]}
+if {$argc > 1} {set max_val [lindex $argv 1]}
+if {$argc > 2} {set step_val [lindex $argv 2]}
+if {$argc > 3} {set wire_string [lindex $argv 3]}
+if {$argc > 4} {set current_val [lindex $argv 4]}
+if {$argc > 5} {set window_title [lindex $argv 5]}
 
 package require Tk
 package require udp
@@ -37,29 +40,28 @@ proc wire {msg} {
 
 # Procedure to be called when slider changes
 proc fire {value} {
-    global currentVal formatString
-    set currentVal $value
-    set formattedOutput [format $formatString $value]
-    # puts $formattedOutput
+    global current_val wire_string
+    set current_val $value
+    set formattedOutput [format $wire_string $value]
     wire $formattedOutput
 }
 
 # Procedure to update slider configuration
 proc updateSlider {} {
-    global minVal maxVal stepVal currentVal
+    global min_val max_val step_val current_val
     
     # Validate inputs
-    if {![string is double $minVal] || ![string is double $maxVal] || ![string is double $stepVal]} {
+    if {![string is double $min_val] || ![string is double $max_val] || ![string is double $step_val]} {
         tk_messageBox -type ok -icon error -title "Error" -message "Please enter valid numeric values"
         return
     }
     
-    if {$stepVal <= 0} {
+    if {$step_val <= 0} {
         tk_messageBox -type ok -icon error -title "Error" -message "Step value must be greater than 0"
         return
     }
     
-    if {$minVal >= $maxVal} {
+    if {$min_val >= $max_val} {
         tk_messageBox -type ok -icon error -title "Error" -message "Minimum value must be less than maximum value"
         return
     }
@@ -68,21 +70,21 @@ proc updateSlider {} {
     .slider configure -command {}
     
     # Update slider configuration
-    .slider configure -from $minVal -to $maxVal -resolution $stepVal
+    .slider configure -from $min_val -to $max_val -resolution $step_val
     
     # Only adjust current value if it's outside the new range
-    if {$currentVal < $minVal || $currentVal > $maxVal} {
-        set currentVal $minVal
+    if {$current_val < $min_val || $current_val > $max_val} {
+        set current_val $min_val
     }
     
     # Restore the command after updating
     .slider configure -command {fire}
     
-    # puts "Slider updated: Min=$minVal, Max=$maxVal, Step=$stepVal"
+    # puts "Slider updated: Min=$min_val, Max=$max_val, Step=$step_val"
 }
 
 # Create main window
-wm title . "fire"
+wm title . $window_title
 wm geometry . ;# 400x350
 
 # Create frame for input fields
@@ -91,19 +93,19 @@ pack .inputs -side top -fill x -padx 4 -pady 4
 
 # Create labels and entry fields for A, B, C, and Format
 label .inputs.labelA -text "min"
-entry .inputs.entryA -textvariable minVal -width 10
+entry .inputs.entryA -textvariable min_val -width 10
 grid .inputs.labelA .inputs.entryA -sticky w -padx 5 -pady 2
 
 label .inputs.labelB -text "max"
-entry .inputs.entryB -textvariable maxVal -width 10
+entry .inputs.entryB -textvariable max_val -width 10
 grid .inputs.labelB .inputs.entryB -sticky w -padx 5 -pady 2
 
 label .inputs.labelC -text "step"
-entry .inputs.entryC -textvariable stepVal -width 10
+entry .inputs.entryC -textvariable step_val -width 10
 grid .inputs.labelC .inputs.entryC -sticky w -padx 5 -pady 2
 
 label .inputs.labelFormat -text "wire"
-entry .inputs.entryFormat -textvariable formatString -width 20
+entry .inputs.entryFormat -textvariable wire_string -width 20
 grid .inputs.labelFormat .inputs.entryFormat -sticky w -padx 5 -pady 2
 
 # Update button
@@ -125,12 +127,12 @@ pack .sliderFrame -side top -fill both -expand true -padx 4 -pady 4
 # pack .sliderFrame.label -side top -anchor w
 
 # Create the slider
-scale .slider -from $minVal -to $maxVal -resolution $stepVal \
-    -orient horizontal -variable currentVal -command {fire}
+scale .slider -from $min_val -to $max_val -resolution $step_val \
+    -orient horizontal -variable current_val -command {fire}
 pack .slider -in .sliderFrame -side top -fill x -pady 10
 
 # Create current value display
-# label .sliderFrame.current -textvariable currentVal -relief sunken -bd 1
+# label .sliderFrame.current -textvariable current_val -relief sunken -bd 1
 # pack .sliderFrame.current -side top -anchor w
 
 # Initialize display

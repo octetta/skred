@@ -1,0 +1,2 @@
+#!/bin/bash
+wish fire.tcl 0 20 .0001 a%s 0 "amper"
