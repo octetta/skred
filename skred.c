@@ -166,6 +166,9 @@ int phasereset[VOICE_MAX];
 
 int wtsel[VOICE_MAX];
 
+int cz[VOICE_MAX];
+float czd[VOICE_MAX];
+
 void reset_voice(int i);
 void init_voice(void);
 
@@ -226,22 +229,173 @@ void osc_set_freq(int v, float freq) {
   osc[v].phase_inc = (g * osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / MAIN_SAMPLE_RATE);
 }
 
+float cz_phasor(int n, float p, float d, int table_size) {
+  float phase = p / (float)table_size;
+  if (d < 0) d = 0;
+  if (d > 1) d = 1;
+  switch (n) {
+    case 1: // saw -> pulse
+      if (phase < d) phase *= (0.5 / d);
+      else phase = 0.5 + (phase - d) * (0.5 / (1.0 - d));
+      break;
+    case 2: // square (folded sine)
+      if (phase < 0.5) phase *= (0.5 / (0.5 - d * 0.5));
+      else phase = 1.0 - (1.0 - phase) * (0.5 / (0.5 - d * 0.5));
+      break;
+    case 3: // triangle
+      if (phase < 0.5) phase *= (0.5 / (0.5 - d * 0.5));
+      else phase = 0.5 + (phase - 0.5) * (0.5 / (0.5 - d * 0.5));
+      break;
+    case 4: // double sine
+      phase = fmodf(phase * 2.0, 1.0);
+      break;
+    case 5: // saw -> triangle
+      if (phase < 0.5) phase *= (0.5 / (0.5 - d * 0.5));
+      else phase = 0.5 + (phase - 0.5) * (0.5 / (0.5 + d * 0.5));
+      break;
+    default:
+      return p;
+  }
+  return fmodf(phase * (float)table_size, table_size);
+  return phase * (float)table_size;
+}
+
+#if 0
+
+typedef struct {
+    float phase;          // current phase (can be fractional)
+    float phase_inc;      // increment per sample (can be negative)
+    int table_size;       // full wavetable length
+    float *table;         // pointer to wavetable
+    int one_shot;         // 0 = looping indefinitely, 1 = one-shot
+    int finished;         // 1 if one-shot ended
+    int loop_enabled;     // 1 = loop between loop_start and loop_end
+    float loop_start;     // loop start phase (0..table_size)
+    float loop_end;       // loop end phase (0..table_size)
+} Oscillator;
+
+float alt_osc_next(Oscillator *osc) {
+    if (osc->finished) return 0.0f;
+
+    // Step phase
+    osc->phase += osc->phase_inc;
+
+    // Determine active boundaries
+    float start = osc->loop_enabled ? osc->loop_start : 0.0f;
+    float end   = osc->loop_enabled ? osc->loop_end   : (float)osc->table_size;
+
+    // Forward playback
+    if (osc->phase_inc >= 0.0f) {
+        if (osc->phase >= end) {
+            if (osc->one_shot) {
+                osc->phase = end - 1e-6f; // clamp to end
+                osc->finished = 1;
+            } else if (osc->loop_enabled) {
+                osc->phase = start + fmodf(osc->phase - start, end - start);
+            } else {
+                osc->phase -= osc->table_size; // wrap entire table
+            }
+        }
+    }
+    // Backward playback
+    else {
+        if (osc->phase < start) {
+            if (osc->one_shot) {
+                osc->phase = start;
+                osc->finished = 1;
+            } else if (osc->loop_enabled) {
+                osc->phase = end - fmodf(start - osc->phase, end - start);
+            } else {
+                osc->phase += osc->table_size; // wrap entire table
+            }
+        }
+    }
+
+    // Linear interpolation
+    int idx = (int)osc->phase;
+    int next_idx;
+    if (osc->phase_inc >= 0.0f) {
+        next_idx = (idx + 1) % osc->table_size;
+    } else {
+        next_idx = (idx == 0) ? osc->table_size - 1 : idx - 1;
+    }
+    float frac = osc->phase - (float)idx;
+    float sample = osc->table[idx] * (1.0f - frac) + osc->table[next_idx] * frac;
+
+    return sample;
+}
+
+
+#endif
+
+#if 1
+
+#define OFT float
+#define OFM fmodf
+
 float osc_next(int n, float phase_inc) {
   int table_size = osc[n].table_size;
+  OFT fphase = OFM(osc[n].phase, table_size);
+  
+  if (cz[n]) fphase = cz_phasor(cz[n], fphase, czd[n], table_size);
+  
+  int iphase = fphase;
+  
+  float sample = osc[n].table[iphase];
+  
+  if (direction[n]) osc[n].phase -= phase_inc;
+  else osc[n].phase += phase_inc;
+  
+  if (osc[n].sampled) {
+    if (osc[n].looping) {
+      if (direction[n]) {
+        if (osc[n].phase < osc[n].loopstart) osc[n].phase = osc[n].loopend;
+      } else {
+        if (osc[n].phase >= osc[n].loopend) osc[n].phase = osc[n].loopstart;
+      }
+    } else {
+      if (direction[n]) {
+        if (osc[n].phase < 0) osc[n].inactive = 1;
+      } else {
+        if (osc[n].phase >= table_size) osc[n].inactive = 1;
+      }
+    }
+  }
+  // osc[n].phase = fmodf(osc[n].phase, table_size);
+  return sample;
+}
+#endif
+
+#if 0
+float osc_next(int n, float phase_inc) {
+  int table_size = osc[n].table_size;
+  float phase = osc[n].phase;
   float sample;
     
   if (osc[n].sampled) {
-    if (direction[n] == 0 && osc[n].phase > table_size) {
+    if (direction[n] == 0 && phase > table_size) {
       osc[n].inactive = 1;
       return 0;
     }
-    if (direction[n] == 1 && osc[n].phase < 0) {
+    if (direction[n] == 1 && phase < 0) {
       osc[n].inactive = 1;
       return 0;
     }
   }
 
-  int i = (int)osc[n].phase % table_size;
+  if (cz[n] == 1) {
+    float phase_norm = phase / (float)table_size;
+    float d = czd[n];
+    if (phase_norm < d) {
+      phase_norm *= (0.5 / d);
+    } else {
+      phase_norm = 0.5 + (phase_norm - d) * (0.5 / (1.0 - d));
+    }
+    phase = phase_norm * (float)table_size;
+  }
+  osc[n].phase = phase;
+
+  int i = (int)phase % table_size;
     
   if (i < 0) {
     osc[n].phase = table_size - 1;
@@ -299,6 +453,7 @@ float osc_next(int n, float phase_inc) {
 
   return sample;
 }
+#endif
 
 void osc_set_wt(int voice, int n) {
   if (wt_data[n] && wt_size[n] && wt_rate[n] > 0.0) {
@@ -663,7 +818,7 @@ enum {
 };
 
 void voice_show(int v, char c) {
-  printf("# v%d w%d b%d B%d n%g f%g a%g p%g I%d d%d q%d",
+  printf("# v%d w%d b%d B%d n%g f%g a%g p%g I%d d%d q%d c%d,%g",
     v,
     wtsel[v],
     direction[v],
@@ -674,7 +829,8 @@ void voice_show(int v, char c) {
     pan[v],
     interp[v],
     decimate[v],
-    quantize[v]);
+    quantize[v],
+    cz[v], czd[v]);
   printf(" A%d,%g", amod_osc[v], amod_depth[v]);
   printf(" F%d,%g", fmod_osc[v], fmod_depth[v]);
   printf(" P%d,%g", pmod_osc[v], pmod_depth[v]);
@@ -801,6 +957,7 @@ enum {
   FUNC_WHITESPACE,
   FUNC_METRO,
   FUNC_WAVE_DEFAULT,
+  FUNC_CZ,
   //
   FUNC_UNKNOWN,
 };
@@ -851,6 +1008,7 @@ char *_func_func_str[FUNC_UNKNOWN+1] = {
   [FUNC_WHITESPACE] = "white-space",
   [FUNC_METRO] = "metro",
   [FUNC_WAVEREAD] = "wave-read",
+  [FUNC_CZ] = "cz",
 };
 
 char *func_func_str(int n) {
@@ -897,6 +1055,7 @@ int pan_set(int voice, float f);
 int adsr_set(int voice, float a, float d, float s, float r);
 int adsr_velocity(int voice, float f);
 int wavetable_show(int n);
+int cz_set(int v, int m, float d);
 
 char *ignore = " \t\r\n;";
 
@@ -1106,6 +1265,13 @@ int wire(char *line, int *this_voice, int output) {
         if (v.argc == 1) {
           ptr += v.next;
           if (v.args[0] >= 0 && v.args[0] <= 15) fsleep(v.args[0]);
+        }
+        break;
+      case 'c':
+        v = parse(ptr, FUNC_CZ, FUNC_NULL, 2);
+        if (v.argc == 2) {
+          ptr += v.next;
+          r = cz_set(voice, v.args[0], v.args[1]);
         }
         break;
       case '?':
@@ -2228,5 +2394,11 @@ int wavetable_show(int n) {
     downsample_block_average_min_max(table, size, oscope_wave, OWWIDTH, oscope_min, oscope_max);
     oscope_wave_len = OWWIDTH;
   }
+  return 0;
+}
+
+int cz_set(int v, int n, float f) {
+  cz[v] = n;
+  czd[v] = f;
   return 0;
 }
