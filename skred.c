@@ -813,7 +813,52 @@ enum {
   ERR_INVALID_DECI,
   ERR_INVALID_FREQ,
   ERR_INVALID_WAVETABLE,
+  // add new stuff before here...
+  ERR_UNKNOWN,
 };
+
+char *_err_str[ERR_UNKNOWN+1] = {
+  [ERR_EXPECTED_INT] = "expected int",
+  [ERR_EXPECTED_FLOAT] = "expected float",
+  [ERR_INVALID_VOICE] = "invalid voice",
+  [ERR_FREQUENCY_OUT_OF_RANGE] = "frequency out of range",
+  [ERR_AMPLITUDE_OUT_OF_RANGE] = "amplitude out-of-range",
+  [ERR_INVALID_WAVE] = "invalid wave",
+  [ERR_EMPTY_WAVE] = "empty wave",
+  [ERR_INVALID_INTERPOLATE] = "invalid interpolate",
+  [ERR_INVALID_DIRECTION] = "invalid direction",
+  [ERR_INVALID_LOOPING] = "invalid looping",
+  [ERR_PAN_OUT_OF_RANGE] = "pan out-of-range",
+  [ERR_INVALID_DELAY] = "invalid delay",
+  [ERR_INVALID_MODULATOR] = "invalid modulator",
+  [ERR_UNKNOWN_FUNC] = "unknown func",
+  [ERR_UNKNOWN_SYS] = "unknown sys",
+  [ERR_INVALID_TRACE] = "invalid trace",
+  [ERR_INVALID_DEBUG] = "invalid debug",
+  [ERR_INVALID_MUTE] = "invalid mute",
+  [ERR_INVALID_EXTSAMPLE] = "invalid external sample",
+  [ERR_PARSING_ERROR] = "parsing error",
+  [ERR_INVALID_PATCH] = "invalid patch",
+  [ERR_INVALID_MIDI_NOTE] = "invalid midi note",
+  //
+  [ERR_INVALID_AMP] = "invalid amp",
+  [ERR_INVALID_PAN] = "invalid pan",
+  [ERR_INVALID_QUANT] = "invalid quant",
+  [ERR_INVALID_DECI] = "invalid deci",
+  [ERR_INVALID_FREQ] = "invalid freq",
+  [ERR_INVALID_WAVETABLE] = "invalid wave table",
+  // add new stuff before here...
+  [ERR_UNKNOWN] = "x",
+};
+
+char *err_str(int n) {
+  if (n >= 0 && n <= ERR_UNKNOWN) {
+    if (_err_str[n]) {
+      return _err_str[n];
+    }
+  }
+  return "no-string";
+}
 
 void voice_show(int v, char c) {
   printf("# v%d w%d b%d B%d n%g f%g a%g p%g I%d d%d q%d c%d,%g",
@@ -1538,39 +1583,7 @@ int main(int argc, char *argv[]) {
     int n = wire(line, &current_voice, &save_voice, 1);
     if (n < 0) break; // request to stop or error
     if (n > 0) {
-      char *s = "\0";
-      switch (n) {
-        case ERR_EXPECTED_INT: s = "expected int"; break;
-        case ERR_EXPECTED_FLOAT: s = "expected float"; break;
-        case ERR_INVALID_VOICE: s = "invalid voice"; break;
-        case ERR_FREQUENCY_OUT_OF_RANGE: s = "frequency out of range"; break;
-        case ERR_AMPLITUDE_OUT_OF_RANGE: s = "amplitude out of range"; break;
-        case ERR_INVALID_WAVE: s = "invalid wave"; break;
-        case ERR_EMPTY_WAVE: s = "empty wave"; break;
-        case ERR_INVALID_INTERPOLATE: s = "invalid interpolate type"; break;
-        case ERR_INVALID_DIRECTION: s = "invalid wave direction"; break;
-        case ERR_INVALID_LOOPING: s = "invalid wave looping flag"; break;
-        case ERR_PAN_OUT_OF_RANGE: s = "pan out of range"; break;
-        case ERR_INVALID_DELAY: s = "invalid delay"; break;
-        case ERR_INVALID_MODULATOR: s = "invalid modulator"; break;
-        case ERR_UNKNOWN_FUNC: s = "unknown func"; break;
-        case ERR_UNKNOWN_SYS: s = "unknown sys"; break;
-        case ERR_INVALID_TRACE: s = "invalid trace"; break;
-        case ERR_INVALID_DEBUG: s = "invalid debug"; break;
-        case ERR_INVALID_MUTE: s = "invalid mute"; break;
-        case ERR_INVALID_EXTSAMPLE: s = "invalid external sample"; break;
-        case ERR_PARSING_ERROR: s = "parsing error"; break;
-        case ERR_INVALID_PATCH: s = "invalid patch"; break;
-        case ERR_INVALID_MIDI_NOTE: s = "invalid midi note"; break;
-        //
-        case ERR_INVALID_AMP: s = "invalid amp"; break;
-        case ERR_INVALID_PAN: s = "invalid pan"; break;
-        case ERR_INVALID_QUANT: s = "invalid quant"; break;
-        case ERR_INVALID_DECI: s = "invalid deci"; break;
-        case ERR_INVALID_FREQ: s = "invalid freq"; break;
-        case ERR_INVALID_WAVETABLE: s = "invalid wave table"; break;
-        default: s = "unknown return"; break;
-      }
+      char *s = err_str(n);
       printf("# %s ERR:%d\n", s, n);
     }
     linenoiseFree(line);
