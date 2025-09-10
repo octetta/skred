@@ -1,19 +1,22 @@
 EXE = \
 	skred \
   rle1 \
-  scanner
+  scanner \
+  #
 
 all : $(EXE)
 
 ELIB = \
-	linenoise.o
+	linenoise.o \
+  #
 
 LIB = \
 	-lm \
 	-lasound \
   -pthread \
 	-lpthread \
-  -lrt
+  -lrt \
+  #
 
 COPTS = \
   -D_GNU_SOURCE \

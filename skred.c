@@ -3,15 +3,16 @@
 #include <unistd.h>
 #include <errno.h>
 #include <unistd.h>
+#include <math.h>
 
 #include "motor.h"
 
 #define SOKOL_AUDIO_IMPL
 #include "sokol_audio.h"
 
-static volatile uint64_t tick_self_count = 0;
-static volatile uint64_t tick_engine_count = 0;
-static volatile uint64_t tick_mod = 22050;
+static volatile int tick_clock = 0;
+static volatile int tick_steps = 0;
+static volatile int tick_mod = 46;
 static volatile uint64_t sample_count = 0;
 
 void tick();
@@ -108,6 +109,8 @@ int show_audio(void) {
       saudio_sample_rate());
     printf("# buffer frames %d\n", saudio_buffer_frames());
     printf("# number of channels %d\n", saudio_channels());
+    printf("# tick_mod:%d tick_clock:%d tick_steps:%d\n",
+      tick_mod, tick_clock, tick_steps); 
   } else {
     printf("# did not start audio backend\n");
     return 1;
@@ -115,10 +118,8 @@ int show_audio(void) {
   return 0;
 }
 
-
 #include "linenoise.h"
 
-#include <math.h>
 #include <pthread.h>
 #include <time.h>
 
@@ -152,9 +153,11 @@ int use_adsr[VOICE_MAX];
 int fmod_osc[VOICE_MAX];
 int pmod_osc[VOICE_MAX];
 int amod_osc[VOICE_MAX];
+int cmod_osc[VOICE_MAX];
 float fmod_depth[VOICE_MAX];
 float pmod_depth[VOICE_MAX];
 float amod_depth[VOICE_MAX];
+float cmod_depth[VOICE_MAX];
 int hide[VOICE_MAX];
 int decimate[VOICE_MAX];
 int decicount[VOICE_MAX];
@@ -169,8 +172,32 @@ int wtsel[VOICE_MAX];
 int cz[VOICE_MAX];
 float czd[VOICE_MAX];
 
-void reset_voice(int i);
-void init_voice(void);
+// Low-pass filter state structure
+typedef struct {
+  float x1, x2;  // Input delay line
+  float y1, y2;  // Output delay line
+  float b0, b1, b2;  // Feedforward coefficients
+  float a1, a2;      // Feedback coefficients
+    
+  // Parameter tracking for coefficient updates
+  float last_freq;
+  float last_resonance;
+  float sample_rate;
+} lpf_t;
+
+int filter_active[VOICE_MAX];
+float filter_freq[VOICE_MAX];
+float filter_res[VOICE_MAX];
+lpf_t filter[VOICE_MAX];
+
+void lpf_init(int n, float freq, float resonance, float sample_rate);
+void lpf_set_params(int n, float freq, float resonance);
+float lpf_process(int n, float input);
+int lpf_set_freq(int n, float freq);
+int lpf_set_res(int n, float res);
+
+void voice_reset(int i);
+void voice_init(void);
 
 typedef struct {
   float phase;            // Current position in table
@@ -322,12 +349,15 @@ float osc_next(int voice, float phase_inc) {
         }
     }
 
-    float sample;
+    float f;
     if (interp[voice]) {
       // Linear interpolation
       int idx;
       if (cz[voice]) {
-        idx = (int)cz_phasor(cz[voice], osc[voice].phase, czd[voice], table_size);
+        int dv = cmod_osc[voice];
+        float dm = 1.0;
+        if (dv >= 0) dm = sample[dv] * cmod_depth[voice];
+        idx = (int)cz_phasor(cz[voice], osc[voice].phase, czd[voice] + dm, table_size);
       } else {
         idx = (int)osc[voice].phase;
       }
@@ -341,22 +371,26 @@ float osc_next(int voice, float phase_inc) {
           next_idx = (idx == 0) ? table_size - 1 : idx - 1;
           frac = (float)idx - osc[voice].phase;
       }
-      sample = osc[voice].table[idx] * (1.0f - frac) + osc[voice].table[next_idx] * frac;
+      f = osc[voice].table[idx] * (1.0f - frac) + osc[voice].table[next_idx] * frac;
     } else {
       int idx;
       //
       if (cz[voice]) {
-        idx = (int)cz_phasor(cz[voice], osc[voice].phase, czd[voice], table_size);
+        int dv = cmod_osc[voice];
+        float dm = 1.0;
+        if (dv >= 0) dm = sample[dv] * cmod_depth[voice];
+        idx = (int)cz_phasor(cz[voice], osc[voice].phase, czd[voice] + dm, table_size);
+        //idx = (int)cz_phasor(cz[voice], osc[voice].phase, czd[voice], table_size);
       } else {
         idx = (int)osc[voice].phase;
       }
       //
       if (idx >= table_size) idx = table_size - 1;
       if (idx < 0) idx = 0;
-      sample = osc[voice].table[idx];
+      f = osc[voice].table[idx];
     }
 
-    return sample;
+    return f;
 }
 
 #if 0
@@ -651,11 +685,14 @@ float get_oscope_buffer(int *index) {
 }
 
 void engine(float *buffer, int num_frames, int num_channels, void *user_data) { // , void *user_data) {
+  //motor_wake_tick();
+#if 1
+  tick();
+#else
+  futex_var = sample_count;
+  futex_wake(&futex_var, 1);
+#endif
   for (int i = 0; i < num_frames; i++) {
-    if ((sample_count % tick_mod) == 0) {
-      motor_trigger();
-      tick_engine_count++;
-    }
     sample_count++;
     float samplel = 0;
     float sampler = 0;
@@ -688,6 +725,9 @@ void engine(float *buffer, int num_frames, int num_channels, void *user_data) { 
       if (quantize[n]) {
         sample[n] = quantize_bits_int(sample[n], quantize[n]);
       }
+
+      // LPF EXPERIMENTAL
+      if (filter_active[n]) sample[n] = lpf_process(n, sample[n]);
 
       // apply amp to sample
       if (use_adsr[n]) {
@@ -808,6 +848,8 @@ enum {
   ERR_INVALID_MIDI_NOTE,
   //
   ERR_INVALID_AMP,
+  ERR_INVALID_LPF,
+  ERR_INVALID_LPQ,
   ERR_INVALID_PAN,
   ERR_INVALID_QUANT,
   ERR_INVALID_DECI,
@@ -861,7 +903,7 @@ char *err_str(int n) {
 }
 
 void voice_show(int v, char c) {
-  printf("# v%d w%d b%d B%d n%g f%g a%g p%g I%d d%d q%d c%d,%g",
+  printf("# v%d w%d b%d B%d n%g f%g a%g p%g c%d,%g L%g Q%g",
     v,
     wtsel[v],
     direction[v],
@@ -870,20 +912,20 @@ void voice_show(int v, char c) {
     freq[v],
     amp[v] / AFACTOR,
     pan[v],
-    interp[v],
-    decimate[v],
-    quantize[v],
-    cz[v], czd[v]);
-  printf(" A%d,%g", amod_osc[v], amod_depth[v]);
-  printf(" F%d,%g", fmod_osc[v], fmod_depth[v]);
-  printf(" P%d,%g", pmod_osc[v], pmod_depth[v]);
+    cz[v], czd[v],
+    filter_freq[v], filter_res[v]);
+  // printf(" I%d d%d q%d", interp[v], decimate[v], quantize[v]);
+  if (amod_osc[v] >= 0 && amod_depth[v] > 0) printf(" A%d,%g", amod_osc[v], amod_depth[v]);
+  if (cmod_osc[v] >= 0 && cmod_depth[v] > 0) printf(" C%d,%g", cmod_osc[v], cmod_depth[v]);
+  if (fmod_osc[v] >= 0 && fmod_depth[v] > 0) printf(" F%d,%g", fmod_osc[v], fmod_depth[v]);
+  if (pmod_osc[v] >= 0 && pmod_depth[v] > 0) printf(" P%d,%g", pmod_osc[v], pmod_depth[v]);
   printf(" m%d E%g,%g,%g,%g",
     hide[v],
     amp_env[v].attack_time,
     amp_env[v].decay_time,
     amp_env[v].sustain_level,
     amp_env[v].release_time);
-  printf(" # %g/%g", osc[v].phase, osc[v].phase_inc);
+  // printf(" # %g/%g", osc[v].phase, osc[v].phase_inc);
   if (osc[v].one_shot) {
     printf(" %d/%g", osc[v].midinote, osc[v].offsethz);
   }
@@ -966,6 +1008,7 @@ enum {
   FUNC_VELOCITY,
   FUNC_MUTE,
   FUNC_AMOD,
+  FUNC_CMOD,
   FUNC_FMOD,
   FUNC_PMOD,
   FUNC_MIDI,
@@ -978,6 +1021,8 @@ enum {
   FUNC_DECI,
   FUNC_QUANT,
   FUNC_RESET,
+  FUNC_LPF,
+  FUNC_LPQ,
   // subfunctions
   FUNC_HELP,
   FUNC_SEQSTART,
@@ -1017,6 +1062,7 @@ char *_func_func_str[FUNC_UNKNOWN+1] = {
   [FUNC_VELOCITY] = "velocity",
   [FUNC_MUTE] = "mute",
   [FUNC_AMOD] = "amod",
+  [FUNC_CMOD] = "cmod",
   [FUNC_FMOD] = "fmod",
   [FUNC_PMOD] = "pmod",
   [FUNC_MIDI] = "midi",
@@ -1029,6 +1075,8 @@ char *_func_func_str[FUNC_UNKNOWN+1] = {
   [FUNC_DECI] = "deci",
   [FUNC_QUANT] = "quant",
   [FUNC_RESET] = "reset",
+  [FUNC_LPF] = "lpf",
+  [FUNC_LPQ] = "lpq",
   [FUNC_UNKNOWN] = "unknown",
   //
   [FUNC_HELP] = "help",
@@ -1099,6 +1147,7 @@ int adsr_set(int voice, float a, float d, float s, float r);
 int adsr_velocity(int voice, float f);
 int wavetable_show(int n);
 int cz_set(int v, int m, float d);
+int cmod_set(int voice, int osc, float f);
 
 char *ignore = " \t\r\n;";
 
@@ -1326,6 +1375,13 @@ int wire(char *line, int *this_voice, int *save_voice, int output) {
           r = cz_set(voice, v.args[0], v.args[1]);
         }
         break;
+      case 'C':
+        v = parse(ptr, FUNC_CZ, FUNC_NULL, 2);
+        if (v.argc == 2) {
+          ptr += v.next;
+          r = cmod_set(voice, v.args[0], v.args[1]);
+        }
+        break;
       case '?':
         v = parse_none(FUNC_HELP, FUNC_NULL);
         if (*ptr == '?') {
@@ -1457,6 +1513,34 @@ int wire(char *line, int *this_voice, int *save_voice, int output) {
           r = amod_set(voice, -1, 0);
         } else return ERR_PARSING_ERROR;
         break;
+      case 'L':
+        v = parse(ptr, FUNC_LPF, FUNC_NULL, 2);
+        if (v.argc == 1) {
+          ptr += v.next;
+          if (v.args[0] < 0) {
+            filter_active[voice] = 0;
+            r = 0;
+          } else {
+            filter_active[voice] = 1;
+            lpf_set_freq(voice, v.args[0]);
+            r = 0;
+          }
+        } else return ERR_INVALID_LPF;
+        break;
+      case 'Q':
+        v = parse(ptr, FUNC_LPQ, FUNC_NULL, 2);
+        if (v.argc == 1) {
+          ptr += v.next;
+          if (v.args[0] < 0) {
+            filter_active[voice] = 0;
+            r = 0;
+          } else {
+            filter_active[voice] = 1;
+            lpf_set_res(voice, v.args[0]);
+            r = 0;
+          }
+        } else return ERR_INVALID_LPQ;
+        break;
       case 'l':
         v = parse(ptr, FUNC_VELOCITY, FUNC_NULL, 1);
         if (v.argc == 1) {
@@ -1516,25 +1600,19 @@ int wire(char *line, int *this_voice, int *save_voice, int output) {
 char my_data[] = "hello";
 
 void tick_mod_set(uint64_t m) {
+  motor_update(m);
   tick_mod = m;
 }
 
-void tick() {
-#if 0
-  static uint64_t last = 0;
-  static uint64_t diff = 0;
-  diff = sample_count - last;
-  last = sample_count;
-  if (diff >= tick_mod) {
+void tick(void) {
+  static int i = 0;
+  if ((i % tick_mod) == 0) {
+    if (i&1) voice_trigger(20);
+    else voice_trigger(21);
   }
-  if (tick_self_count & 1) voice_trigger(20);
-  //if (tick_engine_count & 1) voice_trigger(20);
-  else voice_trigger(21);
-  tick_self_count++;
-#else
-  int voice = 20;
-  wire("v20T", &voice, NULL, 0);
-#endif
+  i++;
+  //int voice = 20;
+  //wire("v20T", &voice, NULL, 0);
 }
 
 int main(int argc, char *argv[]) {
@@ -1550,8 +1628,10 @@ int main(int argc, char *argv[]) {
   show_threads();
   linenoiseHistoryLoad(HISTORY_FILE);
   init_wt();
-  init_voice();
+  voice_init();
   
+  motor_init(tick); // must happen before audio callback
+
   // Initialize Sokol Audio
   saudio_setup(&(saudio_desc){
     // .stream_cb = stream_cb,
@@ -1559,6 +1639,8 @@ int main(int argc, char *argv[]) {
     .user_data = &my_data,
     .sample_rate = MAIN_SAMPLE_RATE,
     .num_channels = CHANNEL_NUM, // Stereo
+    .packet_frames = 256,
+    .num_packets = 1,
     // .user_data = &my_data, // todo
   });
 
@@ -1569,8 +1651,7 @@ int main(int argc, char *argv[]) {
   pthread_create(&udp_thread, NULL, udp, NULL);
   pthread_detach(udp_thread);
 
-  int ms = 250;
-  motor_init(ms, tick);
+  motor_go();
   
   while (main_running) {
     char *line = linenoise("# ");
@@ -1859,7 +1940,7 @@ void wt_free(void) {
   }
 }
 
-void reset_voice(int i) {
+void voice_reset(int i) {
   sample[i] = 0;
   hold[i] = 0;
   amp[i] = 0;
@@ -1880,11 +1961,13 @@ void reset_voice(int i) {
   adsr_init(i, 1.1f, 0.2f, 0.7f, 0.5f, 44100.0f);
   freq[i] = 440.0;
   osc_set_wt(i, EXWAVESINE);
+  lpf_init(i, 1000.0, 0.707, 44100);
+  filter_active[i] = 0;
 }
 
-void init_voice(void) {
+void voice_init(void) {
   for (int i=0; i<VOICE_MAX; i++) {
-    reset_voice(i);
+    voice_reset(i);
   }
 }
 
@@ -2123,16 +2206,8 @@ void *oscope(void *arg) {
         actual++;
       }
     rlPopMatrix();
-    char *bell = " ";
-    char *ding = " ";
-    if ((sample_count % tick_mod) == 0) bell = "!";
-    if (tick_self_count != tick_engine_count) ding = "*";
-    sprintf(osd, "%s %s %ld %ld %ld %ld",
-      bell,
-      ding,
-      tick_self_count,
-      tick_engine_count,
-      tick_mod,
+    sprintf(osd, "%d %d %d %ld",
+      tick_mod, tick_clock, tick_steps,
       sample_count);
     DrawText(osd, SCREENWIDTH/5, SCREENHEIGHT/3, 40, BLUE);
     EndDrawing();
@@ -2187,9 +2262,9 @@ int wave_set(int voice, int wave) {
 
 int wave_reset(int voice, int n) {
   if (n >= 0 && n < VOICE_MAX) {
-    reset_voice(n);
+    voice_reset(n);
   } else {
-    init_voice();
+    voice_init();
   }
   return 0;
 }
@@ -2436,3 +2511,147 @@ int cz_set(int v, int n, float f) {
   czd[v] = f;
   return 0;
 }
+
+int cmod_set(int voice, int osc, float f) {
+  cmod_osc[voice] = osc;
+  cmod_depth[voice] = f;
+  return 0;
+}
+
+// Initialize the filter with frequency and resonance
+// freq: cutoff frequency in Hz
+// resonance: resonance factor (0.1 to 10.0, where 0.707 is no resonance)
+// sample_rate: audio sample rate in Hz
+void lpf_init(int n, float freq, float resonance, float sample_rate) {
+    // Clear delay lines
+    filter[n].x1 = filter[n].x2 = 0.0f;
+    filter[n].y1 = filter[n].y2 = 0.0f;
+    
+    // Store parameters
+    filter[n].sample_rate = sample_rate;
+    filter[n].last_freq = -1.0f;  // Force coefficient calculation
+    filter[n].last_resonance = -1.0f;
+    
+    // Calculate initial coefficients
+    lpf_set_params(n, freq, resonance);
+}
+
+// Set parameters - only recalculates coefficients if values changed
+void lpf_set_params(int n, float freq, float resonance) {
+    // Only recalculate if parameters changed
+    if (freq == filter[n].last_freq && resonance == filter[n].last_resonance) {
+        return;  // No work needed!
+    }
+    
+    filter[n].last_freq = freq;
+    filter[n].last_resonance = resonance;
+    
+    // Calculate filter coefficients (expensive operations only done here)
+    float omega = 2.0f * M_PI * freq / filter[n].sample_rate;
+    float sin_omega = sinf(omega);
+    float cos_omega = cosf(omega);
+    float alpha = sin_omega / (2.0f * resonance);
+    
+    float a0 = 1.0f + alpha;
+    
+    // Normalize coefficients
+    filter[n].b0 = (1.0f - cos_omega) / (2.0f * a0);
+    filter[n].b1 = (1.0f - cos_omega) / a0;
+    filter[n].b2 = (1.0f - cos_omega) / (2.0f * a0);
+    filter[n].a1 = -2.0f * cos_omega / a0;
+    filter[n].a2 = (1.0f - alpha) / a0;
+    filter_freq[n] = freq;
+    filter_res[n] = resonance;
+}
+
+
+int lpf_set_freq(int n, float freq) {
+  lpf_set_params(n, freq, filter_res[n]);
+  return 0;
+}
+
+int lpf_set_res(int n, float res) {
+  lpf_set_params(n, filter_freq[n], res);
+  return 0;
+}
+
+// Process a single sample through the filter - VERY FAST
+// Only multiplication and addition, no transcendental functions
+float lpf_process(int n, float input) {
+    // Calculate output using Direct Form II - only 5 mults, 4 adds
+    float output = filter[n].b0 * input + 
+                  filter[n].b1 * filter[n].x1 + 
+                  filter[n].b2 * filter[n].x2 -
+                  filter[n].a1 * filter[n].y1 - 
+                  filter[n].a2 * filter[n].y2;
+    
+    // Update delay lines
+    filter[n].x2 = filter[n].x1;
+    filter[n].x1 = input;
+    filter[n].y2 = filter[n].y1;
+    filter[n].y1 = output;
+    
+    return output;
+}
+
+// Alternative: Pre-calculated coefficient tables for even faster parameter changes
+// Uncomment if you need to change parameters very frequently
+
+/*
+#define FREQ_TABLE_SIZE 128
+#define RES_TABLE_SIZE 32
+
+typedef struct {
+    float freq_table[FREQ_TABLE_SIZE];
+    float res_table[RES_TABLE_SIZE];
+    float coeff_table[FREQ_TABLE_SIZE][RES_TABLE_SIZE][5]; // b0,b1,b2,a1,a2
+} LPFilterTable;
+
+// Initialize lookup table (call once at startup)
+void lpf_init_table(LPFilterTable* table, float sample_rate) {
+    for (int f = 0; f < FREQ_TABLE_SIZE; f++) {
+        float freq = 20.0f * powf(1000.0f, (float)f / (FREQ_TABLE_SIZE-1)); // 20Hz to 20kHz
+        table->freq_table[f] = freq;
+        
+        for (int r = 0; r < RES_TABLE_SIZE; r++) {
+            float resonance = 0.1f + (10.0f - 0.1f) * r / (RES_TABLE_SIZE-1);
+            table->res_table[r] = resonance;
+            
+            // Calculate coefficients
+            float omega = 2.0f * M_PI * freq / sample_rate;
+            float sin_omega = sinf(omega);
+            float cos_omega = cosf(omega);
+            float alpha = sin_omega / (2.0f * resonance);
+            float a0 = 1.0f + alpha;
+            
+            table->coeff_table[f][r][0] = (1.0f - cos_omega) / (2.0f * a0); // b0
+            table->coeff_table[f][r][1] = (1.0f - cos_omega) / a0;          // b1
+            table->coeff_table[f][r][2] = (1.0f - cos_omega) / (2.0f * a0); // b2
+            table->coeff_table[f][r][3] = -2.0f * cos_omega / a0;           // a1
+            table->coeff_table[f][r][4] = (1.0f - alpha) / a0;              // a2
+        }
+    }
+}
+*/
+
+/* Example usage for real-time audio:
+
+void audio_callback(float* input_buffer, float* output_buffer, int num_samples) {
+    static LPFilter filter;
+    static int initialized = 0;
+    
+    if (!initialized) {
+        lpf_init(&filter, 1000.0f, 0.707f, 44100.0f);
+        initialized = 1;
+    }
+    
+    // Update filter parameters only if they changed
+    // This is cheap - only does expensive math when needed
+    lpf_set_params(&filter, current_cutoff_freq, current_resonance);
+    
+    // Process each sample - this is VERY fast
+    for (int i = 0; i < num_samples; i++) {
+        output_buffer[i] = lpf_process(&filter, input_buffer[i]);
+    }
+}
+*/

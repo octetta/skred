@@ -7,6 +7,7 @@ set max_val 1.1
 set step_val 0.0001
 set current_val 0.5
 set wire_string "c1,%s"
+set wire_check 0
 
 set window_title "fire"
 
@@ -41,8 +42,14 @@ proc wire {msg} {
 # Procedure to be called when slider changes
 proc fire {value} {
     global current_val wire_string
+    global wire_check
+    if {$wire_check == 0} {
+      set fmt $wire_string
+    } {
+      set fmt "\[$wire_string\]"
+    }
     set current_val $value
-    set formattedOutput [format $wire_string $value]
+    set formattedOutput [format $fmt $value]
     wire $formattedOutput
 }
 
@@ -106,7 +113,9 @@ grid .inputs.labelC .inputs.entryC -sticky w -padx 5 -pady 2
 
 label .inputs.labelFormat -text "wire"
 entry .inputs.entryFormat -textvariable wire_string -width 20
-grid .inputs.labelFormat .inputs.entryFormat -sticky w -padx 5 -pady 2
+checkbutton .inputs.entryCheck -variable wire_check -text {}
+# grid .inputs.labelFormat .inputs.entryFormat -sticky w -padx 5 -pady 2
+grid .inputs.labelFormat .inputs.entryFormat .inputs.entryCheck -sticky w -padx 5 -pady 2
 
 # Update button
 button .inputs.update -text "update" -command updateSlider
@@ -148,7 +157,7 @@ proc backgroundSelf {} {
         if {$::tcl_platform(platform) eq "windows"} {
             exec wish $argv0 {*}$argv &
         } else {
-            exec nohup wish $argv0 {*}$argv > /dev/null 2>&1 &
+            exec nohup wish $argv0 {*}$argv > /dev/null &
         }
         exit 0
     }

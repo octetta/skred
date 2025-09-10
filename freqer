@@ -1,2 +1,2 @@
 #!/bin/bash
-wish fire.tcl 10 1870 .0001 f%s 0 "freqer"
+wish fire 10 1870 .0001 f%s 0 "freqer"
