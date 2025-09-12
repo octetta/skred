@@ -21,11 +21,16 @@ void tick_mod_set(uint64_t);
 int debug = 0;
 int trace = 0;
 
+int console_voice = 0;
+
 #define HISTORY_FILE ".sok1_history"
 #define MAIN_SAMPLE_RATE (44100)
 #define VOICE_MAX (32)
 #define CHANNEL_NUM (2)
 #define AFACTOR (0.025)
+
+#define UDP_PORT 60440
+int udp_port = UDP_PORT;
 
 #define SCREENWIDTH (800)
 #define SCREENHEIGHT (480)
@@ -182,19 +187,22 @@ typedef struct {
   // Parameter tracking for coefficient updates
   float last_freq;
   float last_resonance;
-  float sample_rate;
-} lpf_t;
+  float last_gain;
+  int last_mode;
+} mmf_t;
 
-int filter_active[VOICE_MAX];
 float filter_freq[VOICE_MAX];
 float filter_res[VOICE_MAX];
-lpf_t filter[VOICE_MAX];
+float filter_gain[VOICE_MAX];
+int filter_mode[VOICE_MAX];
+mmf_t filter[VOICE_MAX];
 
-void lpf_init(int n, float freq, float resonance, float sample_rate);
-void lpf_set_params(int n, float freq, float resonance);
-float lpf_process(int n, float input);
-int lpf_set_freq(int n, float freq);
-int lpf_set_res(int n, float res);
+void mmf_init(int n, float freq, float resonance, float gain);
+void mmf_set_params(int n, float freq, float resonance, float gain);
+float mmf_process(int n, float input);
+int mmf_set_freq(int n, float freq);
+int mmf_set_res(int n, float res);
+int mmf_set_gain(int n, float gain);
 
 void voice_reset(int i);
 void voice_init(void);
@@ -726,8 +734,8 @@ void engine(float *buffer, int num_frames, int num_channels, void *user_data) { 
         sample[n] = quantize_bits_int(sample[n], quantize[n]);
       }
 
-      // LPF EXPERIMENTAL
-      if (filter_active[n]) sample[n] = lpf_process(n, sample[n]);
+      // mmf EXPERIMENTAL
+      if (filter_mode[n]) sample[n] = mmf_process(n, sample[n]);
 
       // apply amp to sample
       if (use_adsr[n]) {
@@ -848,8 +856,9 @@ enum {
   ERR_INVALID_MIDI_NOTE,
   //
   ERR_INVALID_AMP,
-  ERR_INVALID_LPF,
-  ERR_INVALID_LPQ,
+  ERR_INVALID_MMFM,
+  ERR_INVALID_MMFQ,
+  ERR_INVALID_MMFG,
   ERR_INVALID_PAN,
   ERR_INVALID_QUANT,
   ERR_INVALID_DECI,
@@ -903,7 +912,7 @@ char *err_str(int n) {
 }
 
 void voice_show(int v, char c) {
-  printf("# v%d w%d b%d B%d n%g f%g a%g p%g c%d,%g L%g Q%g",
+  printf("# v%d w%d b%d B%d n%g f%g a%g p%g c%d,%g J%d K%g Q%g G%g",
     v,
     wtsel[v],
     direction[v],
@@ -913,7 +922,7 @@ void voice_show(int v, char c) {
     amp[v] / AFACTOR,
     pan[v],
     cz[v], czd[v],
-    filter_freq[v], filter_res[v]);
+    filter_mode[v], filter_freq[v], filter_res[v], filter_gain[v]);
   // printf(" I%d d%d q%d", interp[v], decimate[v], quantize[v]);
   if (amod_osc[v] >= 0 && amod_depth[v] > 0) printf(" A%d,%g", amod_osc[v], amod_depth[v]);
   if (cmod_osc[v] >= 0 && cmod_depth[v] > 0) printf(" C%d,%g", cmod_osc[v], cmod_depth[v]);
@@ -930,7 +939,7 @@ void voice_show(int v, char c) {
     printf(" %d/%g", osc[v].midinote, osc[v].offsethz);
   }
   if (c != ' ') {
-    printf(" *");
+    printf(" #*");
   }
   puts("");
 }
@@ -1021,8 +1030,10 @@ enum {
   FUNC_DECI,
   FUNC_QUANT,
   FUNC_RESET,
-  FUNC_LPF,
-  FUNC_LPQ,
+  FUNC_MMFM,
+  FUNC_MMFF,
+  FUNC_MMFQ,
+  FUNC_MMFG,
   // subfunctions
   FUNC_HELP,
   FUNC_SEQSTART,
@@ -1075,8 +1086,10 @@ char *_func_func_str[FUNC_UNKNOWN+1] = {
   [FUNC_DECI] = "deci",
   [FUNC_QUANT] = "quant",
   [FUNC_RESET] = "reset",
-  [FUNC_LPF] = "lpf",
-  [FUNC_LPQ] = "lpq",
+  [FUNC_MMFM] = "filter-mode",
+  [FUNC_MMFF] = "filter-freq",
+  [FUNC_MMFG] = "filter-gain",
+  [FUNC_MMFQ] = "filter-q",
   [FUNC_UNKNOWN] = "unknown",
   //
   [FUNC_HELP] = "help",
@@ -1431,6 +1444,9 @@ int wire(char *line, int *this_voice, int *save_voice, int output) {
         if (v.argc == 1) {
           ptr += v.next;
           r = voice_set(v.args[0], &voice);
+          if (output) {
+            console_voice = voice;
+          }
         } else return ERR_INVALID_VOICE;
         break;
       case 'w':
@@ -1513,33 +1529,46 @@ int wire(char *line, int *this_voice, int *save_voice, int output) {
           r = amod_set(voice, -1, 0);
         } else return ERR_PARSING_ERROR;
         break;
-      case 'L':
-        v = parse(ptr, FUNC_LPF, FUNC_NULL, 2);
+      case 'J':
+        v = parse(ptr, FUNC_MMFM, FUNC_NULL, 2);
         if (v.argc == 1) {
           ptr += v.next;
-          if (v.args[0] < 0) {
-            filter_active[voice] = 0;
-            r = 0;
-          } else {
-            filter_active[voice] = 1;
-            lpf_set_freq(voice, v.args[0]);
+          filter_mode[voice] = v.args[0];
+          mmf_set_params(voice,
+            filter_freq[voice],
+            filter_res[voice],
+            filter_gain[voice]);
+        } else return ERR_PARSING_ERROR;
+        break;
+      case 'K':
+        v = parse(ptr, FUNC_MMFF, FUNC_NULL, 2);
+        if (v.argc == 1) {
+          ptr += v.next;
+          if (v.args[0] > 0) {
+            mmf_set_freq(voice, v.args[0]);
             r = 0;
           }
-        } else return ERR_INVALID_LPF;
+        } else return ERR_PARSING_ERROR;
         break;
       case 'Q':
-        v = parse(ptr, FUNC_LPQ, FUNC_NULL, 2);
+        v = parse(ptr, FUNC_MMFQ, FUNC_NULL, 2);
         if (v.argc == 1) {
           ptr += v.next;
-          if (v.args[0] < 0) {
-            filter_active[voice] = 0;
-            r = 0;
-          } else {
-            filter_active[voice] = 1;
-            lpf_set_res(voice, v.args[0]);
+          if (v.args[0] > 0) {
+            mmf_set_res(voice, v.args[0]);
             r = 0;
           }
-        } else return ERR_INVALID_LPQ;
+        } else return ERR_PARSING_ERROR;
+        break;
+      case 'G':
+        v = parse(ptr, FUNC_MMFG, FUNC_NULL, 2);
+        if (v.argc == 1) {
+          ptr += v.next;
+          if (v.args[0] > 0) {
+            mmf_set_gain(voice, v.args[0]);
+            r = 0;
+          }
+        } else return ERR_PARSING_ERROR;
         break;
       case 'l':
         v = parse(ptr, FUNC_VELOCITY, FUNC_NULL, 1);
@@ -1621,6 +1650,7 @@ int main(int argc, char *argv[]) {
       if (argv[i][0] == '-') {
         switch (argv[i][1]) {
           case 'd': debug = 1; break;
+          case 'p': if ((i+i) < argc) { udp_port = atoi(argv[i+1]); i++; } break;
         }
       }
     }
@@ -1961,8 +1991,8 @@ void voice_reset(int i) {
   adsr_init(i, 1.1f, 0.2f, 0.7f, 0.5f, 44100.0f);
   freq[i] = 440.0;
   osc_set_wt(i, EXWAVESINE);
-  lpf_init(i, 1000.0, 0.707, 44100);
-  filter_active[i] = 0;
+  mmf_init(i, 8000.0, 0.707, 1.0);
+  filter_mode[i] = 0;
 }
 
 void voice_init(void) {
@@ -1972,7 +2002,6 @@ void voice_init(void) {
 }
 
 
-#define UDP_PORT 60440
 
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -1997,10 +2026,9 @@ int udp_open(int port) {
     return -1;
 }
 
-#define PORT 60440
-
 void *udp(void *arg) {
-  int sock = udp_open(PORT);
+  printf("# udp on %d\n", udp_port);
+  int sock = udp_open(udp_port);
   if (sock < 0) {
     puts("# udp thread cannot run");
     return NULL;
@@ -2210,6 +2238,8 @@ void *oscope(void *arg) {
       tick_mod, tick_clock, tick_steps,
       sample_count);
     DrawText(osd, SCREENWIDTH/5, SCREENHEIGHT/3, 40, BLUE);
+    sprintf(osd, "v%d", console_voice);
+    DrawText(osd, 10, SCREENHEIGHT/3, 50, YELLOW);
     EndDrawing();
   }
   //
@@ -2522,62 +2552,176 @@ int cmod_set(int voice, int osc, float f) {
 // freq: cutoff frequency in Hz
 // resonance: resonance factor (0.1 to 10.0, where 0.707 is no resonance)
 // sample_rate: audio sample rate in Hz
-void lpf_init(int n, float freq, float resonance, float sample_rate) {
+void mmf_init(int n, float freq, float resonance, float gain) {
     // Clear delay lines
     filter[n].x1 = filter[n].x2 = 0.0f;
     filter[n].y1 = filter[n].y2 = 0.0f;
     
     // Store parameters
-    filter[n].sample_rate = sample_rate;
     filter[n].last_freq = -1.0f;  // Force coefficient calculation
     filter[n].last_resonance = -1.0f;
+    filter[n].last_gain = -999.0f;
+    filter[n].last_mode = -1;
+
+    filter_freq[n] = freq;
+    filter_res[n] = resonance;
+    filter_gain[n] = gain;
     
     // Calculate initial coefficients
-    lpf_set_params(n, freq, resonance);
+    mmf_set_params(n, freq, resonance, gain);
 }
 
+enum {
+  FILTER_LOWPASS = 1,
+  FILTER_HIGHPASS = 2,
+  FILTER_BANDPASS = 3,
+  FILTER_NOTCH = 4,
+  FILTER_ALLPASS = 5,
+  FILTER_PEAKING = 6,
+  FILTER_LOWSHELF = 7,
+  FILTER_HIGHSHELF = 8,
+};
+
+
 // Set parameters - only recalculates coefficients if values changed
-void lpf_set_params(int n, float freq, float resonance) {
+void mmf_set_params(int n, float freq, float resonance, float gain) {
     // Only recalculate if parameters changed
-    if (freq == filter[n].last_freq && resonance == filter[n].last_resonance) {
+    if (
+      freq == filter[n].last_freq &&
+      resonance == filter[n].last_resonance &&
+      gain == filter[n].last_gain &&
+      filter_mode[n] == filter[n].last_mode) {
         return;  // No work needed!
     }
     
     filter[n].last_freq = freq;
     filter[n].last_resonance = resonance;
+    filter[n].last_gain = gain;
+    filter[n].last_mode = filter_mode[n];
     
     // Calculate filter coefficients (expensive operations only done here)
-    float omega = 2.0f * M_PI * freq / filter[n].sample_rate;
+    float omega = 2.0f * M_PI * freq / (float)MAIN_SAMPLE_RATE;
     float sin_omega = sinf(omega);
     float cos_omega = cosf(omega);
     float alpha = sin_omega / (2.0f * resonance);
     
-    float a0 = 1.0f + alpha;
-    
+    float a0, b0, b1, b2, a1, a2;
+
+    switch (filter_mode[n]) {
+      case 0:
+        return;
+      default:
+      case FILTER_LOWPASS:
+          b0 = (1.0f - cos_omega) / 2.0f;
+          b1 = 1.0f - cos_omega;
+          b2 = (1.0f - cos_omega) / 2.0f;
+          a0 = 1.0f + alpha;
+          a1 = -2.0f * cos_omega;
+          a2 = 1.0f - alpha;
+          break;
+      case FILTER_HIGHPASS:
+          b0 = (1.0f + cos_omega) / 2.0f;
+          b1 = -(1.0f + cos_omega);
+          b2 = (1.0f + cos_omega) / 2.0f;
+          a0 = 1.0f + alpha;
+          a1 = -2.0f * cos_omega;
+          a2 = 1.0f - alpha;
+          break;
+          
+      case FILTER_BANDPASS:
+          b0 = alpha;
+          b1 = 0.0f;
+          b2 = -alpha;
+          a0 = 1.0f + alpha;
+          a1 = -2.0f * cos_omega;
+          a2 = 1.0f - alpha;
+          break;
+          
+      case FILTER_NOTCH:
+          b0 = 1.0f;
+          b1 = -2.0f * cos_omega;
+          b2 = 1.0f;
+          a0 = 1.0f + alpha;
+          a1 = -2.0f * cos_omega;
+          a2 = 1.0f - alpha;
+          break;
+          
+      case FILTER_ALLPASS:
+          b0 = 1.0f - alpha;
+          b1 = -2.0f * cos_omega;
+          b2 = 1.0f + alpha;
+          a0 = 1.0f + alpha;
+          a1 = -2.0f * cos_omega;
+          a2 = 1.0f - alpha;
+          break;
+          
+      case FILTER_PEAKING: {
+          float A = powf(10.0f, gain / 40.0f);  // Convert dB to linear
+          b0 = 1.0f + alpha * A;
+          b1 = -2.0f * cos_omega;
+          b2 = 1.0f - alpha * A;
+          a0 = 1.0f + alpha / A;
+          a1 = -2.0f * cos_omega;
+          a2 = 1.0f - alpha / A;
+          break;
+      }
+      
+      case FILTER_LOWSHELF: {
+          float A = powf(10.0f, gain / 40.0f);
+          float beta = sqrtf(A) / resonance;
+          b0 = A * ((A + 1.0f) - (A - 1.0f) * cos_omega + beta * sin_omega);
+          b1 = 2.0f * A * ((A - 1.0f) - (A + 1.0f) * cos_omega);
+          b2 = A * ((A + 1.0f) - (A - 1.0f) * cos_omega - beta * sin_omega);
+          a0 = (A + 1.0f) + (A - 1.0f) * cos_omega + beta * sin_omega;
+          a1 = -2.0f * ((A - 1.0f) + (A + 1.0f) * cos_omega);
+          a2 = (A + 1.0f) + (A - 1.0f) * cos_omega - beta * sin_omega;
+          break;
+      }
+      
+      case FILTER_HIGHSHELF: {
+          float A = powf(10.0f, gain / 40.0f);
+          float beta = sqrtf(A) / resonance;
+          b0 = A * ((A + 1.0f) + (A - 1.0f) * cos_omega + beta * sin_omega);
+          b1 = -2.0f * A * ((A - 1.0f) + (A + 1.0f) * cos_omega);
+          b2 = A * ((A + 1.0f) + (A - 1.0f) * cos_omega - beta * sin_omega);
+          a0 = (A + 1.0f) - (A - 1.0f) * cos_omega + beta * sin_omega;
+          a1 = 2.0f * ((A - 1.0f) - (A + 1.0f) * cos_omega);
+          a2 = (A + 1.0f) - (A - 1.0f) * cos_omega - beta * sin_omega;
+          break;
+        }
+    }
+
     // Normalize coefficients
-    filter[n].b0 = (1.0f - cos_omega) / (2.0f * a0);
-    filter[n].b1 = (1.0f - cos_omega) / a0;
-    filter[n].b2 = (1.0f - cos_omega) / (2.0f * a0);
-    filter[n].a1 = -2.0f * cos_omega / a0;
-    filter[n].a2 = (1.0f - alpha) / a0;
+    filter[n].b0 = b0 / a0;
+    filter[n].b1 = b1 / a0;
+    filter[n].b2 = b2 / a0;
+    filter[n].a1 = a1 / a0;
+    filter[n].a2 = a2 / a0;
+    
     filter_freq[n] = freq;
     filter_res[n] = resonance;
+    filter_gain[n] = gain;
 }
 
 
-int lpf_set_freq(int n, float freq) {
-  lpf_set_params(n, freq, filter_res[n]);
+int mmf_set_freq(int n, float freq) {
+  mmf_set_params(n, freq, filter_res[n], filter_gain[n]);
   return 0;
 }
 
-int lpf_set_res(int n, float res) {
-  lpf_set_params(n, filter_freq[n], res);
+int mmf_set_res(int n, float res) {
+  mmf_set_params(n, filter_freq[n], res, filter_gain[n]);
+  return 0;
+}
+
+int mmf_set_gain(int n, float gain) {
+  mmf_set_params(n, filter_freq[n], filter_res[n], filter_gain[n]);
   return 0;
 }
 
 // Process a single sample through the filter - VERY FAST
 // Only multiplication and addition, no transcendental functions
-float lpf_process(int n, float input) {
+float mmf_process(int n, float input) {
     // Calculate output using Direct Form II - only 5 mults, 4 adds
     float output = filter[n].b0 * input + 
                   filter[n].b1 * filter[n].x1 + 
