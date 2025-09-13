@@ -10,13 +10,13 @@
 #define SOKOL_AUDIO_IMPL
 #include "sokol_audio.h"
 
-static volatile int tick_clock = 0;
-static volatile int tick_steps = 0;
-static volatile int tick_mod = 46;
+float tick_max = 10;
+float tick_inc = 1;
+int tick_frames = 0;
 static volatile uint64_t sample_count = 0;
 
 void tick();
-void tick_mod_set(uint64_t);
+void tick_max_set(float, float);
 
 int debug = 0;
 int trace = 0;
@@ -114,8 +114,6 @@ int show_audio(void) {
       saudio_sample_rate());
     printf("# buffer frames %d\n", saudio_buffer_frames());
     printf("# number of channels %d\n", saudio_channels());
-    printf("# tick_mod:%d tick_clock:%d tick_steps:%d\n",
-      tick_mod, tick_clock, tick_steps); 
   } else {
     printf("# did not start audio backend\n");
     return 1;
@@ -693,13 +691,7 @@ float get_oscope_buffer(int *index) {
 }
 
 void engine(float *buffer, int num_frames, int num_channels, void *user_data) { // , void *user_data) {
-  //motor_wake_tick();
-#if 1
-  tick();
-#else
-  futex_var = sample_count;
-  futex_wake(&futex_var, 1);
-#endif
+  tick(num_frames);
   for (int i = 0; i < num_frames; i++) {
     sample_count++;
     float samplel = 0;
@@ -793,7 +785,6 @@ void *udp(void *arg);
 void *oscope(void *arg);
 
 int current_voice = 0;
-int save_voice = 0;
 
 #include <dirent.h>
 
@@ -854,6 +845,7 @@ enum {
   ERR_PARSING_ERROR,
   ERR_INVALID_PATCH,
   ERR_INVALID_MIDI_NOTE,
+  ERR_INVALID_MOD,
   //
   ERR_INVALID_AMP,
   ERR_INVALID_MMFM,
@@ -891,6 +883,7 @@ char *_err_str[ERR_UNKNOWN+1] = {
   [ERR_PARSING_ERROR] = "parsing error",
   [ERR_INVALID_PATCH] = "invalid patch",
   [ERR_INVALID_MIDI_NOTE] = "invalid midi note",
+  [ERR_INVALID_MOD] = "invalid mod",
   //
   [ERR_INVALID_AMP] = "invalid amp",
   [ERR_INVALID_PAN] = "invalid pan",
@@ -909,6 +902,25 @@ char *err_str(int n) {
     }
   }
   return "no-string";
+}
+
+#define STKL (8)
+typedef struct {
+  float s[STKL];
+  int ptr;
+} stk_t;
+
+void push(stk_t *s, float n) {
+  s->ptr++;
+  if (s->ptr >= STKL) s->ptr = 0;
+  s->s[s->ptr] = n;
+}
+
+float pop(stk_t *s) {
+  float n = s->s[s->ptr];
+  s->ptr--;
+  if (s->ptr < 0) s->ptr = STKL-1;
+  return n;
 }
 
 void voice_show(int v, char c) {
@@ -1252,16 +1264,13 @@ value_t parse(char *ptr, int func, int subfunc, int argc) {
   return v;
 }
 
-int wire(char *line, int *this_voice, int *save_voice, int output) {
+int wire(char *line, int *this_voice, stk_t *vs, int output) {
   int len = strlen(line);
   if (len == 0) return 0;
 
   char *ptr = line;
   char *max = line + len;
 
-  int backup_save_voice = 0;
-  if (save_voice == NULL) save_voice = &backup_save_voice;
-  
   int func;
   int subfunc;
   
@@ -1276,7 +1285,7 @@ int wire(char *line, int *this_voice, int *save_voice, int output) {
   int r = 0;
 
   char c;
-  
+
   while (more) {
     if (ptr >= max) break;
     if (*ptr == '\0') break;
@@ -1286,10 +1295,10 @@ int wire(char *line, int *this_voice, int *save_voice, int output) {
     r = 0;
     switch (*ptr++) {
       case '[':
-        *save_voice = voice;
+        push(vs, voice);
         continue;
       case ']':
-        voice = *save_voice;
+        voice = pop(vs);
         continue;
       case '#':
         return 0;
@@ -1482,11 +1491,11 @@ int wire(char *line, int *this_voice, int *save_voice, int output) {
         } else return ERR_INVALID_WAVETABLE;
         break;
       case 'M':
-        v = parse(ptr, FUNC_METRO, FUNC_NULL, 1);
-        if (v.argc == 1) {
+        v = parse(ptr, FUNC_METRO, FUNC_NULL, 2);
+        if (v.argc == 2) {
           ptr += v.next;
-          tick_mod_set(v.args[0]);
-        }
+          tick_max_set(v.args[0], v.args[1]);
+        } else return ERR_INVALID_MOD;
         break;
       case 'm':
         v = parse_none(FUNC_MUTE, FUNC_NULL);
@@ -1628,18 +1637,23 @@ int wire(char *line, int *this_voice, int *save_voice, int output) {
 
 char my_data[] = "hello";
 
-void tick_mod_set(uint64_t m) {
-  motor_update(m);
-  tick_mod = m;
+void tick_max_set(float m, float n) {
+  //motor_update(m);
+  tick_max = m;
+  tick_inc = n;
 }
 
-void tick(void) {
-  static int i = 0;
-  if ((i % tick_mod) == 0) {
-    if (i&1) voice_trigger(20);
-    else voice_trigger(21);
+void tick(int frames) {
+  tick_frames = frames;
+  static float i = 0;
+  static int j = 0;
+  if (i == 0) {
+    if (j&1) voice_trigger(21);
+    else voice_trigger(20);
+    j++;
   }
-  i++;
+  i += tick_inc;
+  if (i >= tick_max) i = 0;
   //int voice = 20;
   //wire("v20T", &voice, NULL, 0);
 }
@@ -1660,8 +1674,6 @@ int main(int argc, char *argv[]) {
   init_wt();
   voice_init();
   
-  motor_init(tick); // must happen before audio callback
-
   // Initialize Sokol Audio
   saudio_setup(&(saudio_desc){
     // .stream_cb = stream_cb,
@@ -1682,6 +1694,9 @@ int main(int argc, char *argv[]) {
   pthread_detach(udp_thread);
 
   motor_go();
+
+  stk_t vs;
+  vs.ptr = 0;
   
   while (main_running) {
     char *line = linenoise("# ");
@@ -1691,7 +1706,7 @@ int main(int argc, char *argv[]) {
     }
     if (strlen(line) == 0) continue;
     linenoiseHistoryAdd(line);
-    int n = wire(line, &current_voice, &save_voice, 1);
+    int n = wire(line, &current_voice, &vs, 1);
     if (n < 0) break; // request to stop or error
     if (n > 0) {
       char *s = err_str(n);
@@ -1718,10 +1733,6 @@ int main(int argc, char *argv[]) {
 }
 
 #define SIZE_SINE (4096)
-#define SIZE_SQR (4096)
-#define SIZE_SAWDN (4096)
-#define SIZE_SAWUP (4096)
-#define SIZE_TRI (4096)
 #include "retro/korg.h"
 
 #include "amysamples.h"
@@ -1800,84 +1811,49 @@ void init_wt(void) {
     wt_size[i] = 0;
   }
 
-  printf("# make sine wave (%d)\n", EXWAVESINE);
-  table = (float *)malloc(SIZE_SINE * sizeof(float));
-  for (int i=0; i<SIZE_SINE; i++) {
-    float t = (i * 2.0 * M_PI) / (float)SIZE_SINE;
-    table[i] = sin(t);
-  }
-  wt_data[EXWAVESINE] = table;
-  wt_size[EXWAVESINE] = SIZE_SINE;
-  wt_rate[EXWAVESINE] = MAIN_SAMPLE_RATE;
-  wt_one_shot[EXWAVESINE] = 0;
-  wt_loop_start[EXWAVESINE] = 0;
-  wt_loop_end[EXWAVESINE] = SIZE_SINE-1;
-
-  printf("# make square wave (%d)\n", EXWAVESQR);
-  table = (float *)malloc(SIZE_SQR * sizeof(float));
-  for (int i=0; i<SIZE_SQR; i++) {
-    if (i < SIZE_SQR/2) table[i] = -1;
-    else table[i] = 1;
-  }
-  wt_data[EXWAVESQR] = table;
-  wt_size[EXWAVESQR] = SIZE_SQR;
-  wt_rate[EXWAVESQR] = MAIN_SAMPLE_RATE;
-  wt_one_shot[EXWAVESQR] = 0;
-  wt_loop_start[EXWAVESQR] = 0;
-  wt_loop_end[EXWAVESQR] = SIZE_SQR-1;
-
-  printf("# make saw-down wave (%d)\n", EXWAVESAWDN);
-  table = (float *)malloc(SIZE_SAWDN * sizeof(float));
-  f = -1.0;
-  d = 2.0 / (float)SIZE_SAWDN;
-  for (int i=0; i<SIZE_SAWDN; i++) {
-    table[i] = f;
-    f += d;
-  }
-  wt_data[EXWAVESAWDN] = table;
-  wt_size[EXWAVESAWDN] = SIZE_SAWDN;
-  wt_rate[EXWAVESAWDN] = MAIN_SAMPLE_RATE;
-  wt_one_shot[EXWAVESAWDN] = 0;
-  wt_loop_start[EXWAVESAWDN] = 0;
-  wt_loop_end[EXWAVESAWDN] = SIZE_SAWDN-1;
-
-  printf("# make saw-up wave (%d)\n", EXWAVESAWUP);
-  table = (float *)malloc(SIZE_SAWUP * sizeof(float));
-  f = 1.0;
-  d = 2.0 / (float)SIZE_SAWUP;
-  for (int i=0; i<SIZE_SAWUP; i++) {
-    table[i] = f;
-    f -= d;
-  }
-  wt_data[EXWAVESAWUP] = table;
-  wt_size[EXWAVESAWUP] = SIZE_SAWUP;
-  wt_rate[EXWAVESAWUP] = MAIN_SAMPLE_RATE;
-  wt_one_shot[EXWAVESAWUP] = 0;
-  wt_loop_start[EXWAVESAWUP] = 0;
-  wt_loop_end[EXWAVESAWUP] = SIZE_SAWUP-1;
-
-  printf("# make triangle wave (%d)\n", EXWAVETRI);
-  //FILE *out = fopen("tri.dat", "w+");
-  table = (float *)malloc(SIZE_TRI * sizeof(float));
-  f = -1.0;
-  d = 4.0 / (float)SIZE_TRI;
-  for (int i=0; i<SIZE_TRI; i++) {
-    table[i] = f;
-    //fprintf(out, "%g\n", f);
-    if (i < (SIZE_TRI / 2)) {
-      f += d;
-    } else {
-      f -= d;
+  for (int w = EXWAVESINE; w <= EXWAVENOISE; w++) {
+    int size = SIZE_SINE;
+    char *name = "?";
+    switch (w) {
+      case EXWAVESINE:  name = "sine"; break;
+      case EXWAVESQR:   name = "square"; break;
+      case EXWAVESAWDN: name = "saw-down"; break;
+      case EXWAVESAWUP: name = "saw-up"; break;
+      case EXWAVETRI:   name = "triangle"; break;
+      case EXWAVENOISE: name = "noise"; break;
+    }
+    printf("# make w%d %s\n", w, name);
+    wt_data[w] = (float *)malloc(size * sizeof(float));
+    wt_size[w] = size;
+    wt_rate[w] = MAIN_SAMPLE_RATE;
+    wt_one_shot[w] = 0;
+    wt_loop_start[w] = 0;
+    wt_loop_end[w] = size-1;
+    int off = 0;
+    for (float phase = 0.0; phase < 1.0; phase += (1.0 / (float)size)) {
+      float sine = sinf(2.0 * M_PI * phase);
+      float f;
+      switch (w) {
+        case EXWAVESINE:  f = sine; break;
+        case EXWAVESQR:   f = (phase < 0.5) ? 1.0 : -1.0; break;
+        case EXWAVESAWDN: f = 2.0 * phase - 1.0; break;
+        case EXWAVESAWUP: f = 1.0 - 2.0 * phase; break;
+        case EXWAVETRI:   f = (phase < 0.5) ? (4.0 * phase - 1.0) : (3.0 - 4.0 * phase); break;
+        case EXWAVENOISE: {
+            f = 2.0 * ((float)rand() / RAND_MAX) - 1.0; // harsh random
+            #if 0
+            float lpf = 0.0;
+            float alpha = 0.5;
+            f = alpha * f + (1.0 - alpha) * lpf;
+            #endif
+          }
+          break;
+        default:
+          break;
+      }
+      wt_data[w][off++] = f;
     }
   }
-  //fclose(out);
-  
-  wt_data[EXWAVETRI] = table;
-  wt_size[EXWAVETRI] = SIZE_TRI;
-  wt_rate[EXWAVETRI] = MAIN_SAMPLE_RATE;
-  wt_one_shot[EXWAVETRI] = 0;
-  wt_loop_start[EXWAVETRI] = 0;
-  wt_loop_end[EXWAVETRI] = SIZE_TRI-1;
 
   printf("# load retro waves (%d to %d)\n", EXWAVEKRG1, EXWAVEKRG32-1);
 
@@ -1898,6 +1874,7 @@ void init_wt(void) {
     wt_loop_end[i] = s-1;
   }
 
+#if 0
   #define PROGMEM
   #include "notamy/impulse_lutset_fxpt.h"
 
@@ -1930,6 +1907,7 @@ void init_wt(void) {
   wt_size[AMYWAVE01] = GENSIZE;
   wt_rate[AMYWAVE01] = MAIN_SAMPLE_RATE;
   wt_one_shot[AMYWAVE01] = 0;
+#endif
   
   // load AMY samples
   int j = AMYSAMPLE99;
@@ -2027,7 +2005,6 @@ int udp_open(int port) {
 }
 
 void *udp(void *arg) {
-  printf("# udp on %d\n", udp_port);
   int sock = udp_open(udp_port);
   if (sock < 0) {
     puts("# udp thread cannot run");
@@ -2039,16 +2016,18 @@ void *udp(void *arg) {
   tv.tv_usec = 0;
   setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (struct timeval *)&tv, sizeof(struct timeval));
   int voice = 0;
-  int save_voice = 0;
   struct sockaddr_in client;
   unsigned int client_len = sizeof(client);
   char line[1024];
   int output = 0;
+  stk_t vs;
+  vs.ptr = 0;
   while (udp_running) {
     int n = recvfrom(sock, line, sizeof(line), 0, (struct sockaddr *)&client, &client_len);
     if (n > 0) {
       line[n] = '\0';
-      int r = wire(line, &voice, &save_voice, output);
+      // printf("# from %d\n", ntohs(client.sin_port)); // port
+      int r = wire(line, &voice, &vs, output);
     } else {
       if (errno = EAGAIN) continue;
       printf("# recvfrom = %d ; errno = %d\n", n, errno);
@@ -2234,9 +2213,7 @@ void *oscope(void *arg) {
         actual++;
       }
     rlPopMatrix();
-    sprintf(osd, "%d %d %d %ld",
-      tick_mod, tick_clock, tick_steps,
-      sample_count);
+    sprintf(osd, "M%g,%g (%d/%ld)", tick_max, tick_inc, tick_frames, sample_count);
     DrawText(osd, SCREENWIDTH/5, SCREENHEIGHT/3, 40, BLUE);
     sprintf(osd, "v%d", console_voice);
     DrawText(osd, 10, SCREENHEIGHT/3, 50, YELLOW);
@@ -2431,7 +2408,8 @@ int patch_load(int voice, int n, int output) {
   sprintf(file, "exp%d.patch", n);
   FILE *in = fopen(file, "r");
   int r = 0;
-  int save_voice;
+  stk_t vs;
+  vs.ptr = 0;
   if (in) {
     char line[1024];
     while (fgets(line, sizeof(line), in) != NULL) {
@@ -2439,7 +2417,7 @@ int patch_load(int voice, int n, int output) {
       if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
       if (output) printf("# %s\n", line);
       int temp_voice = voice;
-      r = wire(line, &temp_voice, &save_voice, trace);
+      r = wire(line, &temp_voice, &vs, trace);
       if (r != 0) {
         if (output) printf("# error in patch\n");
         break;

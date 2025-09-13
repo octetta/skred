@@ -23,7 +23,9 @@ while {1} {
   set f 27.5
   for {set i 9} {$i <= 69} {incr i 12} {
     set j [expr 69 - $i]
-    wire "\[ v0 n${i} T v1 n${j} T \]"
-    after 250
+    wire "\[ v0 n${i} l1 v1 n${j} l1"
+    after 200
+    wire "v0 l0 v1 n${j} l0 \]"
+    after 50
   }
 }
