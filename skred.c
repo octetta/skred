@@ -148,6 +148,7 @@ float sample[VOICE_MAX];
 float samples[VOICE_MAX][OSCOPE_LEN];
 float hold[VOICE_MAX];
 double amp[VOICE_MAX];
+double useramp[VOICE_MAX];
 double panl[VOICE_MAX];
 double panr[VOICE_MAX];
 double pan[VOICE_MAX];
@@ -264,8 +265,8 @@ void osc_set_freq(int v, float freq) {
 
 float cz_phasor(int n, float p, float d, int table_size) {
   float phase = p / (float)table_size;
-  if (d < 0) d = 0;
-  if (d > 1) d = 1;
+  //if (d < 0) d = 0;
+  //if (d > 1) d = 1;
   switch (n) {
     case 1: // 2 :: saw -> pulse
       if (phase < d) phase *= (0.5 / d);
@@ -923,7 +924,67 @@ float pop(stk_t *s) {
   return n;
 }
 
+char *voice_format(int v, char *out) {
+  if (out == NULL) return "(NULL)";
+  int n;
+  char *ptr = out;
+  n = sprintf(ptr, "v%d w%d b%d B%d n%g f%g a%g p%g c%d,%g J%d K%g Q%g G%g",
+    v,
+    wtsel[v],
+    direction[v],
+    osc[v].loop_enabled,
+    note[v],
+    freq[v],
+    useramp[v],
+    pan[v],
+    cz[v], czd[v],
+    filter_mode[v], filter_freq[v], filter_res[v], filter_gain[v]);
+  ptr += n;
+  if (0) {
+    n = sprintf(ptr, " I%d d%d q%d", interp[v], decimate[v], quantize[v]);
+    ptr += n;
+  }
+  if (amod_osc[v] >= 0 && amod_depth[v] > 0) {
+    n = sprintf(ptr, " A%d,%g", amod_osc[v], amod_depth[v]);
+    ptr += n;
+  }
+  if (cmod_osc[v] >= 0 && cmod_depth[v] > 0) {
+    n = sprintf(ptr, " C%d,%g", cmod_osc[v], cmod_depth[v]);
+    ptr += n;
+  }
+  if (fmod_osc[v] >= 0 && fmod_depth[v] > 0) {
+    n = sprintf(ptr, " F%d,%g", fmod_osc[v], fmod_depth[v]);
+    ptr += n;
+  }
+  if (pmod_osc[v] >= 0 && pmod_depth[v] > 0) {
+    n = sprintf(ptr, " P%d,%g", pmod_osc[v], pmod_depth[v]);
+    ptr += n;
+  }
+  n = sprintf(ptr, " m%d E%g,%g,%g,%g",
+    hide[v],
+    amp_env[v].attack_time,
+    amp_env[v].decay_time,
+    amp_env[v].sustain_level,
+    amp_env[v].release_time);
+    ptr += n;
+  if (0) {
+    n = sprintf(ptr, " # %g/%g", osc[v].phase, osc[v].phase_inc);
+    ptr += n;
+  }
+  if (0 && osc[v].one_shot) {
+    n = sprintf(ptr, " %d/%g", osc[v].midinote, osc[v].offsethz);
+    ptr += n;
+  }
+  return out;
+}
+
 void voice_show(int v, char c) {
+  char s[1024];
+  char e[8] = "";
+  if (c != ' ') sprintf(e, " # *");
+  voice_format(v, s);
+  printf("# %s%s\n", s, e);
+  return;
   printf("# v%d w%d b%d B%d n%g f%g a%g p%g c%d,%g J%d K%g Q%g G%g",
     v,
     wtsel[v],
@@ -931,7 +992,7 @@ void voice_show(int v, char c) {
     osc[v].loop_enabled,
     note[v],
     freq[v],
-    amp[v] / AFACTOR,
+    useramp[v],
     pan[v],
     cz[v], czd[v],
     filter_mode[v], filter_freq[v], filter_res[v], filter_gain[v]);
@@ -947,11 +1008,9 @@ void voice_show(int v, char c) {
     amp_env[v].sustain_level,
     amp_env[v].release_time);
   // printf(" # %g/%g", osc[v].phase, osc[v].phase_inc);
-  if (osc[v].one_shot) {
-    printf(" %d/%g", osc[v].midinote, osc[v].offsethz);
-  }
+  // if (osc[v].one_shot) printf(" %d/%g", osc[v].midinote, osc[v].offsethz);
   if (c != ' ') {
-    printf(" #*");
+    printf(" # *");
   }
   puts("");
 }
@@ -1046,6 +1105,7 @@ enum {
   FUNC_MMFF,
   FUNC_MMFQ,
   FUNC_MMFG,
+  FUNC_COPY,
   // subfunctions
   FUNC_HELP,
   FUNC_SEQSTART,
@@ -1102,6 +1162,7 @@ char *_func_func_str[FUNC_UNKNOWN+1] = {
   [FUNC_MMFF] = "filter-freq",
   [FUNC_MMFG] = "filter-gain",
   [FUNC_MMFQ] = "filter-q",
+  [FUNC_COPY] = "copy-voice",
   [FUNC_UNKNOWN] = "unknown",
   //
   [FUNC_HELP] = "help",
@@ -1160,6 +1221,7 @@ int wave_interp(int voice, int state);
 int wave_deci(int voice, int state);
 int wave_quant(int voice, int n);
 int voice_set(int voice, int *old_voice);
+int voice_copy(int voice, int new_voice);
 int voice_trigger(int voice);
 int voice_show_all(int voice);
 int oscope_start(int sub);
@@ -1458,6 +1520,13 @@ int wire(char *line, int *this_voice, stk_t *vs, int output) {
           }
         } else return ERR_INVALID_VOICE;
         break;
+      case '>':
+        v = parse(ptr, FUNC_COPY, FUNC_NULL, 1);
+        if (v.argc == 1) {
+          ptr += v.next;
+          r = voice_copy(voice, v.args[0]);
+        } else return ERR_INVALID_VOICE;
+        break;
       case 'w':
         v = parse(ptr, FUNC_WAVE, FUNC_NULL, 1);
         if (v.argc == 1) {
@@ -1681,8 +1750,9 @@ int main(int argc, char *argv[]) {
     .user_data = &my_data,
     .sample_rate = MAIN_SAMPLE_RATE,
     .num_channels = CHANNEL_NUM, // Stereo
-    .packet_frames = 256,
-    .num_packets = 1,
+    .buffer_frames = 512,
+    //.packet_frames = 256,
+    //.num_packets = 1,
     // .user_data = &my_data, // todo
   });
 
@@ -2213,10 +2283,16 @@ void *oscope(void *arg) {
         actual++;
       }
     rlPopMatrix();
-    sprintf(osd, "M%g,%g (%d/%ld)", tick_max, tick_inc, tick_frames, sample_count);
-    DrawText(osd, SCREENWIDTH/5, SCREENHEIGHT/3, 40, BLUE);
-    sprintf(osd, "v%d", console_voice);
-    DrawText(osd, 10, SCREENHEIGHT/3, 50, YELLOW);
+    sprintf(osd, "M%g,%g %d:%ld", tick_max, tick_inc, tick_frames, sample_count);
+    DrawText(osd, SCREENWIDTH-250, SCREENHEIGHT-20, 20, BLUE);
+    voice_format(console_voice, osd);
+#if 0
+    sprintf(osd, "v%d w%d a%g f%g", console_voice,
+      wtsel[console_voice],
+      useramp[console_voice],
+      freq[console_voice]);
+#endif
+    DrawText(osd, 10, SCREENHEIGHT-40, 20, YELLOW);
     EndDrawing();
   }
   //
@@ -2254,6 +2330,7 @@ int amp_set(int voice, float f) {
   if (f >= 0) {
     use_adsr[voice] = 0;
     amp[voice] = f * AFACTOR;
+    useramp[voice] = f;
   } else return ERR_AMPLITUDE_OUT_OF_RANGE;
   return 0;
 }
@@ -2694,6 +2771,27 @@ int mmf_set_res(int n, float res) {
 
 int mmf_set_gain(int n, float gain) {
   mmf_set_params(n, filter_freq[n], filter_res[n], filter_gain[n]);
+  return 0;
+}
+
+int voice_copy(int v, int n) {
+  wave_set(n, wtsel[v]);
+  amp_set(n, useramp[v]);
+  freq_set(n, freq[v]);
+  pan_set(n, pan[v]);
+  amod_set(n, amod_osc[v], amod_depth[v]);
+  fmod_set(n, fmod_osc[v], fmod_depth[v]);
+  pmod_set(n, pmod_osc[v], pmod_depth[v]);
+  //wave_loop(n, 
+  //wave_dir(n,
+  //wave_interp(n,
+  //wave_deci(n,
+  //wave_quant(n,
+  //adsr_set(n,
+  cz_set(n, cz[v], czd[v]);
+  cmod_set(n, cmod_osc[v], cmod_depth[v]);
+  filter_mode[n] = filter_mode[v];
+  mmf_init(n, filter_freq[v], filter_res[v], filter_gain[v]);
   return 0;
 }
 
