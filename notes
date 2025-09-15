@@ -18,14 +18,40 @@ proc wire {msg} {
     puts -nonewline $::sock $msg
 }
 
+set all 1000
+set on 500
+set off [expr $all - $on]
+
 #  9 21 33 45 57 69
+wire "\[ S0 v10 w1 m1 a8 J1 K500 Q3 l0 E.2,.1,.2,.5 \]"
+set vp 0
 while {1} {
   set f 27.5
   for {set i 9} {$i <= 69} {incr i 12} {
-    set j [expr 69 - $i]
-    wire "\[ v0 n${i} l1 v1 n${j} l1"
-    after 200
-    wire "v0 l0 v1 n${j} l0 \]"
-    after 50
+    set A $vp
+    set B [expr $vp + 1]
+    
+    set v0 [expr $i + 12]
+    
+    set j [expr $i + 12.2]
+    
+    set v1 $j
+    
+    set out "\[ v10 >${A} v${A}n${i} v10 >${B} v${B} n${j} \]"
+    puts "$out # vp=$vp"
+    wire $out
+    
+    set out "\[ v${A} n${v0} l1 v${B} n${v1} l1 \]"
+    puts "$out # vp=$vp"
+    wire $out
+    
+    after $on
+    
+    wire "\[ v${A} l0 v${B} l0 \]"
+    after $off
+    
+    incr vp 2
+    
+    if {$vp > 7} {set vp 0}
   }
 }

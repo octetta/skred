@@ -525,139 +525,91 @@ void osc_trigger(int voice) {
   }
 }
 
-typedef enum {
-  ADSR_OFF,
-  ADSR_ATTACK,
-  ADSR_DECAY,
-  ADSR_SUSTAIN,
-  ADSR_RELEASE
-} adsr_state_t;
+// adsr.h
 
+// ADSR envelope structure
 typedef struct {
-  float attack_time;   // Attack duration in seconds
-  float decay_time;    // Decay duration in seconds
-  float sustain_level; // Sustain level (0.0 to 1.0)
-  float release_time;  // Release duration in seconds
-  float sample_rate;   // Samples per second (e.g., 44100.0)
-
-  adsr_state_t state;  // Current state
-  float value;         // Current envelope output (0.0 to 1.0)
-  float time;          // Time elapsed in current stage (seconds)
-  float save_sustain_level;
+    double a;
+    double d;
+    double s;
+    double r;
+    double attack_time;    // attack duration in samples
+    double decay_time;     // decay duration in samples
+    double sustain_level;     // 0 to 1
+    double release_time;   // release duration in samples
+    long long sample_start;   // sample count when note is triggered
+    long long sample_release; // sample count when note is released
+    int isActive;            // envelope state
+    float velocity; // multiply adsr by this value
 } adsr_t;
 
 adsr_t amp_env[VOICE_MAX];
 
 // Initialize the ADSR envelope
-void adsr_init(int n, float attack_time, float decay_time, float sustain_level, float release_time, float sample_rate) {
-  amp_env[n].attack_time = attack_time;
-  amp_env[n].decay_time = decay_time;
-  amp_env[n].sustain_level = sustain_level;
-  amp_env[n].release_time = release_time;
-  amp_env[n].sample_rate = sample_rate;
-  amp_env[n].state = ADSR_OFF;
-  amp_env[n].value = 0.0f;
-  amp_env[n].time = 0.0f;
+void adsr_init(int v, double attackTime, double decayTime, 
+               double sustain_level, double releaseTime, double ignore) {
+    amp_env[v].a = attackTime;
+    amp_env[v].d = decayTime;
+    amp_env[v].s = sustain_level;
+    amp_env[v].r = releaseTime;
+    amp_env[v].attack_time = attackTime * MAIN_SAMPLE_RATE; // convert seconds to samples
+    amp_env[v].decay_time = decayTime * MAIN_SAMPLE_RATE;
+    amp_env[v].sustain_level = fmax(0.0, fmin(1.0, sustain_level)); // clamp 0 to 1
+    amp_env[v].release_time = releaseTime * MAIN_SAMPLE_RATE;
+    amp_env[v].sample_start = 0;
+    amp_env[v].sample_release = 0;
+    amp_env[v].isActive = 0;
 }
 
-// Trigger the envelope (start attack)
-void adsr_trigger(int n, float a) {
-  //amp_env[n].save_sustain_level = amp[n];
-  amp_env[n].sustain_level = a;
-  amp_env[n].state = ADSR_ATTACK;
-  amp_env[n].value = 0.0f;
-  amp_env[n].time = 0.0f;
+// Trigger the envelope (note on)
+void adsr_trigger(int v, float f) {
+    amp_env[v].sample_start = sample_count;
+    amp_env[v].sample_release = 0;
+    amp_env[v].velocity = f;
+    amp_env[v].isActive = 1;
 }
 
-// Release the envelope (start release)
-void adsr_release(int n) {
-  //if (amp_env[n].state != ADSR_OFF) {
-    amp_env[n].state = ADSR_RELEASE;
-    amp_env[n].time = 0.0f;
-  //}
+// Release the envelope (note off)
+void adsr_release(int v) {
+    if (amp_env[v].isActive) {
+        amp_env[v].sample_release = sample_count;
+    }
 }
 
+// Get the current amplitude (0 to 1) at given sample count
+double adsr_step(int v) {
+    if (!amp_env[v].isActive) return 0.0;
 
-// Compute one sample of the envelope
-float adsr_step(int n) {
-  if (amp_env[n].state == ADSR_OFF) {
-    //amp[n] = amp_env[n].save_sustain_level;
-    return 0.0f;
-  }
+    double samplesSinceStart = (double)(sample_count - amp_env[v].sample_start);
 
-  // Increment time (in seconds)
-  amp_env[n].time += 1.0f / amp_env[n].sample_rate;
-  float t, target;
+    // Attack phase
+    if (samplesSinceStart < amp_env[v].attack_time) {
+        return samplesSinceStart / amp_env[v].attack_time; // linear ramp up
+    }
 
-  switch (amp_env[n].state) {
-    case ADSR_ATTACK:
-      if (amp_env[n].attack_time <= 0.0f) {
-        amp_env[n].value = 1.0f;
-        amp_env[n].state = ADSR_DECAY;
-        amp_env[n].time = 0.0f;
-      } else {
-        t = amp_env[n].time / amp_env[n].attack_time;
-        if (t >= 1.0f) {
-          amp_env[n].value = 1.0f;
-          amp_env[n].state = ADSR_DECAY;
-          amp_env[n].time = 0.0f;
-        } else {
-          amp_env[n].value = t; // Linear ramp from 0 to 1
-        }
-      }
-      break;
+    // Decay phase
+    double decayStart = amp_env[v].attack_time;
+    if (samplesSinceStart < decayStart + amp_env[v].decay_time) {
+        double samplesInDecay = samplesSinceStart - decayStart;
+        double decayProgress = samplesInDecay / amp_env[v].decay_time;
+        return 1.0 - decayProgress * (1.0 - amp_env[v].sustain_level); // linear decay to sustain
+    }
 
-      case ADSR_DECAY:
-        if (amp_env[n].decay_time <= 0.0f) {
-          amp_env[n].value = amp_env[n].sustain_level;
-          amp_env[n].state = ADSR_SUSTAIN;
-          amp_env[n].time = 0.0f;
-        } else {
-          t = amp_env[n].time / amp_env[n].decay_time;
-          if (t >= 1.0f) {
-            amp_env[n].value = amp_env[n].sustain_level;
-            amp_env[n].state = ADSR_SUSTAIN;
-            amp_env[n].time = 0.0f;
-          } else {
-            // Linear ramp from 1 to sustain_level
-            amp_env[n].value = 1.0f - t * (1.0f - amp_env[n].sustain_level);
-          }
-        }
-        break;
+    // Sustain phase
+    if (amp_env[v].sample_release == 0) {
+        return amp_env[v].sustain_level;
+    }
 
-      case ADSR_SUSTAIN:
-        amp_env[n].value = amp_env[n].sustain_level;
-        break;
+    // Release phase
+    double samplesSinceRelease = (double)(sample_count - amp_env[v].sample_release);
+    if (samplesSinceRelease < amp_env[v].release_time) {
+        double releaseProgress = samplesSinceRelease / amp_env[v].release_time;
+        return amp_env[v].sustain_level * (1.0 - releaseProgress); // linear ramp down
+    }
 
-      case ADSR_RELEASE:
-        if (amp_env[n].release_time <= 0.0f) {
-          amp_env[n].value = 0.0f;
-          amp_env[n].state = ADSR_OFF;
-          amp_env[n].time = 0.0f;
-        } else {
-          t = amp_env[n].time / amp_env[n].release_time;
-          if (t >= 1.0f) {
-            amp_env[n].value = 0.0f;
-            amp_env[n].state = ADSR_OFF;
-            amp_env[n].time = 0.0f;
-          } else {
-            // Linear ramp from current value to 0
-            amp_env[n].value = amp_env[n].sustain_level * (1.0f - t);
-          }
-        }
-        break;
-
-      default:
-        amp_env[n].value = 0.0f;
-        amp_env[n].state = ADSR_OFF;
-        amp[n] = amp_env[n].save_sustain_level;
-  }
-
-  // Clamp value to [0.0, 1.0]
-  if (amp_env[n].value < 0.0f) amp_env[n].value = 0.0f;
-  if (amp_env[n].value > 1.0f) amp_env[n].value = 1.0f;
-
-  return amp_env[n].value;
+    // Envelope finished
+    amp_env[v].isActive = 0;
+    return 0.0;
 }
 
 float quantize_bits_int(float v, int bits) {
@@ -732,8 +684,7 @@ void engine(float *buffer, int num_frames, int num_channels, void *user_data) { 
 
       // apply amp to sample
       if (use_adsr[n]) {
-        float env = adsr_step(n);
-        //sample[n] *= env; // * AFACTOR;
+        float env = adsr_step(n) * amp_env[n].velocity;
         sample[n] *= (env * amp[n]);
       } else {
         sample[n] *= amp[n];
@@ -962,10 +913,10 @@ char *voice_format(int v, char *out) {
   }
   n = sprintf(ptr, " m%d E%g,%g,%g,%g",
     hide[v],
-    amp_env[v].attack_time,
-    amp_env[v].decay_time,
-    amp_env[v].sustain_level,
-    amp_env[v].release_time);
+    amp_env[v].a,
+    amp_env[v].d,
+    amp_env[v].s,
+    amp_env[v].r);
     ptr += n;
   if (0) {
     n = sprintf(ptr, " # %g/%g", osc[v].phase, osc[v].phase_inc);
@@ -985,34 +936,6 @@ void voice_show(int v, char c) {
   voice_format(v, s);
   printf("# %s%s\n", s, e);
   return;
-  printf("# v%d w%d b%d B%d n%g f%g a%g p%g c%d,%g J%d K%g Q%g G%g",
-    v,
-    wtsel[v],
-    direction[v],
-    osc[v].loop_enabled,
-    note[v],
-    freq[v],
-    useramp[v],
-    pan[v],
-    cz[v], czd[v],
-    filter_mode[v], filter_freq[v], filter_res[v], filter_gain[v]);
-  // printf(" I%d d%d q%d", interp[v], decimate[v], quantize[v]);
-  if (amod_osc[v] >= 0 && amod_depth[v] > 0) printf(" A%d,%g", amod_osc[v], amod_depth[v]);
-  if (cmod_osc[v] >= 0 && cmod_depth[v] > 0) printf(" C%d,%g", cmod_osc[v], cmod_depth[v]);
-  if (fmod_osc[v] >= 0 && fmod_depth[v] > 0) printf(" F%d,%g", fmod_osc[v], fmod_depth[v]);
-  if (pmod_osc[v] >= 0 && pmod_depth[v] > 0) printf(" P%d,%g", pmod_osc[v], pmod_depth[v]);
-  printf(" m%d E%g,%g,%g,%g",
-    hide[v],
-    amp_env[v].attack_time,
-    amp_env[v].decay_time,
-    amp_env[v].sustain_level,
-    amp_env[v].release_time);
-  // printf(" # %g/%g", osc[v].phase, osc[v].phase_inc);
-  // if (osc[v].one_shot) printf(" %d/%g", osc[v].midinote, osc[v].offsethz);
-  if (c != ' ') {
-    printf(" # *");
-  }
-  puts("");
 }
 
 int voice_show_all(int voice) {
@@ -2286,13 +2209,7 @@ void *oscope(void *arg) {
     sprintf(osd, "M%g,%g %d:%ld", tick_max, tick_inc, tick_frames, sample_count);
     DrawText(osd, SCREENWIDTH-250, SCREENHEIGHT-20, 20, BLUE);
     voice_format(console_voice, osd);
-#if 0
-    sprintf(osd, "v%d w%d a%g f%g", console_voice,
-      wtsel[console_voice],
-      useramp[console_voice],
-      freq[console_voice]);
-#endif
-    DrawText(osd, 10, SCREENHEIGHT-40, 20, YELLOW);
+    DrawText(osd, 10, SCREENHEIGHT-40, 10, YELLOW);
     EndDrawing();
   }
   //
@@ -2536,10 +2453,7 @@ int pan_set(int voice, float f) {
 }
 
 int adsr_set(int voice, float a, float d, float s, float r) {
-  amp_env[voice].attack_time = a;
-  amp_env[voice].decay_time = d;
-  amp_env[voice].sustain_level = s * AFACTOR;
-  amp_env[voice].release_time = r;
+  adsr_init(voice, a, d, s, r, MAIN_SAMPLE_RATE);
   return 0;
 }
 
@@ -2548,12 +2462,10 @@ int adsr_velocity(int voice, float f) {
     adsr_release(voice);
   } else {
     use_adsr[voice] = 1;
-    amp_env[voice].sustain_level = f;
-    amp_env[voice].state = ADSR_ATTACK;
-    amp_env[voice].value = amp[voice];
-    amp_env[voice].time = 0.0f;
-    osc_trigger(voice);
-    //adsr_trigger(voice, f);
+    if (osc[voice].one_shot) {
+      osc_trigger(voice);
+    }
+    adsr_trigger(voice, f);
   }
   return 0;
 }
@@ -2787,7 +2699,7 @@ int voice_copy(int v, int n) {
   //wave_interp(n,
   //wave_deci(n,
   //wave_quant(n,
-  //adsr_set(n,
+  adsr_set(n, amp_env[v].a, amp_env[v].d, amp_env[v].s, amp_env[v].r);
   cz_set(n, cz[v], czd[v]);
   cmod_set(n, cmod_osc[v], cmod_depth[v]);
   filter_mode[n] = filter_mode[v];

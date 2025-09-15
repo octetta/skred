@@ -1,0 +1,238 @@
+#!/usr/bin/env wish
+
+package require Tk
+
+# ADSR parameters (in seconds for times, 0-1 for sustain level)
+set attackTime 0.1
+set decayTime 0.2
+set sustainLevel 0.7
+set releaseTime 0.3
+set viz_sustain_time 0.2
+set sampleRate 44100.0
+
+# Canvas dimensions (initial view size)
+set canvasWidth 400
+set canvasHeight 200
+set margin 20
+
+# Calculate initial timeScale to fit the canvas
+set totalVizTime [expr {$attackTime + $decayTime + $viz_sustain_time + $releaseTime}]
+set timeScale [expr {($canvasWidth - 2.0 * $margin) / $totalVizTime}]
+
+# Handle positions (in canvas coordinates)
+set attackX $margin
+set decayX $margin
+set sustainY [expr {$canvasHeight - $margin}]
+set releaseX $margin
+set endX $margin
+
+# Auto-scroll globals
+set autoScrollDir 0
+set afterId ""
+
+# Create main window
+wm title . "ADSR Envelope Editor"
+
+# Create frame for canvas and scrollbar
+frame .f
+canvas .f.c -width $canvasWidth -height $canvasHeight -bg white -xscrollcommand ".f.sx set"
+scrollbar .f.sx -orient horizontal -command ".f.c xview"
+pack .f.c -side top -fill both -expand yes
+pack .f.sx -side bottom -fill x
+pack .f -padx 10 -pady 10 -fill both -expand yes
+
+# Create label to display parameters in E#,#,#,# format
+label .l_params -text "E[format {%.3f} $attackTime],[format {%.3f} $decayTime],[format {%.2f} $sustainLevel],[format {%.3f} $releaseTime]"
+pack .l_params -side top -anchor w -padx 10 -pady 5
+
+# Handle window resize
+proc handleResize {w h} {
+    global canvasWidth canvasHeight
+    set canvasWidth $w
+    set canvasHeight $h
+    updateHandles
+    drawEnvelope
+}
+
+# Bind resize event
+bind . <Configure> {
+    if {[winfo width .f.c] != $canvasWidth || [winfo height .f.c] != $canvasHeight} {
+        handleResize [winfo width .f.c] [winfo height .f.c]
+    }
+}
+
+# Update handle positions based on current parameters
+proc updateHandles {} {
+    global attackTime decayTime viz_sustain_time releaseTime sustainLevel
+    global timeScale margin canvasHeight
+    global attackX decayX sustainY releaseX endX
+
+    set attackX [expr {$margin + $attackTime * $timeScale}]
+    set decayX [expr {$attackX + $decayTime * $timeScale}]
+    set releaseX [expr {$decayX + $viz_sustain_time * $timeScale}]
+    set endX [expr {$releaseX + $releaseTime * $timeScale}]
+
+    # Sustain Y (0 at bottom, 1 at top)
+    set sustainY [expr {$canvasHeight - $margin - $sustainLevel * ($canvasHeight - 2 * $margin)}]
+}
+
+# Draw the envelope and handles
+proc drawEnvelope {} {
+    global attackX decayX sustainY releaseX endX
+    global canvasHeight margin
+
+    # Clear canvas
+    .f.c delete all
+
+    # Draw axes
+    set y0 [expr {$canvasHeight - $margin}] ;# Amplitude 0
+    set y1 $margin ;# Amplitude 1
+    .f.c create line $margin $y1 $margin $y0 -fill black
+    .f.c create line $margin $y0 $endX $y0 -fill black
+
+    # Draw envelope
+    .f.c create line $margin $y0 $attackX $y1 \
+                   $attackX $y1 $decayX $sustainY \
+                   $decayX $sustainY $releaseX $sustainY \
+                   $releaseX $sustainY $endX $y0 -fill blue -width 2
+
+    # Draw handles
+    .f.c create oval [expr {$attackX - 5}] [expr {$y1 - 5}] [expr {$attackX + 5}] [expr {$y1 + 5}] -fill red -tags attack
+    .f.c create oval [expr {$decayX - 5}] [expr {$sustainY - 5}] [expr {$decayX + 5}] [expr {$sustainY + 5}] -fill green -tags decay
+    .f.c create oval [expr {$releaseX - 5}] [expr {$sustainY - 5}] [expr {$releaseX + 5}] [expr {$sustainY + 5}] -fill purple -tags release
+    .f.c create oval [expr {$endX - 5}] [expr {$y0 - 5}] [expr {$endX + 5}] [expr {$y0 + 5}] -fill blue -tags end
+
+    # Update scrollregion
+    .f.c configure -scrollregion [list 0 0 [expr {$endX + $margin}] $canvasHeight]
+}
+
+# Update parameters from handle positions
+proc updateParameters {} {
+    global attackTime decayTime viz_sustain_time sustainLevel releaseTime
+    global attackX decayX releaseX endX sustainY
+    global timeScale canvasHeight margin
+
+    set attackTime [expr {max(0.001, ($attackX - $margin) / $timeScale)}]
+    set decayTime [expr {max(0.001, ($decayX - $attackX) / $timeScale)}]
+    set viz_sustain_time [expr {max(0.001, ($releaseX - $decayX) / $timeScale)}]
+    set releaseTime [expr {max(0.001, ($endX - $releaseX) / $timeScale)}]
+
+    # Calculate sustain level (0 at bottom, 1 at top)
+    set sustainLevel [expr {($canvasHeight - $margin - $sustainY) / ($canvasHeight - 2 * $margin)}]
+    if {$sustainLevel < 0} {set sustainLevel 0}
+    if {$sustainLevel > 1} {set sustainLevel 1}
+
+    # Update parameter label
+    .l_params configure -text "E[format {%.3f} $attackTime],[format {%.3f} $decayTime],[format {%.2f} $sustainLevel],[format {%.3f} $releaseTime]"
+}
+
+# Auto-scroll procedure
+proc autoScroll {} {
+    global autoScrollDir dragTag afterId
+    set afterId ""
+    if {$dragTag eq "" || $autoScrollDir == 0} {return}
+    .f.c xview scroll $autoScrollDir units
+    set afterId [after 50 autoScroll]
+}
+
+# Handle dragging
+proc startDrag {tag x y} {
+    global dragTag dragX dragY
+    set dragTag $tag
+    set dragX [.f.c canvasx $x]
+    set dragY [.f.c canvasy $y]
+}
+
+proc dragHandle {wx wy} {
+    global dragTag dragX dragY autoScrollDir afterId
+    global attackX decayX sustainY releaseX endX
+    global canvasWidth canvasHeight margin
+    if {$dragTag eq ""} {return}
+
+    # Get canvas coordinates
+    set x [.f.c canvasx $wx]
+    set y [.f.c canvasy $wy]
+
+    # Update position for the dragged handle
+    if {$dragTag eq "attack"} {
+        set attackX [expr {max($margin, min($decayX - 10, $x))}]
+    } elseif {$dragTag eq "decay"} {
+        set decayX [expr {max($attackX + 10, min($releaseX - 10, $x))}]
+        set sustainY [expr {max($margin, min($canvasHeight - $margin, $y))}]
+    } elseif {$dragTag eq "release"} {
+        set releaseX [expr {max($decayX + 10, min($endX - 10, $x))}]
+        set sustainY [expr {max($margin, min($canvasHeight - $margin, $y))}]
+    } elseif {$dragTag eq "end"} {
+        set endX [expr {max($releaseX + 10, $x)}]
+    }
+
+    # Update parameters and redraw
+    updateParameters
+    drawEnvelope
+
+    # Auto-scroll logic (using window coordinates wx)
+    if {$wx > $canvasWidth - 20} {
+        set autoScrollDir 1
+    } elseif {$wx < 20} {
+        set autoScrollDir -1
+    } else {
+        set autoScrollDir 0
+    }
+    if {$autoScrollDir != 0 && $afterId eq ""} {
+        set afterId [after 50 autoScroll]
+    }
+
+    update idletasks ;# Update display without processing events
+}
+
+proc stopDrag {} {
+    global dragTag autoScrollDir afterId
+    set dragTag ""
+    set autoScrollDir 0
+    if {$afterId ne ""} {
+        after cancel $afterId
+        set afterId ""
+    }
+}
+
+# Bind mouse events
+.f.c bind attack <Button-1> {startDrag attack %x %y}
+.f.c bind decay <Button-1> {startDrag decay %x %y}
+.f.c bind release <Button-1> {startDrag release %x %y}
+.f.c bind end <Button-1> {startDrag end %x %y}
+bind .f.c <B1-Motion> {dragHandle %x %y}
+bind .f.c <ButtonRelease-1> {stopDrag}
+
+# Initial draw
+updateHandles
+updateParameters
+drawEnvelope
+package require udp
+
+set addr 127.0.0.1
+set port 60440
+
+set sock [udp_open]
+fconfigure $sock -buffering none -translation binary
+
+proc dest {addr port} {
+    # puts "-> $addr $port"
+    fconfigure $::sock -remote [list $addr $port]
+}
+
+dest $addr $port
+
+proc wire {msg} {
+    # puts $msg
+    puts -nonewline $::sock $msg
+}
+
+# Export parameters to C code
+proc exportParameters {} {
+    global attackTime decayTime sustainLevel releaseTime sampleRate
+    # puts "/* ADSR Parameters for C */"
+    # puts "adsr_init(&env, $attackTime, $decayTime, $sustainLevel, $releaseTime, $sampleRate);"
+    wire "E[format {%.3f} $attackTime],[format {%.3f} $decayTime],[format {%.2f} $sustainLevel],[format {%.3f} $releaseTime]"
+}
+button .b_export -text "Export Parameters" -command exportParameters
+pack .b_export -pady 10
