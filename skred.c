@@ -1850,6 +1850,7 @@ void *scope_main(void *arg) {
     sleep(1);
   }
 #else
+  int tsize = 10;
 #include "raylib.h"
 #include "rlgl.h"
   //
@@ -1864,8 +1865,7 @@ void *scope_main(void *arg) {
      file contents
     x y scope_display_mag mag_x
     */
-    fscanf(file, "%f %f %f %f",
-      &position_in.x, &position_in.y, &scope_display_mag, &mag_x);
+    fscanf(file, "%f %f %f %f", &position_in.x, &position_in.y, &scope_display_mag, &mag_x);
     if (position_in.x < 0) position_in.x = 0;
     if (position_in.y < 0) position_in.y = 0;
     if (scope_display_mag <= 0) scope_display_mag = 1;
@@ -1905,6 +1905,15 @@ void *scope_main(void *arg) {
     }
     if (IsKeyDown(KEY_TWO)) {
       if (show_r == 1) show_r = 0; else show_r = 1;
+    }
+    if (IsKeyDown(KEY_T)) {
+      if (shifted) {
+        tsize -= 1;
+        if (tsize < 10) tsize = 10;
+      } else {
+        tsize += 1;
+        if (tsize > 20) tsize = 20;
+      }
     }
     if (IsKeyDown(KEY_A)) {
       if (shifted) {
@@ -1990,7 +1999,7 @@ void *scope_main(void *arg) {
     sprintf(osd, "M%g,%g %d:%ld", tick_max, tick_inc, tick_frames, sample_count);
     DrawText(osd, SCREENWIDTH-250, SCREENHEIGHT-20, 20, BLUE);
     voice_format(console_voice, osd);
-    DrawText(osd, 10, SCREENHEIGHT-40, 10, YELLOW);
+    DrawText(osd, 10, SCREENHEIGHT-40, tsize, YELLOW);
     EndDrawing();
   }
   //
