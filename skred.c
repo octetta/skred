@@ -1794,27 +1794,27 @@ void *udp_main(void *arg) {
   char line[1024];
   voice_stack_t vs;
   vs.ptr = 0;
-  int run_away = 0;
+  fd_set readfds;
+  struct timeval timeout;
   while (udp_running) {
-    ssize_t n = recvfrom(sock, line, sizeof(line), 0, (struct sockaddr *)&client, &client_len);
-    if (n > 0) {
-      line[n] = '\0';
-      // printf("# from %d\n", ntohs(client.sin_port)); // port
-      wire(line, &voice, &vs, 0);
-    } else {
-      if (errno == EAGAIN) {
-        run_away++;
-        if (run_away > 100) {
-          printf("# udp thread EAGAIN run away...\n");
-          perror("?");
-          sleep(1);
-        }
-        continue;
+    FD_ZERO(&readfds);
+    FD_SET(sock, &readfds);
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+    int ready = select(sock+1, &readfds, NULL, NULL, &timeout);
+    if (ready > 0 && FD_ISSET(sock, &readfds)) {
+      ssize_t n = recvfrom(sock, line, sizeof(line), 0, (struct sockaddr *)&client, &client_len);
+      if (n > 0) {
+        line[n] = '\0';
+        // printf("# from %d\n", ntohs(client.sin_port)); // port
+        wire(line, &voice, &vs, 0);
       } else {
-        run_away = 0;
+        if (errno == EAGAIN) continue;
       }
-      printf("# recvfrom = %ld ; errno = %d\n", n, errno);
-      perror("# recvfrom");
+    } else if (ready == 0) {
+      // timeout
+    } else {
+      perror("# select");
     }
   }
   if (debug) printf("# udp stopping\n");
