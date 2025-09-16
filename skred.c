@@ -2,20 +2,17 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
-#include <unistd.h>
 #include <math.h>
-
-#include "motor.h"
 
 #define SOKOL_AUDIO_IMPL
 #include "sokol_audio.h"
 
-float tick_max = 10;
-float tick_inc = 1;
+float tick_max = 10.0f;
+float tick_inc = 1.0f;
 int tick_frames = 0;
 static volatile uint64_t sample_count = 0;
 
-void tick();
+void tick(int);
 void tick_max_set(float, float);
 
 int debug = 0;
@@ -27,7 +24,7 @@ int console_voice = 0;
 #define MAIN_SAMPLE_RATE (44100)
 #define VOICE_MAX (32)
 #define CHANNEL_NUM (2)
-#define AFACTOR (0.025)
+#define AFACTOR (0.025f)
 
 #define UDP_PORT 60440
 int udp_port = UDP_PORT;
@@ -105,7 +102,7 @@ enum {
   EXWAVEMAX
 };
 
-int show_audio(void) {
+int audio_show(void) {
   if (saudio_isvalid()) {
     printf("# audio backend is running\n");
     printf("# audio sample count %ld\n", sample_count);
@@ -126,33 +123,32 @@ int show_audio(void) {
 #include <pthread.h>
 #include <time.h>
 
-#define WT_FREE_LEN (8)
-float *wt_free_list[WT_FREE_LEN]; // to keep from crashing the engine, have a place to store free-ed waves
-int wt_free_ptr = 0;
+#define SAVE_WAVE_LEN (8)
+static float *save_wave_list[SAVE_WAVE_LEN]; // to keep from crashing the engine, have a place to store free-ed waves
+static int save_wave_ptr = 0;
 
-float *wt_data[EXWAVEMAX];
-int wt_size[EXWAVEMAX];
-float wt_rate[EXWAVEMAX];
-int wt_one_shot[EXWAVEMAX];
-int wt_loop_enabled[EXWAVEMAX];
-int wt_loop_start[EXWAVEMAX];
-int wt_loop_end[EXWAVEMAX];
-int wt_midinote[EXWAVEMAX];
-float wt_offsethz[EXWAVEMAX];
+float *wave_table_data[EXWAVEMAX];
+int wave_size[EXWAVEMAX];
+float wave_rate[EXWAVEMAX];
+int wave_one_shot[EXWAVEMAX];
+int wave_loop_enabled[EXWAVEMAX];
+int wave_loop_start[EXWAVEMAX];
+int wave_loop_end[EXWAVEMAX];
+int wave_midinote[EXWAVEMAX];
+float wave_offsethz[EXWAVEMAX];
 
-void wt_free(void);
+void wave_free(void);
 
-double freq[VOICE_MAX];
-double note[VOICE_MAX];
+float freq[VOICE_MAX];
+float note[VOICE_MAX];
 float sample[VOICE_MAX];
 float samples[VOICE_MAX][OSCOPE_LEN];
 float hold[VOICE_MAX];
-double amp[VOICE_MAX];
-double useramp[VOICE_MAX];
-double panl[VOICE_MAX];
-double panr[VOICE_MAX];
-double pan[VOICE_MAX];
-int interp[VOICE_MAX];
+float amp[VOICE_MAX];
+float useramp[VOICE_MAX];
+float panl[VOICE_MAX];
+float panr[VOICE_MAX];
+float pan[VOICE_MAX];
 int use_adsr[VOICE_MAX];
 int fmod_osc[VOICE_MAX];
 int pmod_osc[VOICE_MAX];
@@ -163,15 +159,11 @@ float pmod_depth[VOICE_MAX];
 float amod_depth[VOICE_MAX];
 float cmod_depth[VOICE_MAX];
 int hide[VOICE_MAX];
-int decimate[VOICE_MAX];
-int decicount[VOICE_MAX];
-float decihold[VOICE_MAX];
-float decittl[VOICE_MAX];
 int quantize[VOICE_MAX];
 int direction[VOICE_MAX];
 int phasereset[VOICE_MAX];
 
-int wtsel[VOICE_MAX];
+int wave_index[VOICE_MAX];
 
 int cz[VOICE_MAX];
 float czd[VOICE_MAX];
@@ -196,12 +188,12 @@ float filter_gain[VOICE_MAX];
 int filter_mode[VOICE_MAX];
 mmf_t filter[VOICE_MAX];
 
-void mmf_init(int n, float freq, float resonance, float gain);
-void mmf_set_params(int n, float freq, float resonance, float gain);
-float mmf_process(int n, float input);
-int mmf_set_freq(int n, float freq);
-int mmf_set_res(int n, float res);
-int mmf_set_gain(int n, float gain);
+void mmf_init(int, float, float, float);
+void mmf_set_params(int, float, float, float);
+float mmf_process(int, float);
+int mmf_set_freq(int, float);
+int mmf_set_res(int, float);
+int mmf_set_gain(int, float);
 
 void voice_reset(int i);
 void voice_init(void);
@@ -217,8 +209,8 @@ typedef struct {
   float table_rate;       // Native sample rate of the table
   int loop_start;
   int loop_end;
-  int midinote;
-  float offsethz;
+  int midi_note;
+  float offset_hz;
 } osc_t;
 
 osc_t osc[VOICE_MAX];
@@ -236,9 +228,9 @@ int oscope_len = OSCOPE_LEN;
 float oscope_bufferl[OSCOPE_LEN];
 float oscope_bufferr[OSCOPE_LEN];
 int oscope_buffer_pointer = 0;
-float oscope_display_pointer = 0.0;
-float oscope_display_inc = 1.0;
-float oscope_display_mag = 1.0;
+float oscope_display_pointer = 0.0f;
+float oscope_display_inc = 1.0f;
+float oscope_display_mag = 1.0f;
 #define OWWIDTH (SCREENWIDTH/4)
 #define OWHEIGHT (SCREENHEIGHT/2)
 float oscope_wave[OWWIDTH];
@@ -248,63 +240,60 @@ float oscope_max[OWWIDTH];
 int oscope_wave_len = 0;
 int oscope_channel = -1; // -1 means all
 
-float osc_get_phase_inc(int v, float freq) {
-  float g = freq;
-  if (osc[v].one_shot) g /= osc[v].offsethz;
-  float phase_inc = (g * osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / MAIN_SAMPLE_RATE);
+float osc_get_phase_inc(int v, float f) {
+  float g = f;
+  if (osc[v].one_shot) g /= osc[v].offset_hz;
+  float phase_inc = (g * (float)osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / MAIN_SAMPLE_RATE);
   return phase_inc;
 }
 
-void osc_set_freq(int v, float freq) {
+void osc_set_freq(int v, float f) {
   // Compute the frequency in "table samples per system sample"
   // This works even if table_rate ≠ system rate
-  float g = freq;
-  if (osc[v].one_shot) g /= osc[v].offsethz;
-  osc[v].phase_inc = (g * osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / MAIN_SAMPLE_RATE);
+  float g = f;
+  if (osc[v].one_shot) g /= osc[v].offset_hz;
+  osc[v].phase_inc = (g * (float)osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / MAIN_SAMPLE_RATE);
 }
 
 float cz_phasor(int n, float p, float d, int table_size) {
   float phase = p / (float)table_size;
-  //if (d < 0) d = 0;
-  //if (d > 1) d = 1;
   switch (n) {
     case 1: // 2 :: saw -> pulse
-      if (phase < d) phase *= (0.5 / d);
-      else phase = 0.5 + (phase - d) * (0.5 / (1.0 - d));
+      if (phase < d) phase *= (0.5f / d);
+      else phase = 0.5f + (phase - d) * (0.5f / (1.0f - d));
       break;
     case 2: // 3 :: square (folded sine)
-      if (phase < 0.5) phase *= (0.5 / (0.5 - d * 0.5));
-      else phase = 1.0 - (1.0 - phase) * (0.5 / (0.5 - d * 0.5));
+      if (phase < 0.5) phase *= 0.5f / (0.5f - d * 0.5f);
+      else phase = 1.0f - (1.0f - phase) * (0.5f / (0.5f - d * 0.5f));
       break;
     case 3: // 4 :: triangle
-      if (phase < 0.5) phase *= (0.5 / (0.5 - d * 0.5));
-      else phase = 0.5 + (phase - 0.5) * (0.5 / (0.5 - d * 0.5));
+      if (phase < 0.5f) phase *= (0.5f / (0.5f - d * 0.5f));
+      else phase = 0.5f + (phase - 0.5f) * (0.5f / (0.5f - d * 0.5f));
       break;
     case 4: // 5 :: double sine
-      phase = fmodf(phase * 2.0, 1.0);
+      phase = fmodf(phase * 2.0f, 1.0f);
       break;
     case 5: // 6 :: saw -> triangle
-      if (phase < 0.5) phase *= (0.5 / (0.5 - d * 0.5));
-      else phase = 0.5 + (phase - 0.5) * (0.5 / (0.5 + d * 0.5));
+      if (phase < 0.5f) phase *= (0.5f / (0.5f - d * 0.5f));
+      else phase = 0.5f + (phase - 0.5f) * (0.5f / (0.5f + d * 0.5f));
       break;
     case 6: // 7 :: resonant 1
-      phase = powf(phase, 1.0 + 4.0 * d);
+      phase = powf(phase, 1.0f + 4.0f * d);
       break;
     case 7: // 8 :: resonant 2
-      phase = powf(phase, 1.0 + 8.0 * d);
+      phase = powf(phase, 1.0f + 8.0f * d);
       break;
     default:
       return p;
   }
-  return fmodf(phase * (float)table_size, table_size);
+  return fmodf(phase * (float)table_size, (float)table_size);
   return phase * (float)table_size;
 }
 
 
 float osc_next(int voice, float phase_inc) {
     if (osc[voice].finished) return 0.0f;
-
-    if (direction[voice]) phase_inc *= -1.0;
+    if (direction[voice]) phase_inc *= -1.0f;
 
     // Step phase
     osc[voice].phase += phase_inc;
@@ -319,8 +308,8 @@ float osc_next(int voice, float phase_inc) {
     int table_size = osc[voice].table_size;
 
     // Clamp loop boundaries to valid range
-    float loop_start = osc[voice].loop_enabled ? osc[voice].loop_start : 0.0f;
-    float loop_end   = osc[voice].loop_enabled ? osc[voice].loop_end   : (float)table_size;
+    float loop_start = osc[voice].loop_enabled ? (float)osc[voice].loop_start : 0.0f;
+    float loop_end   = osc[voice].loop_enabled ? (float)osc[voice].loop_end   : (float)table_size;
     if (loop_end <= loop_start) { loop_start = 0.0f; loop_end = (float)table_size; }
 
     // Handle forward playback
@@ -335,8 +324,8 @@ float osc_next(int voice, float phase_inc) {
             osc[voice].phase = loop_start + fmodf(osc[voice].phase - loop_start, loop_end - loop_start);
         }
         // Wrap full table
-        else if (!osc[voice].loop_enabled && osc[voice].phase >= table_size) {
-            osc[voice].phase -= table_size;
+        else if (!osc[voice].loop_enabled && osc[voice].phase >= (float)table_size) {
+            osc[voice].phase -= (float)table_size;
         }
     }
     // Handle backward playback
@@ -352,161 +341,47 @@ float osc_next(int voice, float phase_inc) {
         }
         // Wrap full table
         else if (!osc[voice].loop_enabled && osc[voice].phase < 0.0f) {
-            osc[voice].phase += osc[voice].table_size;
+            osc[voice].phase += (float)osc[voice].table_size;
         }
     }
 
     float f;
-    if (interp[voice]) {
-      // Linear interpolation
-      int idx;
-      if (cz[voice]) {
-        int dv = cmod_osc[voice];
-        float dm = 1.0;
-        if (dv >= 0) dm = sample[dv] * cmod_depth[voice];
-        idx = (int)cz_phasor(cz[voice], osc[voice].phase, czd[voice] + dm, table_size);
-      } else {
-        idx = (int)osc[voice].phase;
-      }
-      //
-      int next_idx;
-      float frac;
-      if (phase_inc >= 0.0f) {
-          next_idx = (idx + 1) % table_size;
-          frac = osc[voice].phase - (float)idx;
-      } else {
-          next_idx = (idx == 0) ? table_size - 1 : idx - 1;
-          frac = (float)idx - osc[voice].phase;
-      }
-      f = osc[voice].table[idx] * (1.0f - frac) + osc[voice].table[next_idx] * frac;
+    int idx;
+    //
+    if (cz[voice]) {
+      int dv = cmod_osc[voice];
+      float dm = 1.0f;
+      if (dv >= 0) dm = sample[dv] * cmod_depth[voice];
+      idx = (int)cz_phasor(cz[voice], osc[voice].phase, czd[voice] + dm, table_size);
+      //idx = (int)cz_phasor(cz[voice], osc[voice].phase, czd[voice], table_size);
     } else {
-      int idx;
-      //
-      if (cz[voice]) {
-        int dv = cmod_osc[voice];
-        float dm = 1.0;
-        if (dv >= 0) dm = sample[dv] * cmod_depth[voice];
-        idx = (int)cz_phasor(cz[voice], osc[voice].phase, czd[voice] + dm, table_size);
-        //idx = (int)cz_phasor(cz[voice], osc[voice].phase, czd[voice], table_size);
-      } else {
-        idx = (int)osc[voice].phase;
-      }
-      //
-      if (idx >= table_size) idx = table_size - 1;
-      if (idx < 0) idx = 0;
-      f = osc[voice].table[idx];
+      idx = (int)osc[voice].phase;
     }
-
+    //
+    if (idx >= table_size) idx = table_size - 1;
+    if (idx < 0) idx = 0;
+    f = osc[voice].table[idx];
     return f;
 }
 
-#if 0
-float osc_next(int n, float phase_inc) {
-  int table_size = osc[n].table_size;
-  float phase = osc[n].phase;
-  float sample;
-    
-  if (osc[n].one_shot) {
-    if (direction[n] == 0 && phase > table_size) {
-      osc[n].finished = 1;
-      return 0;
-    }
-    if (direction[n] == 1 && phase < 0) {
-      osc[n].finished = 1;
-      return 0;
-    }
-  }
-
-  if (cz[n] == 1) {
-    float phase_norm = phase / (float)table_size;
-    float d = czd[n];
-    if (phase_norm < d) {
-      phase_norm *= (0.5 / d);
-    } else {
-      phase_norm = 0.5 + (phase_norm - d) * (0.5 / (1.0 - d));
-    }
-    phase = phase_norm * (float)table_size;
-  }
-  osc[n].phase = phase;
-
-  int i = (int)phase % table_size;
-    
-  if (i < 0) {
-    osc[n].phase = table_size - 1;
-    sample = osc[n].table[table_size - 1];
-    return sample;
-  } else if (i >= table_size) {
-    if (osc[n].one_shot) {
-      return 0;
-    }
-    osc[n].phase = 0;
-    sample = osc[n].table[0];
-    return sample;
-  }
-#if 1
-  sample = osc[n].table[i];      
-#else
-  if (interp[n]) {
-    int i_next = (i + 1) % table_size;
-    float frac = 0.0;
-    frac = osc[n].phase - i;
-    sample = osc[n].table[i] + frac * (osc[n].table[i_next] - osc[n].table[i]);
-  } else {
-    sample = osc[n].table[i];      
-  }
-#endif
-
-  if (direction[n]) {
-    // backwards
-    osc[n].phase -= phase_inc;
-  } else {
-    // forwards
-    osc[n].phase += phase_inc;
-  }
-    
-  if (osc[n].one_shot) {
-    if (osc[n].loop_enabled) {
-      if (direction[n]) {
-        // backwards
-        if (osc[n].phase <= osc[n].loop_start) {
-          osc[n].phase = osc[n].loop_end;
-        }
-      } else {
-        // forwards
-        if (osc[n].phase >= osc[n].loop_end) {
-          osc[n].phase = osc[n].loop_start;
-        }
-      }
-    } else {
-    }
-  } else {
-    if (osc[n].phase >= table_size) {
-      osc[n].phase -= table_size;
-    }
-  }
-
-  return sample;
-}
-#endif
-
 void osc_set_wt(int voice, int wave) {
-  if (wt_data[wave] && wt_size[wave] && wt_rate[wave] > 0.0) {
-    wtsel[voice] = wave;
+  if (wave_table_data[wave] && wave_size[wave] && wave_rate[wave] > 0.0) {
+    wave_index[voice] = wave;
     int update_freq = 0;
-    if (wt_one_shot[wave]) osc[voice].finished = 1;
+    if (wave_one_shot[wave]) osc[voice].finished = 1;
     if (
-      osc[voice].table_rate != wt_rate[wave] ||
-      osc[voice].table_size != wt_size[wave]
+      osc[voice].table_rate != wave_rate[wave] ||
+      osc[voice].table_size != wave_size[wave]
       ) update_freq = 1;
-    osc[voice].table_rate = wt_rate[wave];
-    osc[voice].table_size = wt_size[wave];
-    osc[voice].table = wt_data[wave];
-    osc[voice].one_shot = wt_one_shot[wave];
-    osc[voice].loop_start = wt_loop_start[wave];
-    osc[voice].loop_enabled = wt_loop_enabled[wave];
-    osc[voice].loop_end = wt_loop_end[wave];
-    osc[voice].midinote = wt_midinote[wave];
-    osc[voice].offsethz = wt_offsethz[wave];
+    osc[voice].table_rate = wave_rate[wave];
+    osc[voice].table_size = wave_size[wave];
+    osc[voice].table = wave_table_data[wave];
+    osc[voice].one_shot = wave_one_shot[wave];
+    osc[voice].loop_start = wave_loop_start[wave];
+    osc[voice].loop_enabled = wave_loop_enabled[wave];
+    osc[voice].loop_end = wave_loop_end[wave];
+    osc[voice].midi_note = wave_midinote[wave];
+    osc[voice].offset_hz = wave_offsethz[wave];
     // osc[voice].phase = 0;
     if (update_freq) {
       osc_set_freq(voice, freq[voice]);
@@ -517,7 +392,7 @@ void osc_set_wt(int voice, int wave) {
 void osc_trigger(int voice) {
   if (1 || osc[voice].one_shot) {
     if (direction[voice]) {
-      osc[voice].phase = osc[voice].table_size - 1;
+      osc[voice].phase = (float)(osc[voice].table_size - 1);
     } else {
       osc[voice].phase = 0;
     }
@@ -529,36 +404,36 @@ void osc_trigger(int voice) {
 
 // ADSR envelope structure
 typedef struct {
-    double a;
-    double d;
-    double s;
-    double r;
-    double attack_time;    // attack duration in samples
-    double decay_time;     // decay duration in samples
-    double sustain_level;     // 0 to 1
-    double release_time;   // release duration in samples
-    long long sample_start;   // sample count when note is triggered
-    long long sample_release; // sample count when note is released
-    int isActive;            // envelope state
+    float a;
+    float d;
+    float s;
+    float r;
+    float attack_time;    // attack duration in samples
+    float decay_time;     // decay duration in samples
+    float sustain_level;     // 0 to 1
+    float release_time;   // release duration in samples
+    uint64_t sample_start;   // sample count when note is triggered
+    uint64_t sample_release; // sample count when note is released
+    int is_active;            // envelope state
     float velocity; // multiply adsr by this value
 } adsr_t;
 
 adsr_t amp_env[VOICE_MAX];
 
 // Initialize the ADSR envelope
-void adsr_init(int v, double attackTime, double decayTime, 
-               double sustain_level, double releaseTime, double ignore) {
-    amp_env[v].a = attackTime;
-    amp_env[v].d = decayTime;
+void adsr_init(int v, float attack_time, float decay_time,
+               float sustain_level, float release_time, float ignore) {
+    amp_env[v].a = attack_time;
+    amp_env[v].d = decay_time;
     amp_env[v].s = sustain_level;
-    amp_env[v].r = releaseTime;
-    amp_env[v].attack_time = attackTime * MAIN_SAMPLE_RATE; // convert seconds to samples
-    amp_env[v].decay_time = decayTime * MAIN_SAMPLE_RATE;
-    amp_env[v].sustain_level = fmax(0.0, fmin(1.0, sustain_level)); // clamp 0 to 1
-    amp_env[v].release_time = releaseTime * MAIN_SAMPLE_RATE;
+    amp_env[v].r = release_time;
+    amp_env[v].attack_time = attack_time * MAIN_SAMPLE_RATE; // convert seconds to samples
+    amp_env[v].decay_time = decay_time * MAIN_SAMPLE_RATE;
+    amp_env[v].sustain_level = fmaxf(0, fminf(1.0f, sustain_level)); // clamp 0 to 1
+    amp_env[v].release_time = release_time * MAIN_SAMPLE_RATE;
     amp_env[v].sample_start = 0;
     amp_env[v].sample_release = 0;
-    amp_env[v].isActive = 0;
+    amp_env[v].is_active = 0;
 }
 
 // Trigger the envelope (note on)
@@ -566,33 +441,33 @@ void adsr_trigger(int v, float f) {
     amp_env[v].sample_start = sample_count;
     amp_env[v].sample_release = 0;
     amp_env[v].velocity = f;
-    amp_env[v].isActive = 1;
+    amp_env[v].is_active = 1;
 }
 
 // Release the envelope (note off)
 void adsr_release(int v) {
-    if (amp_env[v].isActive) {
+    if (amp_env[v].is_active) {
         amp_env[v].sample_release = sample_count;
     }
 }
 
 // Get the current amplitude (0 to 1) at given sample count
-double adsr_step(int v) {
-    if (!amp_env[v].isActive) return 0.0;
+float adsr_step(int v) {
+    if (!amp_env[v].is_active) return 0;
 
-    double samplesSinceStart = (double)(sample_count - amp_env[v].sample_start);
+    float samples_since_start = (float)(sample_count - amp_env[v].sample_start);
 
     // Attack phase
-    if (samplesSinceStart < amp_env[v].attack_time) {
-        return samplesSinceStart / amp_env[v].attack_time; // linear ramp up
+    if (samples_since_start < amp_env[v].attack_time) {
+        return samples_since_start / amp_env[v].attack_time; // linear ramp up
     }
 
     // Decay phase
-    double decayStart = amp_env[v].attack_time;
-    if (samplesSinceStart < decayStart + amp_env[v].decay_time) {
-        double samplesInDecay = samplesSinceStart - decayStart;
-        double decayProgress = samplesInDecay / amp_env[v].decay_time;
-        return 1.0 - decayProgress * (1.0 - amp_env[v].sustain_level); // linear decay to sustain
+    float decay_start = amp_env[v].attack_time;
+    if (samples_since_start < decay_start + amp_env[v].decay_time) {
+        float samples_in_decay = samples_since_start - decay_start;
+        float decay_progress = samples_in_decay / amp_env[v].decay_time;
+        return 1.0f - decay_progress * (1.0f - amp_env[v].sustain_level); // linear decay to sustain
     }
 
     // Sustain phase
@@ -601,33 +476,28 @@ double adsr_step(int v) {
     }
 
     // Release phase
-    double samplesSinceRelease = (double)(sample_count - amp_env[v].sample_release);
-    if (samplesSinceRelease < amp_env[v].release_time) {
-        double releaseProgress = samplesSinceRelease / amp_env[v].release_time;
-        return amp_env[v].sustain_level * (1.0 - releaseProgress); // linear ramp down
+    float samples_since_release = (float)(sample_count - amp_env[v].sample_release);
+    if (samples_since_release < amp_env[v].release_time) {
+        float release_progress = samples_since_release / amp_env[v].release_time;
+        return amp_env[v].sustain_level * (1.0f - release_progress); // linear ramp down
     }
 
     // Envelope finished
-    amp_env[v].isActive = 0;
-    return 0.0;
+    amp_env[v].is_active = 0;
+    return 0.0f;
 }
 
 float quantize_bits_int(float v, int bits) {
   int levels = (1 << bits) - 1;
-  int iv = (int)(v * levels + 0.5);
-  return iv * (1.0 / levels);
+  int iv = (int)(v * (float)levels + 0.5);
+  return (float)iv * (1.0f / (float)levels);
 }
 
 int main_running = 1;
 int udp_running = 1;
 
 void show_stats(void) {
-  for (int i = 0; i < OWWIDTH; i++) {
-    float avg = (oscope_wave[i] / 2.0 + 0.5) * (float)OWHEIGHT/2.0;
-    float min = (oscope_min[i] / 2.0 + 0.5) * (float)OWHEIGHT/2.0;
-    float max = (oscope_max[i] / 2.0 + 0.5) * (float)OWHEIGHT/2.0;
-    printf("# [%d] min:%g avg:%g max:%g\n", i, min, avg, max);
-  }
+  // do something useful
 }
 
 float get_oscope_buffer(int *index) {
@@ -638,7 +508,7 @@ float get_oscope_buffer(int *index) {
   } else if (i >= OSCOPE_LEN) {
     i = 0;
   }
-  float a = (oscope_bufferl[i] + oscope_bufferr[i]) / 2.0;
+  float a = (oscope_bufferl[i] + oscope_bufferr[i]) / 2.0f;
   *index = i;
   return a;
 }
@@ -647,12 +517,11 @@ void engine(float *buffer, int num_frames, int num_channels, void *user_data) { 
   tick(num_frames);
   for (int i = 0; i < num_frames; i++) {
     sample_count++;
-    float samplel = 0;
-    float sampler = 0;
-    float f = 0;
+    float sample_left = 0.0f;
+    float sample_right = 0.0f;
+    float f = 00.f;
     for (int n = 0; n < VOICE_MAX; n++) {
       if (amp[n] == 0) continue;
-      //if (osc[n].one_shot && osc[n].finished) continue;
       if (osc[n].finished) continue;
       if (fmod_osc[n] >= 0) {
         int m = fmod_osc[n];
@@ -662,22 +531,8 @@ void engine(float *buffer, int num_frames, int num_channels, void *user_data) { 
       } else {
         f = osc_next(n, osc[n].phase_inc);
       }
-      if (decimate[n]) {
-        decittl[n] += f;
-        sample[n] = decihold[n];
-        decicount[n]++;
-        if (decicount[n] >= decimate[n]) {
-          decicount[n] = 0;
-          decihold[n] = decittl[n] / (float)decimate[n];
-          decittl[n] = 0;
-        }
-      } else {
-        decihold[n] = f;
-        sample[n] = f;
-      }
-      if (quantize[n]) {
-        sample[n] = quantize_bits_int(sample[n], quantize[n]);
-      }
+      sample[n] = f;
+      if (quantize[n]) sample[n] = quantize_bits_int(sample[n], quantize[n]);
 
       // mmf EXPERIMENTAL
       if (filter_mode[n]) sample[n] = mmf_process(n, sample[n]);
@@ -698,13 +553,13 @@ void engine(float *buffer, int num_frames, int num_channels, void *user_data) { 
       if (hide[n] == 0) {
         if (pmod_osc[n] >= 0) {
           float q = sample[pmod_osc[n]] * pmod_depth[n];
-          panl[n] = (1.0 - q) / 2.0;
-          panr[n] = (1.0 + q) / 2.0;          
+          panl[n] = (1.0f - q) / 2.0f;
+          panr[n] = (1.0f + q) / 2.0f;
         }
         float left = sample[n] * panl[n];
         float right = sample[n] * panr[n];
-        samplel += left;
-        sampler += right;
+        sample_left += left;
+        sample_right += right;
         if (oscope_channel == n) {
           oscope_bufferl[oscope_buffer_pointer] = left;
           oscope_bufferr[oscope_buffer_pointer] = right;  
@@ -712,11 +567,11 @@ void engine(float *buffer, int num_frames, int num_channels, void *user_data) { 
       }
     }
     // Write to all channels
-    buffer[i * num_channels + 0] = samplel;
-    buffer[i * num_channels + 1] = sampler;
+    buffer[i * num_channels + 0] = sample_left;
+    buffer[i * num_channels + 1] = sample_right;
     if (oscope_channel < 0) {
-      oscope_bufferl[oscope_buffer_pointer] = samplel;
-      oscope_bufferr[oscope_buffer_pointer] = sampler;      
+      oscope_bufferl[oscope_buffer_pointer] = sample_left;
+      oscope_bufferr[oscope_buffer_pointer] = sample_right;
     }
     oscope_buffer_pointer++;
     if (oscope_buffer_pointer >= oscope_len) oscope_buffer_pointer = 0;
@@ -731,7 +586,7 @@ void fsleep(double seconds) {
   nanosleep(&ts, NULL);
 }
 
-void init_wt(void);
+void wave_table_init(void);
 
 void *udp(void *arg);
 void *oscope(void *arg);
@@ -761,7 +616,7 @@ void show_threads(void) {
     FILE* f = fopen(path, "r");
     if (f) {
       if (fgets(name, sizeof(name), f)) {
-        int n = strlen(name);
+        unsigned long n = strlen(name);
         if (name[n-1] == '\r' || name[n-1] == '\n') {
           name[n-1] = '\0';
         }
@@ -782,7 +637,6 @@ enum {
   ERR_AMPLITUDE_OUT_OF_RANGE,
   ERR_INVALID_WAVE,
   ERR_EMPTY_WAVE,
-  ERR_INVALID_INTERPOLATE,
   ERR_INVALID_DIRECTION,
   ERR_INVALID_LOOPING,
   ERR_PAN_OUT_OF_RANGE,
@@ -812,7 +666,7 @@ enum {
   ERR_UNKNOWN,
 };
 
-char *_err_str[ERR_UNKNOWN+1] = {
+char *all_err_str[ERR_UNKNOWN+1] = {
   [ERR_EXPECTED_INT] = "expected int",
   [ERR_EXPECTED_FLOAT] = "expected float",
   [ERR_INVALID_VOICE] = "invalid voice",
@@ -820,7 +674,6 @@ char *_err_str[ERR_UNKNOWN+1] = {
   [ERR_AMPLITUDE_OUT_OF_RANGE] = "amplitude out-of-range",
   [ERR_INVALID_WAVE] = "invalid wave",
   [ERR_EMPTY_WAVE] = "empty wave",
-  [ERR_INVALID_INTERPOLATE] = "invalid interpolate",
   [ERR_INVALID_DIRECTION] = "invalid direction",
   [ERR_INVALID_LOOPING] = "invalid looping",
   [ERR_PAN_OUT_OF_RANGE] = "pan out-of-range",
@@ -849,8 +702,8 @@ char *_err_str[ERR_UNKNOWN+1] = {
 
 char *err_str(int n) {
   if (n >= 0 && n <= ERR_UNKNOWN) {
-    if (_err_str[n]) {
-      return _err_str[n];
+    if (all_err_str[n]) {
+      return all_err_str[n];
     }
   }
   return "no-string";
@@ -881,7 +734,7 @@ char *voice_format(int v, char *out) {
   char *ptr = out;
   n = sprintf(ptr, "v%d w%d b%d B%d n%g f%g a%g p%g c%d,%g J%d K%g Q%g G%g",
     v,
-    wtsel[v],
+    wave_index[v],
     direction[v],
     osc[v].loop_enabled,
     note[v],
@@ -892,7 +745,7 @@ char *voice_format(int v, char *out) {
     filter_mode[v], filter_freq[v], filter_res[v], filter_gain[v]);
   ptr += n;
   if (0) {
-    n = sprintf(ptr, " I%d d%d q%d", interp[v], decimate[v], quantize[v]);
+    n = sprintf(ptr, " q%d", quantize[v]);
     ptr += n;
   }
   if (amod_osc[v] >= 0 && amod_depth[v] > 0) {
@@ -923,7 +776,7 @@ char *voice_format(int v, char *out) {
     ptr += n;
   }
   if (0 && osc[v].one_shot) {
-    n = sprintf(ptr, " %d/%g", osc[v].midinote, osc[v].offsethz);
+    n = sprintf(ptr, " %d/%g", osc[v].midi_note, osc[v].offset_hz);
     ptr += n;
   }
   return out;
@@ -935,30 +788,29 @@ void voice_show(int v, char c) {
   if (c != ' ') sprintf(e, " # *");
   voice_format(v, s);
   printf("# %s%s\n", s, e);
-  return;
 }
 
 int voice_show_all(int voice) {
   for (int i=0; i<VOICE_MAX; i++) {
     if (amp[i] == 0) continue;
-    int t = ' ';
+    char t = ' ';
     if (i == voice) t = '*';
     voice_show(i, t);
   }
+  return 0;
 }
 
-float midi2hz(int f);
+float midi2hz(float f);
 
 pthread_t udp_thread;
 pthread_t oscope_thread;
 
 void downsample_block_average_min_max(
-  float *source, int source_len, float *dest, int dest_len,
+  const float *source, int source_len, float *dest, int dest_len,
   float *min, float *max) {
   if (dest_len >= source_len) {
     // If dest is same size or larger, just copy
     for (int i = 0; i < dest_len && i < source_len; i++) {
-      //puts("####100####\n");
       dest[i] = source[i];
       if (min) min[i] = source[i];
       if (max) max[i] = source[i];
@@ -966,17 +818,17 @@ void downsample_block_average_min_max(
     return;
   }
     
-  float block_size = (float)source_len / dest_len;
+  float block_size = (float)source_len / (float)dest_len;
     
   for (int i = 0; i < dest_len; i++) {
-    float start = i * block_size;
-    float end = (i + 1) * block_size;
+    float start = (float)i * block_size;
+    float end = (float)(i + 1) * block_size;
         
     int start_idx = (int)start;
     int end_idx = (int)end;
     if (end_idx >= source_len) end_idx = source_len - 1;
         
-    float sum = 0.0;
+    float sum = 0;
     int count = 0;
         
     float thismin = source[start_idx];
@@ -990,7 +842,7 @@ void downsample_block_average_min_max(
     }
     if (min) min[i] = thismin;
     if (max) max[i] = thismax;
-    dest[i] = (count > 0) ? sum / count : 0.0;
+    dest[i] = (count > 0) ? sum / (float)count : 0;
   }
 }
 
@@ -1021,7 +873,6 @@ enum {
   FUNC_INTER,
   FUNC_PAN,
   FUNC_ADSR,
-  FUNC_DECI,
   FUNC_QUANT,
   FUNC_RESET,
   FUNC_MMFM,
@@ -1056,7 +907,7 @@ enum {
   FUNC_UNKNOWN,
 };
 
-char *_func_func_str[FUNC_UNKNOWN+1] = {
+char *display_func_func_str[FUNC_UNKNOWN+1] = {
   [FUNC_NULL] = "-?-",
   [FUNC_ERR] = "err",
   [FUNC_SYS] = "sys",
@@ -1078,7 +929,6 @@ char *_func_func_str[FUNC_UNKNOWN+1] = {
   [FUNC_INTER] = "inter",
   [FUNC_PAN] = "pan",
   [FUNC_ADSR] = "adsr",
-  [FUNC_DECI] = "deci",
   [FUNC_QUANT] = "quant",
   [FUNC_RESET] = "reset",
   [FUNC_MMFM] = "filter-mode",
@@ -1097,7 +947,6 @@ char *_func_func_str[FUNC_UNKNOWN+1] = {
   [FUNC_STATS0] = "stats-0",
   [FUNC_STATS1] = "stats-1",
   [FUNC_TRACE] = "trace",
-  [FUNC_TRIGGER] = "trigger",
   [FUNC_DEBUG] = "debug",
   [FUNC_OSCOPE] = "oscope",
   [FUNC_LOAD] = "load",
@@ -1113,8 +962,8 @@ char *_func_func_str[FUNC_UNKNOWN+1] = {
 
 char *func_func_str(int n) {
   if (n >= 0 && n <= FUNC_UNKNOWN) {
-    if (_func_func_str[n]) {
-      return _func_func_str[n];
+    if (display_func_func_str[n]) {
+      return display_func_func_str[n];
     }
   }
   return "no-string";
@@ -1133,37 +982,34 @@ void update_oscope_wave(float *table, int size) {
 int freq_set(int v, float f);
 int freq_midi(int voice, float f);
 int amp_set(int v, float f);
-int wave_set(int voice, int n);
+int wave_set(int voice, int wave);
 int wave_reset(int voice, int n);
 int wave_default(int voice);
 int wave_loop(int voice, int state);
 int wave_mute(int voice, int state);
 int wave_dir(int voice, int state);
 int wave_load(int which, int where);
-int wave_interp(int voice, int state);
-int wave_deci(int voice, int state);
 int wave_quant(int voice, int n);
-int voice_set(int voice, int *old_voice);
-int voice_copy(int voice, int new_voice);
+int voice_set(int n, int *old_voice);
+int voice_copy(int v, int n);
 int voice_trigger(int voice);
-int voice_show_all(int voice);
-int oscope_start(int sub);
-int amod_set(int voice, int osc, float f);
-int fmod_set(int voice, int osc, float f);
-int pmod_set(int voice, int osc, float f);
+int scope_start(int sub);
+int amp_mod_set(int voice, int o, float f);
+int freq_mod_set(int voice, int o, float f);
+int pan_mod_set(int voice, int o, float f);
 int patch_load(int voice, int n, int output);
 int pan_set(int voice, float f);
-int adsr_set(int voice, float a, float d, float s, float r);
-int adsr_velocity(int voice, float f);
+int envelope_set(int voice, float a, float d, float s, float r);
+int envelope_velocity(int voice, float f);
 int wavetable_show(int n);
-int cz_set(int v, int m, float d);
-int cmod_set(int voice, int osc, float f);
+int cz_set(int v, int n, float f);
+int cmod_set(int voice, int o, float f);
 
 char *ignore = " \t\r\n;";
 
 typedef struct {
   int func;
-  int subfunc;
+  int sub_func;
   int next;
   int argc;
   float args[8];
@@ -1171,7 +1017,7 @@ typedef struct {
 
 void dump(value_t v) {
   printf("# %s", func_func_str(v.func));
-  if (v.subfunc != FUNC_NULL) printf(" %s", func_func_str(v.subfunc));
+  if (v.sub_func != FUNC_NULL) printf(" %s", func_func_str(v.sub_func));
   printf(" [");
   for (int i=0; i<v.argc; i++) {
     if (i) printf(" ");
@@ -1207,39 +1053,40 @@ void ms_to_timespec(int64_t ms, int64_t *sec, int64_t *ns) {
 value_t parse_none(int func, int subfunc) {
   value_t v;
   v.func = func;
-  v.subfunc = subfunc;
+  v.sub_func = subfunc;
   v.argc = 0;
   v.next = 0;
   if (trace) dump(v);
+  return v;
 }
 
 value_t parse(char *ptr, int func, int subfunc, int argc) {
   value_t v;
   v.func = func;
-  v.subfunc = subfunc;
+  v.sub_func = subfunc;
+  v.next = 0;
   int next[8];
-  int limit = argc;
-    switch (argc) {
-      case 1:
-        v.argc = sscanf(ptr, "%g%n", &v.args[0], &next[0]);
-        if (v.argc == 1) v.next = next[0];
-        break;
-      case 2:
-        v.argc = sscanf(ptr, "%g%n,%g%n", &v.args[0], &next[0], &v.args[1], &next[1]);
-        if (v.argc > 0) v.next = next[v.argc-1];
-      case 4:
-        v.argc = sscanf(ptr, "%g%n,%g%n,%g%n,%g%n",
-          &v.args[0], &next[0],
-          &v.args[1], &next[1],
-          &v.args[2], &next[2],
-          &v.args[3], &next[3]);
-        if (v.argc > 0) v.next = next[v.argc-1];
-        break;
-      default:
-        v.argc = 0;
-        v.next = 0;
-        break;
-    }
+  switch (argc) {
+    case 1:
+      v.argc = sscanf(ptr, "%g%n", &v.args[0], &next[0]);
+      if (v.argc == 1) v.next = next[0];
+      break;
+    case 2:
+      v.argc = sscanf(ptr, "%g%n,%g%n", &v.args[0], &next[0], &v.args[1], &next[1]);
+      if (v.argc > 0) v.next = next[v.argc-1];
+    case 4:
+      v.argc = sscanf(ptr, "%g%n,%g%n,%g%n,%g%n",
+        &v.args[0], &next[0],
+        &v.args[1], &next[1],
+        &v.args[2], &next[2],
+        &v.args[3], &next[3]);
+      if (v.argc > 0) v.next = next[v.argc-1];
+      break;
+    default:
+      v.argc = 0;
+      v.next = 0;
+      break;
+  }
   if (debug) {
     printf("# argc:%d next:%d", v.argc, v.next);
     puts("");
@@ -1250,23 +1097,17 @@ value_t parse(char *ptr, int func, int subfunc, int argc) {
 }
 
 int wire(char *line, int *this_voice, stk_t *vs, int output) {
-  int len = strlen(line);
+  size_t len = strlen(line);
   if (len == 0) return 0;
 
   char *ptr = line;
   char *max = line + len;
 
-  int func;
-  int subfunc;
-  
   value_t v;
   int voice = 0;
   if (this_voice) voice = *this_voice;
   
   int more = 1;
-  int status = 0;
-  
-  int n;
   int r = 0;
 
   char c;
@@ -1274,16 +1115,16 @@ int wire(char *line, int *this_voice, stk_t *vs, int output) {
   while (more) {
     if (ptr >= max) break;
     if (*ptr == '\0') break;
-    // skip whitespace and semi-colons
+    // skip whitespace and semicolons
     ptr += strspn(ptr, ignore);
     if (debug) printf("# [%ld] '%c' (%d)\n", ptr-line, *ptr, *ptr);
     r = 0;
     switch (*ptr++) {
       case '[':
-        push(vs, voice);
+        push(vs, (float)voice);
         continue;
       case ']':
-        voice = pop(vs);
+        voice = (int)pop(vs);
         continue;
       case '#':
         return 0;
@@ -1313,7 +1154,7 @@ int wire(char *line, int *this_voice, stk_t *vs, int output) {
             v = parse_none(FUNC_SYS, FUNC_STATS1);
             if (output) {
               show_threads();
-              show_audio();
+              audio_show();
             }
             break;
           case 'd':
@@ -1328,7 +1169,7 @@ int wire(char *line, int *this_voice, stk_t *vs, int output) {
             break;
           case 'o':
             v = parse_none(FUNC_SYS, FUNC_OSCOPE);
-            oscope_start(*ptr);
+            scope_start(*ptr);
             // sub x for oscope_cross = 1
             // sub q for oscope_quit = 0
             // sub 0..VOICE_MAX-1 for oscope_channel = n
@@ -1341,7 +1182,7 @@ int wire(char *line, int *this_voice, stk_t *vs, int output) {
               int which;
               if (v.argc == 1) {
                 ptr += v.next;
-                which = v.args[0];
+                which = (int)v.args[0];
               } else return ERR_INVALID_PATCH;
               r = patch_load(voice, which, output);
               //if (r != 0) return r;
@@ -1355,11 +1196,11 @@ int wire(char *line, int *this_voice, stk_t *vs, int output) {
               int where;
               if (v.argc == 2) {
                 ptr += v.next;
-                which = v.args[0];
-                where = v.args[1];
+                which = (int)v.args[0];
+                where = (int)v.args[1];
               } else if (v.argc == 1) {
                 ptr += v.next;
-                which = v.args[0];
+                which = (int)v.args[0];
                 where = EXTSAMPLE00;
               } else return ERR_INVALID_EXTSAMPLE;
               r = wave_load(which, where);
@@ -1379,14 +1220,14 @@ int wire(char *line, int *this_voice, stk_t *vs, int output) {
         v = parse(ptr, FUNC_CZ, FUNC_NULL, 2);
         if (v.argc == 2) {
           ptr += v.next;
-          r = cz_set(voice, v.args[0], v.args[1]);
+          r = cz_set(voice, (int)v.args[0], v.args[1]);
         }
         break;
       case 'C':
         v = parse(ptr, FUNC_CZ, FUNC_NULL, 2);
         if (v.argc == 2) {
           ptr += v.next;
-          r = cmod_set(voice, v.args[0], v.args[1]);
+          r = cmod_set(voice, (int)v.args[0], v.args[1]);
         }
         break;
       case '?':
@@ -1416,15 +1257,8 @@ int wire(char *line, int *this_voice, stk_t *vs, int output) {
         v = parse(ptr, FUNC_QUANT, FUNC_NULL, 1);
         if (v.argc == 1) {
           ptr += v.next;
-          r = wave_quant(voice, v.args[0]);
+          r = wave_quant(voice, (int)v.args[0]);
         } else return ERR_INVALID_QUANT;
-        break;
-      case 'd':
-        v = parse(ptr, FUNC_DECI, FUNC_NULL, 1);
-        if (v.argc == 1) {
-          ptr += v.next;
-          r = wave_deci(voice, v.args[0]);
-        } else return ERR_INVALID_DECI;
         break;
       case 'f':
         v = parse(ptr, FUNC_FREQ, FUNC_NULL, 1);
@@ -1437,7 +1271,7 @@ int wire(char *line, int *this_voice, stk_t *vs, int output) {
         v = parse(ptr, FUNC_VOICE, FUNC_NULL, 1);
         if (v.argc == 1) {
           ptr += v.next;
-          r = voice_set(v.args[0], &voice);
+          r = voice_set((int)v.args[0], &voice);
           if (output) {
             console_voice = voice;
           }
@@ -1447,14 +1281,14 @@ int wire(char *line, int *this_voice, stk_t *vs, int output) {
         v = parse(ptr, FUNC_COPY, FUNC_NULL, 1);
         if (v.argc == 1) {
           ptr += v.next;
-          r = voice_copy(voice, v.args[0]);
+          r = voice_copy(voice, (int)v.args[0]);
         } else return ERR_INVALID_VOICE;
         break;
       case 'w':
         v = parse(ptr, FUNC_WAVE, FUNC_NULL, 1);
         if (v.argc == 1) {
           ptr += v.next;
-          r = wave_set(voice, v.args[0]);
+          r = wave_set(voice, (int)v.args[0]);
         } else return ERR_INVALID_WAVE;
         break;
       case 'T':
@@ -1479,7 +1313,7 @@ int wire(char *line, int *this_voice, stk_t *vs, int output) {
         v = parse(ptr, FUNC_SHOWWAVE, FUNC_NULL, 1);
         if (v.argc == 1) {
           ptr += v.next;
-          r = wavetable_show(v.args[0]);
+          r = wavetable_show((int)v.args[0]);
         } else return ERR_INVALID_WAVETABLE;
         break;
       case 'M':
@@ -1505,14 +1339,6 @@ int wire(char *line, int *this_voice, stk_t *vs, int output) {
           ptr++;
         } else wave_dir(voice, -1);
         break;
-      case 'I':
-        v = parse_none(FUNC_INTER, FUNC_NULL);
-        c = *ptr;
-        if (c == '0' || c == '1') {
-          wave_interp(voice, c == '1');
-          ptr++;
-        } else wave_interp(voice, -1);
-        break;
       case 'n':
         v = parse(ptr, FUNC_MIDI, FUNC_NULL, 1);
         if (v.argc == 1) {
@@ -1524,17 +1350,17 @@ int wire(char *line, int *this_voice, stk_t *vs, int output) {
         v = parse(ptr, FUNC_AMOD, FUNC_NULL, 2);
         if (v.argc == 2) {
           ptr += v.next;
-          r = amod_set(voice, v.args[0], v.args[1]);
+          r = amp_mod_set(voice, (int)v.args[0], v.args[1]);
         } else if (v.argc == 1) {
           ptr += v.next;
-          r = amod_set(voice, -1, 0);
+          r = amp_mod_set(voice, -1, 0);
         } else return ERR_PARSING_ERROR;
         break;
       case 'J':
         v = parse(ptr, FUNC_MMFM, FUNC_NULL, 2);
         if (v.argc == 1) {
           ptr += v.next;
-          filter_mode[voice] = v.args[0];
+          filter_mode[voice] = (int)v.args[0];
           mmf_set_params(voice,
             filter_freq[voice],
             filter_res[voice],
@@ -1575,41 +1401,41 @@ int wire(char *line, int *this_voice, stk_t *vs, int output) {
         v = parse(ptr, FUNC_VELOCITY, FUNC_NULL, 1);
         if (v.argc == 1) {
           ptr += v.next;
-          r = adsr_velocity(voice, v.args[0]);
+          r = envelope_velocity(voice, v.args[0]);
         } else return ERR_PARSING_ERROR;
         break;
       case 'E':
         v = parse(ptr, FUNC_ADSR, FUNC_NULL, 4);
         if (v.argc == 4) {
           ptr += v.next;
-          r = adsr_set(voice, v.args[0], v.args[1], v.args[2], v.args[3]);
+          r = envelope_set(voice, v.args[0], v.args[1], v.args[2], v.args[3]);
         } else return ERR_PARSING_ERROR;
         break;
       case 'S':
         v = parse(ptr, FUNC_RESET, FUNC_NULL, 1);
         if (v.argc == 1) {
           ptr += v.next;
-          r = wave_reset(voice, v.args[0]);
+          r = wave_reset(voice, (int)v.args[0]);
         } else return ERR_PARSING_ERROR;
         break;
       case 'F':
         v = parse(ptr, FUNC_FMOD, FUNC_NULL, 2);
         if (v.argc == 2) {
           ptr += v.next;
-          r = fmod_set(voice, v.args[0], v.args[1]);
+          r = freq_mod_set(voice, (int)v.args[0], v.args[1]);
         } else if (v.argc == 1) {
           ptr += v.next;
-          r = fmod_set(voice, -1, 0);
+          r = freq_mod_set(voice, -1, 0);
         } else return ERR_PARSING_ERROR;
         break;
       case 'P':
         v = parse(ptr, FUNC_PMOD, FUNC_NULL, 2);
         if (v.argc == 2) {
           ptr += v.next;
-          r = pmod_set(voice, v.args[0], v.args[1]);
+          r = pan_mod_set(voice, (int)v.args[0], v.args[1]);
         } else if (v.argc == 1) {
           ptr += v.next;
-          r = pmod_set(voice, -1, 0);
+          r = pan_mod_set(voice, -1, 0);
         } else return ERR_PARSING_ERROR;
         break;
       //
@@ -1630,7 +1456,6 @@ int wire(char *line, int *this_voice, stk_t *vs, int output) {
 char my_data[] = "hello";
 
 void tick_max_set(float m, float n) {
-  //motor_update(m);
   tick_max = m;
   tick_inc = n;
 }
@@ -1651,19 +1476,25 @@ void tick(int frames) {
 }
 
 int main(int argc, char *argv[]) {
+  int load_patch_number = -1;
   if (argc > 1) {
     for (int i=1; i<argc; i++) {
       if (argv[i][0] == '-') {
         switch (argv[i][1]) {
           case 'd': debug = 1; break;
-          case 'p': if ((i+i) < argc) { udp_port = atoi(argv[i+1]); i++; } break;
+          case 'p': if ((i+i) < argc) { udp_port = (int)strtol(argv[i+1], NULL, 10); i++; } break;
+          case 'l': if ((i+i) < argc) { load_patch_number = (int)strtol(argv[i+1], NULL, 10); i++; } break;
+          default:
+            printf("# unknown switch '%s'\n", argv[i]);
+            exit(1);
+            break;
         }
       }
     }
   }
   show_threads();
   linenoiseHistoryLoad(HISTORY_FILE);
-  init_wt();
+  wave_table_init();
   voice_init();
   
   // Initialize Sokol Audio
@@ -1679,18 +1510,18 @@ int main(int argc, char *argv[]) {
     // .user_data = &my_data, // todo
   });
 
-  if (show_audio() != 0) return 1;
+  if (audio_show() != 0) return 1;
 
   pthread_setname_np(pthread_self(), "skred-main");
 
   pthread_create(&udp_thread, NULL, udp, NULL);
   pthread_detach(udp_thread);
 
-  motor_go();
-
   stk_t vs;
   vs.ptr = 0;
-  
+
+  if (load_patch_number >= 0) patch_load(0, load_patch_number, 0);
+
   while (main_running) {
     char *line = linenoise("# ");
     if (line == NULL) {
@@ -1713,12 +1544,11 @@ int main(int argc, char *argv[]) {
   saudio_shutdown();
   
   udp_running = 0;
-  motor_fini();
   oscope_running = 0;
 
-  sleep(1); // make sure we don't crash the callback b/c thread timing and wt_data
+  sleep(1); // make sure we don't crash the callback b/c thread timing and wave_data
   
-  wt_free();
+  wave_free();
   
   show_threads();
   
@@ -1730,53 +1560,13 @@ int main(int argc, char *argv[]) {
 
 #include "amysamples.h"
 
-void generate_moog_squarewave(int sample_count, float *waveform) {
-    if (!waveform) return;
-
-    // Square wave parameters
-    float period = sample_count; // One cycle over all samples
-    float half_period = period / 2.0f;
-
-    // Ringing parameters
-    float ring_amplitude = 0.3f; // Ringing amplitude (adjustable, < 1 to stay in bounds)
-    //float ring_freq = 20.0f * 2.0f * M_PI / sample_count; // Ringing frequency (fast oscillations)
-    float ring_freq = 40.0f * 2.0f * M_PI / sample_count; // Ringing frequency (fast oscillations)
-    //float decay_rate = 5.0f / sample_count; // Decay rate for ringing
-    float decay_rate = 40.0f / sample_count; // Decay rate for ringing
-
-    // Generate waveform
-    for (int i = 0; i < sample_count; i++) {
-        float t = (float)i;
-        // Base square wave: +1 for first half, -1 for second half
-        float square = (t < half_period) ? 1.0f : -1.0f;
-
-        // Add ringing at transitions (at t=0 and t=half_period)
-        float ringing = 0.0f;
-        if (t < half_period) {
-            // Ringing at t=0 (start of +1)
-            ringing = ring_amplitude * sin(ring_freq * t) * exp(-decay_rate * t);
-        } else {
-            // Ringing at t=half_period (start of -1)
-            ringing = ring_amplitude * sin(ring_freq * (t - half_period)) * 
-                     exp(-decay_rate * (t - half_period));
-        }
-
-        // Combine square wave and ringing
-        waveform[i] = square + ringing;
-
-        // Normalize to [-1, 1] (clip if necessary)
-        if (waveform[i] > 1.0f) waveform[i] = 1.0f;
-        if (waveform[i] < -1.0f) waveform[i] = -1.0f;
-    }
-}
-
 void normalize_preserve_zero(float *data, int length) {
   if (length == 0) return;
     
   // Find the maximum absolute value
-  float max_abs = 0.0;
+  float max_abs = 0.0f;
   for (int i = 0; i < length; i++) {
-    float abs_val = fabs(data[i]);
+    float abs_val = fabsf(data[i]);
     if (abs_val > max_abs) {
       max_abs = abs_val;
     }
@@ -1788,22 +1578,94 @@ void normalize_preserve_zero(float *data, int length) {
   }
     
   // Scale all values by the same factor
-  float scale_factor = 1.0 / max_abs;
+  float scale_factor = 1.0f / max_abs;
   for (int i = 0; i < length; i++) {
     data[i] *= scale_factor;
   }
 }
 
-void init_wt(void) {
+//
+#include <stdint.h>
+
+typedef struct {
+    uint64_t state;
+} AudioRNG;
+
+// Initialize the RNG with a seed
+void audio_rng_init(AudioRNG* rng, uint64_t seed) {
+    rng->state = seed ? seed : 1; // Ensure non-zero seed
+}
+
+// Generate next random number (full 64-bit range)
+uint64_t audio_rng_next(AudioRNG* rng) {
+    // High-quality LCG parameters (Knuth's MMIX)
+    rng->state = rng->state * 6364136223846793005ULL + 1442695040888963407ULL;
+    return rng->state;
+}
+
+// Generate random float in range [-1.0, 1.0] for audio
+float audio_rng_float(AudioRNG* rng) {
+    uint64_t raw = audio_rng_next(rng);
+    // Use upper 32 bits for better quality
+    uint32_t val = (uint32_t)(raw >> 32);
+    // Convert to signed float [-1.0, 1.0]
+    return (float)((int32_t)val) / 2147483648.0f;
+}
+
+// Generate random float in range [0.0, 1.0]
+float audio_rng_uniform(AudioRNG* rng) {
+    uint64_t raw = audio_rng_next(rng);
+    uint32_t val = (uint32_t)(raw >> 32);
+    return (float)val / 4294967296.0f;
+}
+
+// Generate random float in custom range [min, max]
+float audio_rng_range(AudioRNG* rng, float min, float max) {
+    return min + audio_rng_uniform(rng) * (max - min);
+}
+
+// Example usage for white noise generation
+void generate_white_noise(AudioRNG* rng, float* buffer, int n) {
+    for (int i = 0; i < n; i++) {
+        buffer[i] = audio_rng_float(rng);
+    }
+}
+
+// Example usage for pink noise (simple approximation)
+typedef struct {
+    AudioRNG rng;
+    float b0, b1, b2, b3, b4, b5, b6;
+} PinkNoiseGen;
+
+void pink_noise_init(PinkNoiseGen* gen, uint64_t seed) {
+    audio_rng_init(&gen->rng, seed);
+    gen->b0 = gen->b1 = gen->b2 = gen->b3 = gen->b4 = gen->b5 = gen->b6 = 0.0f;
+}
+
+float pink_noise_sample(PinkNoiseGen* gen) {
+    float white = audio_rng_float(&gen->rng);
+    gen->b0 = 0.99886f * gen->b0 + white * 0.0555179f;
+    gen->b1 = 0.99332f * gen->b1 + white * 0.0750759f;
+    gen->b2 = 0.96900f * gen->b2 + white * 0.1538520f;
+    gen->b3 = 0.86650f * gen->b3 + white * 0.3104856f;
+    gen->b4 = 0.55000f * gen->b4 + white * 0.5329522f;
+    gen->b5 = -0.7616f * gen->b5 - white * 0.0168980f;
+    float pink = gen->b0 + gen->b1 + gen->b2 + gen->b3 + gen->b4 + gen->b5 + gen->b6 + white * 0.5362f;
+    gen->b6 = white * 0.115926f;
+    return pink * 0.11f; // Scale to reasonable amplitude
+}
+//
+
+void wave_table_init(void) {
   float *table;
-  float f;
-  float d;
 
   for (int i = 0 ; i < EXWAVEMAX; i++) {
-    wt_data[i] = NULL;
-    wt_size[i] = 0;
+    wave_table_data[i] = NULL;
+    wave_size[i] = 0;
   }
 
+  AudioRNG pink;
+  audio_rng_init(&pink, 1);
   for (int w = EXWAVESINE; w <= EXWAVENOISE; w++) {
     int size = SIZE_SINE;
     char *name = "?";
@@ -1814,37 +1676,32 @@ void init_wt(void) {
       case EXWAVESAWUP: name = "saw-up"; break;
       case EXWAVETRI:   name = "triangle"; break;
       case EXWAVENOISE: name = "noise"; break;
+      default: name = "?"; break;
     }
     printf("# make w%d %s\n", w, name);
-    wt_data[w] = (float *)malloc(size * sizeof(float));
-    wt_size[w] = size;
-    wt_rate[w] = MAIN_SAMPLE_RATE;
-    wt_one_shot[w] = 0;
-    wt_loop_start[w] = 0;
-    wt_loop_end[w] = size-1;
+    wave_table_data[w] = (float *)malloc(size * sizeof(float));
+    wave_size[w] = size;
+    wave_rate[w] = MAIN_SAMPLE_RATE;
+    wave_one_shot[w] = 0;
+    wave_loop_start[w] = 0;
+    wave_loop_end[w] = size-1;
     int off = 0;
-    for (float phase = 0.0; phase < 1.0; phase += (1.0 / (float)size)) {
-      float sine = sinf(2.0 * M_PI * phase);
+    float phase = 0;
+    float delta = 1.0f / (float)size;
+    while (phase < 1.0f) {
+      float sine = sinf(2.0f * (float) M_PI * phase);
       float f;
       switch (w) {
-        case EXWAVESINE:  f = sine; break;
-        case EXWAVESQR:   f = (phase < 0.5) ? 1.0 : -1.0; break;
-        case EXWAVESAWDN: f = 2.0 * phase - 1.0; break;
-        case EXWAVESAWUP: f = 1.0 - 2.0 * phase; break;
-        case EXWAVETRI:   f = (phase < 0.5) ? (4.0 * phase - 1.0) : (3.0 - 4.0 * phase); break;
-        case EXWAVENOISE: {
-            f = 2.0 * ((float)rand() / RAND_MAX) - 1.0; // harsh random
-            #if 0
-            float lpf = 0.0;
-            float alpha = 0.5;
-            f = alpha * f + (1.0 - alpha) * lpf;
-            #endif
-          }
-          break;
-        default:
-          break;
+        case EXWAVESINE: f = sine; break;
+        case EXWAVESQR: f = (phase < 0.5) ? 1.0f : -1.0f; break;
+        case EXWAVESAWDN: f = 2.0f * phase - 1.0f; break;
+        case EXWAVESAWUP: f = 1.0f - 2.0f * phase; break;
+        case EXWAVETRI: f = (phase < 0.5f) ? (4.0f * phase - 1.0f) : (3.0f - 4.0f * phase); break;
+        case EXWAVENOISE: f = audio_rng_float(&pink); break;
+        default: f = 0; break;
       }
-      wt_data[w][off++] = f;
+      wave_table_data[w][off++] = f;
+      phase += delta;
     }
   }
 
@@ -1859,49 +1716,14 @@ void init_wt(void) {
     for (int j = 0 ; j < s; j++) {
       table[j] = (float)kwave[k][j] / (float)32767;
     }
-    wt_data[i] = table;
-    wt_size[i] = s;
-    wt_rate[i] = MAIN_SAMPLE_RATE;
-    wt_one_shot[i] = 0;
-    wt_loop_start[i] = 0;
-    wt_loop_end[i] = s-1;
+    wave_table_data[i] = table;
+    wave_size[i] = s;
+    wave_rate[i] = MAIN_SAMPLE_RATE;
+    wave_one_shot[i] = 0;
+    wave_loop_start[i] = 0;
+    wave_loop_end[i] = s-1;
   }
 
-#if 0
-  #define PROGMEM
-  #include "notamy/impulse_lutset_fxpt.h"
-
-  FILE *out = NULL;
-
-  printf("# load AMY waves (%d to %d)\n", AMYWAVE00, AMYWAVE04);
-  out = fopen("amyimpulse.dat", "w+");
-  table = (float *)malloc(1024 * sizeof(float));
-  for (int i = 0; i < 1024; i++) {
-    float g = (float)impulse_fxpt_lutable_0[i] / 32767.0;
-    table[i] = g;
-    fprintf(out, "%g\n", g);
-  }
-  fclose(out);
-  wt_data[AMYWAVE00] = table;
-  wt_size[AMYWAVE00] = 1024;
-  wt_rate[AMYWAVE00] = MAIN_SAMPLE_RATE;
-  wt_one_shot[AMYWAVE00] = 0;
-  
-  printf("# generate moog-like squarewave at %d\n", AMYWAVE01);
-#define GENSIZE (2048)
-  table = (float *)malloc(GENSIZE * sizeof(float));
-  generate_moog_squarewave(GENSIZE, table);
-  out = fopen("moog_squarewave.dat", "w+");
-  for (int i = 0; i < GENSIZE; i++) {
-    fprintf(out, "%g\n", table[i]);
-  }
-  fclose(out);
-  wt_data[AMYWAVE01] = table;
-  wt_size[AMYWAVE01] = GENSIZE;
-  wt_rate[AMYWAVE01] = MAIN_SAMPLE_RATE;
-  wt_one_shot[AMYWAVE01] = 0;
-#endif
-  
   // load AMY samples
   int j = AMYSAMPLE99;
   for (int i = 0; i < PCM_SAMPLES; i++) {
@@ -1915,28 +1737,28 @@ void init_wt(void) {
       pcm_map[i].midinote, midi2hz(pcm_map[i].midinote));
     table = malloc(pcm_map[i].length * sizeof(float));
     for (int k = 0; k < pcm_map[i].length; k++) {
-      table[k] = (float)pcm[pcm_map[i].offset + k] / 32767.0;
+      table[k] = (float)pcm[pcm_map[i].offset + k] / 32767.0f;
     }
-    normalize_preserve_zero(table, pcm_map[i].length);
-    wt_data[j] = table;
-    wt_size[j] = pcm_map[i].length;
-    wt_rate[j] = PCM_AMY_SAMPLE_RATE;
-    wt_one_shot[j] = 1;
-    wt_loop_enabled[j] = 0;
-    wt_loop_start[j] = pcm_map[i].loopstart;
-    wt_loop_end[j] = pcm_map[i].loopend;
-    wt_midinote[j] = pcm_map[i].midinote;
-    wt_offsethz[j] = midi2hz(pcm_map[i].midinote);
+    normalize_preserve_zero(table, (int)pcm_map[i].length);
+    wave_table_data[j] = table;
+    wave_size[j] = (int)pcm_map[i].length;
+    wave_rate[j] = PCM_AMY_SAMPLE_RATE;
+    wave_one_shot[j] = 1;
+    wave_loop_enabled[j] = 0;
+    wave_loop_start[j] = (int)pcm_map[i].loopstart;
+    wave_loop_end[j] = (int)pcm_map[i].loopend;
+    wave_midinote[j] = (int)pcm_map[i].midinote;
+    wave_offsethz[j] = midi2hz((float)pcm_map[i].midinote);
   }
   printf("# load AMY samples (%d to %d)\n", AMYSAMPLE00, j);
 }
 
-void wt_free(void) {
+void wave_free(void) {
   for (int i = 0; i < EXWAVEMAX; i++) {
-    if (wt_data[i]) {
+    if (wave_table_data[i]) {
       if (debug) printf("[%d] freeing...\n", i);
-      free(wt_data[i]);
-      wt_size[i] = 0;
+      free(wave_table_data[i]);
+      wave_size[i] = 0;
     }
   }
 }
@@ -1946,23 +1768,19 @@ void voice_reset(int i) {
   hold[i] = 0;
   amp[i] = 0;
   pan[i] = 0;
-  panl[i] = 0.5;
-  panr[i] = 0.5;
-  interp[i] = 0;
+  panl[i] = 0.5f;
+  panr[i] = 0.5f;
   use_adsr[i] = 0;
   amod_osc[i] = -1;
   fmod_osc[i] = -1;
   pmod_osc[i] = -1;
   hide[i] = 0;
-  decimate[i] = 0;
-  decicount[i] = 0;
-  decittl[i] = 0.0;
   quantize[i] = 0;
   direction[i] = 0;
   adsr_init(i, 1.1f, 0.2f, 0.7f, 0.5f, 44100.0f);
-  freq[i] = 440.0;
+  freq[i] = 440.0f;
   osc_set_wt(i, EXWAVESINE);
-  mmf_init(i, 8000.0, 0.707, 1.0);
+  mmf_init(i, 8000.0f, 0.707f, 1.0f);
   filter_mode[i] = 0;
 }
 
@@ -1972,14 +1790,11 @@ void voice_init(void) {
   }
 }
 
-
-
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/time.h>
-#include <ifaddrs.h>
 
 struct sockaddr_in serve;
 
@@ -2015,15 +1830,25 @@ void *udp(void *arg) {
   int output = 0;
   stk_t vs;
   vs.ptr = 0;
+  int runaway = 0;
   while (udp_running) {
-    int n = recvfrom(sock, line, sizeof(line), 0, (struct sockaddr *)&client, &client_len);
+    ssize_t n = recvfrom(sock, line, sizeof(line), 0, (struct sockaddr *)&client, &client_len);
     if (n > 0) {
       line[n] = '\0';
       // printf("# from %d\n", ntohs(client.sin_port)); // port
-      int r = wire(line, &voice, &vs, output);
+      wire(line, &voice, &vs, output);
     } else {
-      if (errno = EAGAIN) continue;
-      printf("# recvfrom = %d ; errno = %d\n", n, errno);
+      if (errno == EAGAIN) {
+        runaway++;
+        if (runaway > 100) {
+          printf("# udp thread EAGAIN runaway... quitting...\n");
+          break;
+        }
+        continue;
+      } else {
+        runaway = 0;
+      }
+      printf("# recvfrom = %ld ; errno = %d\n", n, errno);
       perror("# recvfrom");
     }
   }
@@ -2034,12 +1859,12 @@ void *udp(void *arg) {
 int find_starting_point(int buffer_snap, int sw) {
   int j;
   j = buffer_snap - sw;
-  float t0 = (oscope_bufferl[j] + oscope_bufferr[j]) / 2.0;
+  float t0 = (oscope_bufferl[j] + oscope_bufferr[j]) / 2.0f;
   int i = j-1;
   int c = 1;
   while (c < OSCOPE_LEN) {
     if (i < 0) i = OSCOPE_LEN-1;
-    float t1 = (oscope_bufferl[i] + oscope_bufferr[i]) / 2.0;
+    float t1 = (oscope_bufferl[i] + oscope_bufferr[i]) / 2.0f;
     if (t0 == 0.0 && t1 == 0.0) {
       // zero
     } else if (t0 < 0 && t1 > 0) break;
@@ -2064,21 +1889,20 @@ void *oscope(void *arg) {
 #include "raylib.h"
 #include "rlgl.h"
   //
-  Vector2 position;
+  Vector2 position_in;
   FILE *file = fopen(CONFIG_FILE, "r");
   const int screenWidth = SCREENWIDTH;
   const int screenHeight = SCREENHEIGHT;
-  float mag_x = 1.0;
+  float mag_x = 1.0f;
   float sw = (float)screenWidth;
   if (file != NULL) {
     /*
     x y oscope_display_mag mag_x
     */
-    int r;
-    r = fscanf(file, "%f %f %f %f",
-      &position.x, &position.y, &oscope_display_mag, &mag_x);
-    if (position.x < 0) position.x = 0;
-    if (position.y < 0) position.y = 0;
+    fscanf(file, "%f %f %f %f",
+      &position_in.x, &position_in.y, &oscope_display_mag, &mag_x);
+    if (position_in.x < 0) position_in.x = 0;
+    if (position_in.y < 0) position_in.y = 0;
     if (oscope_display_mag <= 0) oscope_display_mag = 1;
     // if (mag_x <= 0) mag_x = 1;
     fclose(file);
@@ -2089,27 +1913,27 @@ void *oscope(void *arg) {
   SetTraceLogLevel(LOG_NONE);
   InitWindow(screenWidth, screenHeight, "skred-oscope");
   //
-  SetWindowPosition((int)position.x, (int)position.y);
+  SetWindowPosition((int)position_in.x, (int)position_in.y);
   //
   Vector2 dot = { (float)screenWidth/2, (float)screenHeight/2 };
   SetTargetFPS(12);
   float sh = (float)screenHeight;
-  float h0 = screenHeight / 2.0;
+  float h0 = (float)screenHeight / 2.0f;
   char osd[1024] = "?";
   int osd_dirty = 1;
   float y = h0;
-  float a = 1.0;
+  float a = 1.0f;
   int show_l = 1;
   int show_r = 1;
   Color color_left = {0, 255, 255, 128};
   Color color_right = {255, 255, 0, 128};
-  Color tGreen = {0, 255, 0, 128};
   Color green0 = {0, 255, 0, 128};
   Color green1 = {0, 128, 0, 128};
   while (oscope_running && !WindowShouldClose()) {
     if (mag_x <= 0) mag_x = MAG_X_INC;
     sw = (float)screenWidth / mag_x;
-    if (sw >= (OSCOPE_LEN/2)) sw = (float)(OSCOPE_LEN/2);
+    float mw = (float)OSCOPE_LEN / 2.0f;
+    if (sw >= mw) sw = mw;
     int shifted = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
     if (IsKeyDown(KEY_ONE)) {
       if (show_l == 1) show_l = 0; else show_l = 1;
@@ -2119,30 +1943,28 @@ void *oscope(void *arg) {
     }
     if (IsKeyDown(KEY_A)) {
       if (shifted) {
-        oscope_display_mag -= 0.1;
-        a -= 0.1;
+        oscope_display_mag -= 0.1f;
+        a -= 0.1f;
       } else {
-        oscope_display_mag += 0.1;
-        a += 0.1;
+        oscope_display_mag += 0.1f;
+        a += 0.1f;
       }
       osd_dirty++;
     }
     if (IsKeyDown(KEY_RIGHT)) {
-      //oscope_display_inc += 0.1;
-      mag_x += MAG_X_INC;
+      mag_x += (float)MAG_X_INC;
       osd_dirty++;
     }
     if (IsKeyDown(KEY_LEFT)) {
-      //oscope_display_inc -= 0.1;
-      mag_x -= MAG_X_INC;
+      mag_x -= (float)MAG_X_INC;
       osd_dirty++;
     }
     if (IsKeyDown(KEY_UP)) {
-      y += 1.0;
+      y += 1.0f;
       osd_dirty++;
     }
     if (IsKeyDown(KEY_DOWN)) {
-      y -= 1.0;
+      y -= 1.0f;
       osd_dirty++;
     }
     if (osd_dirty) {
@@ -2153,15 +1975,14 @@ void *oscope(void *arg) {
     BeginDrawing();
     ClearBackground(BLACK);
     for (int i = 0; i < oscope_wave_len; i++) {
-      float avg = (oscope_wave[i] / 2.0 + 0.5) * (float)OWHEIGHT/2.0;
-      float min = (oscope_min[i] / 2.0 + 0.5) * (float)OWHEIGHT/2.0;
-      float max = (oscope_max[i] / 2.0 + 0.5) * (float)OWHEIGHT/2.0;
-      dot.x = i;
-      DrawLine(i, max, i, OWHEIGHT/4.0, green1);
-      DrawLine(i, min, i, OWHEIGHT/4.0, green1);
-      //DrawLine(i, avg, i, OWHEIGHT/4.0, green1);
+      int mh = OWHEIGHT / 2;
+      float min = (oscope_min[i] / 2.0f + 0.5f) * (float)mh;
+      float max = (oscope_max[i] / 2.0f + 0.5f) * (float)mh;
+      int qh = OWHEIGHT / 4;
+      DrawLine(i, (int)max, i, qh, green1);
+      DrawLine(i, (int)min, i, qh, green1);
+      dot.x = (float)i;
       dot.y = max; DrawCircleV(dot, 1, green0);
-      //dot.y = avg; DrawCircleV(dot, 1, green0);
       dot.y = min; DrawCircleV(dot, 1, green0);
     }
     // show a wave table
@@ -2174,27 +1995,23 @@ void *oscope(void *arg) {
     //int start = find_starting_point(buffer_snap, OSCOPE_LEN/2);
     int start = find_starting_point(buffer_snap, screenWidth);
     int actual = 0;
-    float xoffset = (float)SCREENWIDTH / 8.0;
-    //DrawLine(xoffset * oscope_display_inc, -sh, xoffset * oscope_display_inc, sh, WHITE);
-    start -= xoffset;
+    float x_offset = (float)SCREENWIDTH / 8.0f;
+    start -= (int)x_offset;
     DrawText(osd, 10, SCREENHEIGHT-20, 20, GREEN);
     rlPushMatrix();
-    rlTranslatef(0.0, y, 0.0); // x,y,z
-    rlScalef(mag_x,oscope_display_mag,1.0);
-      DrawLine(0, 0, sw, 0, DARKGREEN);
+    rlTranslatef(0.0f, y, 0.0f); // x,y,z
+    rlScalef(mag_x,oscope_display_mag,1.0f);
+      DrawLine(0, 0, (int)sw, 0, DARKGREEN);
       if (start >= oscope_len) start = 0;
       actual = start;
-      for (float i = 0.0; i < sw; i++) {
-        dot.x = i;
-#if 1
-        if (i == start) DrawLine(dot.x, -sh, dot.x, sh, PURPLE);
-        if (actual == 0) DrawLine(dot.x, -sh, dot.x, sh, YELLOW);
-        if (actual == buffer_snap) DrawLine(dot.x, -sh, dot.x, sh, BLUE);
+      for (int i = 0; i < (int)sw; i++) {
+        if (actual == 0) DrawLine(i, (int)-sh, i, (int)sh, YELLOW);
+        if (actual == buffer_snap) DrawLine(i, (int)-sh, i, (int)sh, BLUE);
         if (actual >= (OSCOPE_LEN-1)) {
-          DrawLine(dot.x, -sh, dot.x, sh, RED);
+          DrawLine(i, (int)-sh, i, (int)sh, RED);
           actual = 0;
         }
-#endif
+        dot.x = (float)i;
         if (show_l) {
           dot.y = oscope_bufferl[actual] * h0 * oscope_display_mag;
           DrawCircleV(dot, 1, color_right);
@@ -2215,8 +2032,8 @@ void *oscope(void *arg) {
   //
   file = fopen(CONFIG_FILE, "w");
   if (file != NULL) {
-    Vector2 position = GetWindowPosition();
-    fprintf(file, "%g %g %g %g", position.x, position.y, oscope_display_mag, mag_x);
+    Vector2 position_out = GetWindowPosition();
+    fprintf(file, "%g %g %g %g", position_out.x, position_out.y, oscope_display_mag, mag_x);
     fclose(file);
   } else {
     printf("# %s write fopen fail\n", CONFIG_FILE);
@@ -2229,8 +2046,8 @@ void *oscope(void *arg) {
   return NULL;
 }
 
-float midi2hz(int f) {
-  float g = 440.0 * pow(2.0, (f - 69.0) / 12.0);
+float midi2hz(float f) {
+  float g = 440.0f * powf(2.0f, (f - 69.0f) / 12.0f);
   return g;
 }
 
@@ -2271,9 +2088,9 @@ int wave_reset(int voice, int n) {
 }
 
 int wave_default(int voice) {
-  float g = midi2hz(osc[voice].midinote);
+  float g = midi2hz((float)osc[voice].midi_note);
   freq[voice] = g;
-  note[voice] = osc[voice].midinote;
+  note[voice] = (float)osc[voice].midi_note;
   osc_set_freq(voice, g);
   update_oscope_wave(osc[voice].table, osc[voice].table_size);
   return 0;
@@ -2306,15 +2123,6 @@ int wave_dir(int voice, int state) {
   return 0;
 }
 
-int wave_interp(int voice, int state) {
-  if (state < 0) {
-    if (interp[voice] == 0) state = 1;
-    else state = 0;
-  }
-  interp[voice] = state;
-  return 0;
-}
-
 int voice_set(int n, int *old_voice) {
   if (n >= 0 && n < VOICE_MAX) {
     if (old_voice) *old_voice = n;
@@ -2328,7 +2136,7 @@ int voice_trigger(int voice) {
   return 0;
 }
 
-int oscope_start(int sub) {
+int scope_start(int sub) {
   if (oscope_running == 0) {
     oscope_running = 1;
     pthread_create(&oscope_thread, NULL, oscope, NULL);
@@ -2348,51 +2156,51 @@ int wave_load(int which, int where) {
     printf("# can not read %s\n", name);
     return ERR_INVALID_EXTSAMPLE;
   } else {
-    if (wt_data[where]) {
-      if (wt_free_ptr >= WT_FREE_LEN) {
-        wt_free_ptr = 0;
+    if (wave_table_data[where]) {
+      if (save_wave_ptr >= SAVE_WAVE_LEN) {
+        save_wave_ptr = 0;
       }
-      if (wt_free_list[wt_free_ptr]) {
-        printf("# freeing old wave %d\n", wt_free_ptr);
-        free(wt_free_list[wt_free_ptr]);
+      if (save_wave_list[save_wave_ptr]) {
+        printf("# freeing old wave %d\n", save_wave_ptr);
+        free(save_wave_list[save_wave_ptr]);
       }
-      wt_free_list[wt_free_ptr++] = wt_data[where];
+      save_wave_list[save_wave_ptr++] = wave_table_data[where];
     }
-    wt_data[where] = table;
-    wt_size[where] = len;
-    wt_rate[where] = wav.SamplesRate;
-    wt_one_shot[where] = 1;
-    wt_loop_enabled[where] = 0;
-    wt_loop_start[where] = 1;
-    wt_loop_end[where] = len;
-    wt_midinote[where] = 69;
-    wt_offsethz[where] = (float)len / (float)wav.SamplesRate * 440.0;
+    wave_table_data[where] = table;
+    wave_size[where] = len;
+    wave_rate[where] = (float)wav.SamplesRate;
+    wave_one_shot[where] = 1;
+    wave_loop_enabled[where] = 0;
+    wave_loop_start[where] = 1;
+    wave_loop_end[where] = len;
+    wave_midinote[where] = 69;
+    wave_offsethz[where] = (float)len / (float)wav.SamplesRate * 440.0f;
     printf("# read %d frames from %s to %d (ch:%d sr:%d)\n",
       len, name, where, wav.Channels, wav.SamplesRate);
   }
   return 0;
 }
 
-int amod_set(int voice, int osc, float f) {
+int amp_mod_set(int voice, int o, float f) {
   if (voice < 0 && voice >= VOICE_MAX) return ERR_INVALID_VOICE;
-  if (osc < 0 && osc >= VOICE_MAX) return ERR_INVALID_VOICE;
-  amod_osc[voice] = osc;
+  if (o < 0 && o >= VOICE_MAX) return ERR_INVALID_VOICE;
+  amod_osc[voice] = o;
   amod_depth[voice] = f;
   return 0;
 }
 
-int fmod_set(int voice, int osc, float f) {
+int freq_mod_set(int voice, int o, float f) {
   if (voice < 0 && voice >= VOICE_MAX) return ERR_INVALID_VOICE;
-  if (osc < 0 && osc >= VOICE_MAX) return ERR_INVALID_VOICE;
-  fmod_osc[voice] = osc;
+  if (o < 0 && o >= VOICE_MAX) return ERR_INVALID_VOICE;
+  fmod_osc[voice] = o;
   fmod_depth[voice] = f;
   return 0;
 }
 
-int pmod_set(int voice, int osc, float f) {
+int pan_mod_set(int voice, int o, float f) {
   if (voice < 0 && voice >= VOICE_MAX) return ERR_INVALID_VOICE;
-  if (osc < 0 && osc >= VOICE_MAX) return ERR_INVALID_VOICE;
-  pmod_osc[voice] = osc;
+  if (o < 0 && o >= VOICE_MAX) return ERR_INVALID_VOICE;
+  pmod_osc[voice] = o;
   pmod_depth[voice] = f;
   return 0;
 }
@@ -2431,33 +2239,28 @@ int freq_midi(int voice, float f) {
   return ERR_INVALID_MIDI_NOTE;
 }
 
-int wave_deci(int voice, int n) {
-  decimate[voice] = n;
-  return 0;
-}
-
 int wave_quant(int voice, int n) {
   quantize[voice] = n;
   return 0;
 }
 
 int pan_set(int voice, float f) {
-  if (f >= -1.0 && f <= 1.0) {
+  if (f >= -1.0f && f <= 1.0f) {
     pan[voice] = f;
-    panl[voice] = (1.0 - f) / 2.0;
-    panr[voice] = (1.0 + f) / 2.0;          
+    panl[voice] = (1.0f - f) / 2.0f;
+    panr[voice] = (1.0f + f) / 2.0f;
   } else {
     return ERR_PAN_OUT_OF_RANGE;
   }
   return 0;
 }
 
-int adsr_set(int voice, float a, float d, float s, float r) {
+int envelope_set(int voice, float a, float d, float s, float r) {
   adsr_init(voice, a, d, s, r, MAIN_SAMPLE_RATE);
   return 0;
 }
 
-int adsr_velocity(int voice, float f) {
+int envelope_velocity(int voice, float f) {
   if (f == 0) {
     adsr_release(voice);
   } else {
@@ -2471,13 +2274,13 @@ int adsr_velocity(int voice, float f) {
 }
 
 int wavetable_show(int n) {
-  if (n >= 0 && n < EXWAVEMAX && wt_data[n] && wt_size[n]) {
+  if (n >= 0 && n < EXWAVEMAX && wave_table_data[n] && wave_size[n]) {
     oscope_wave_index = n;
-    float *table = wt_data[n];
-    int size = wt_size[n];
+    float *table = wave_table_data[n];
+    int size = wave_size[n];
     int crossing = 0;
     int zero = 0;
-    float min, max, ttl = 0, avg;
+    float min, max, ttl = 0;
     min = table[0];
     max = table[0];
     for (int i = 1; i < size; i++) {
@@ -2492,10 +2295,8 @@ int wavetable_show(int n) {
         crossing++;
       }
     }
-    avg = ttl / (float)size;
     printf("# w%d size:%d", n, size);
-    //printf(" min:%g max:%g ttl:%g avg:%g 0:%d x:%d", min, max, ttl, avg, zero, crossing);
-    printf(" +hz:%g midi:%d", wt_offsethz[n], wt_midinote[n]);
+    printf(" +hz:%g midi:%d", wave_offsethz[n], wave_midinote[n]);
     puts("");
     downsample_block_average_min_max(table, size, oscope_wave, OWWIDTH, oscope_min, oscope_max);
     oscope_wave_len = OWWIDTH;
@@ -2509,8 +2310,8 @@ int cz_set(int v, int n, float f) {
   return 0;
 }
 
-int cmod_set(int voice, int osc, float f) {
-  cmod_osc[voice] = osc;
+int cmod_set(int voice, int o, float f) {
+  cmod_osc[voice] = o;
   cmod_depth[voice] = f;
   return 0;
 }
@@ -2519,7 +2320,7 @@ int cmod_set(int voice, int osc, float f) {
 // freq: cutoff frequency in Hz
 // resonance: resonance factor (0.1 to 10.0, where 0.707 is no resonance)
 // sample_rate: audio sample rate in Hz
-void mmf_init(int n, float freq, float resonance, float gain) {
+void mmf_init(int n, float f, float resonance, float gain) {
     // Clear delay lines
     filter[n].x1 = filter[n].x2 = 0.0f;
     filter[n].y1 = filter[n].y2 = 0.0f;
@@ -2530,12 +2331,12 @@ void mmf_init(int n, float freq, float resonance, float gain) {
     filter[n].last_gain = -999.0f;
     filter[n].last_mode = -1;
 
-    filter_freq[n] = freq;
+    filter_freq[n] = f;
     filter_res[n] = resonance;
     filter_gain[n] = gain;
     
     // Calculate initial coefficients
-    mmf_set_params(n, freq, resonance, gain);
+    mmf_set_params(n, f, resonance, gain);
 }
 
 enum {
@@ -2551,23 +2352,23 @@ enum {
 
 
 // Set parameters - only recalculates coefficients if values changed
-void mmf_set_params(int n, float freq, float resonance, float gain) {
+void mmf_set_params(int n, float f, float resonance, float gain) {
     // Only recalculate if parameters changed
     if (
-      freq == filter[n].last_freq &&
+      f == filter[n].last_freq &&
       resonance == filter[n].last_resonance &&
       gain == filter[n].last_gain &&
       filter_mode[n] == filter[n].last_mode) {
         return;  // No work needed!
     }
     
-    filter[n].last_freq = freq;
+    filter[n].last_freq = f;
     filter[n].last_resonance = resonance;
     filter[n].last_gain = gain;
     filter[n].last_mode = filter_mode[n];
     
     // Calculate filter coefficients (expensive operations only done here)
-    float omega = 2.0f * M_PI * freq / (float)MAIN_SAMPLE_RATE;
+    float omega = 2.0f * (float)M_PI * f / (float)MAIN_SAMPLE_RATE;
     float sin_omega = sinf(omega);
     float cos_omega = cosf(omega);
     float alpha = sin_omega / (2.0f * resonance);
@@ -2665,14 +2466,14 @@ void mmf_set_params(int n, float freq, float resonance, float gain) {
     filter[n].a1 = a1 / a0;
     filter[n].a2 = a2 / a0;
     
-    filter_freq[n] = freq;
+    filter_freq[n] = f;
     filter_res[n] = resonance;
     filter_gain[n] = gain;
 }
 
 
-int mmf_set_freq(int n, float freq) {
-  mmf_set_params(n, freq, filter_res[n], filter_gain[n]);
+int mmf_set_freq(int n, float f) {
+  mmf_set_params(n, f, filter_res[n], filter_gain[n]);
   return 0;
 }
 
@@ -2687,19 +2488,17 @@ int mmf_set_gain(int n, float gain) {
 }
 
 int voice_copy(int v, int n) {
-  wave_set(n, wtsel[v]);
+  wave_set(n, wave_index[v]);
   amp_set(n, useramp[v]);
   freq_set(n, freq[v]);
   pan_set(n, pan[v]);
-  amod_set(n, amod_osc[v], amod_depth[v]);
-  fmod_set(n, fmod_osc[v], fmod_depth[v]);
-  pmod_set(n, pmod_osc[v], pmod_depth[v]);
+  amp_mod_set(n, amod_osc[v], amod_depth[v]);
+  freq_mod_set(n, fmod_osc[v], fmod_depth[v]);
+  pan_mod_set(n, pmod_osc[v], pmod_depth[v]);
   //wave_loop(n, 
   //wave_dir(n,
-  //wave_interp(n,
-  //wave_deci(n,
   //wave_quant(n,
-  adsr_set(n, amp_env[v].a, amp_env[v].d, amp_env[v].s, amp_env[v].r);
+  envelope_set(n, amp_env[v].a, amp_env[v].d, amp_env[v].s, amp_env[v].r);
   cz_set(n, cz[v], czd[v]);
   cmod_set(n, cmod_osc[v], cmod_depth[v]);
   filter_mode[n] = filter_mode[v];
@@ -2726,10 +2525,6 @@ float mmf_process(int n, float input) {
     return output;
 }
 
-// Alternative: Pre-calculated coefficient tables for even faster parameter changes
-// Uncomment if you need to change parameters very frequently
-
-/*
 #define FREQ_TABLE_SIZE 128
 #define RES_TABLE_SIZE 32
 
@@ -2737,34 +2532,35 @@ typedef struct {
     float freq_table[FREQ_TABLE_SIZE];
     float res_table[RES_TABLE_SIZE];
     float coeff_table[FREQ_TABLE_SIZE][RES_TABLE_SIZE][5]; // b0,b1,b2,a1,a2
-} LPFilterTable;
+} mmf_pre_t;
+
+mmf_pre_t mmf;
 
 // Initialize lookup table (call once at startup)
-void lpf_init_table(LPFilterTable* table, float sample_rate) {
+void mmf_init_table(void) {
     for (int f = 0; f < FREQ_TABLE_SIZE; f++) {
         float freq = 20.0f * powf(1000.0f, (float)f / (FREQ_TABLE_SIZE-1)); // 20Hz to 20kHz
-        table->freq_table[f] = freq;
+        mmf.freq_table[f] = freq;
         
         for (int r = 0; r < RES_TABLE_SIZE; r++) {
             float resonance = 0.1f + (10.0f - 0.1f) * r / (RES_TABLE_SIZE-1);
-            table->res_table[r] = resonance;
+            mmf.res_table[r] = resonance;
             
             // Calculate coefficients
-            float omega = 2.0f * M_PI * freq / sample_rate;
+            float omega = 2.0f * M_PI * freq / MAIN_SAMPLE_RATE;
             float sin_omega = sinf(omega);
             float cos_omega = cosf(omega);
             float alpha = sin_omega / (2.0f * resonance);
             float a0 = 1.0f + alpha;
             
-            table->coeff_table[f][r][0] = (1.0f - cos_omega) / (2.0f * a0); // b0
-            table->coeff_table[f][r][1] = (1.0f - cos_omega) / a0;          // b1
-            table->coeff_table[f][r][2] = (1.0f - cos_omega) / (2.0f * a0); // b2
-            table->coeff_table[f][r][3] = -2.0f * cos_omega / a0;           // a1
-            table->coeff_table[f][r][4] = (1.0f - alpha) / a0;              // a2
+            mmf.coeff_table[f][r][0] = (1.0f - cos_omega) / (2.0f * a0); // b0
+            mmf.coeff_table[f][r][1] = (1.0f - cos_omega) / a0;          // b1
+            mmf.coeff_table[f][r][2] = (1.0f - cos_omega) / (2.0f * a0); // b2
+            mmf.coeff_table[f][r][3] = -2.0f * cos_omega / a0;           // a1
+            mmf.coeff_table[f][r][4] = (1.0f - alpha) / a0;              // a2
         }
     }
 }
-*/
 
 /* Example usage for real-time audio:
 
