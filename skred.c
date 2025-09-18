@@ -160,22 +160,19 @@ typedef struct {
   // Parameter tracking for coefficient updates
   float last_freq;
   float last_resonance;
-  float last_gain;
   int last_mode;
 } mmf_t;
 
 float voice_filter_freq[VOICE_MAX];
 float voice_filter_res[VOICE_MAX];
-float voice_filter_gain[VOICE_MAX];
 int voice_filter_mode[VOICE_MAX];
 mmf_t voice_filter[VOICE_MAX];
 
-void mmf_init(int, float, float, float);
-void mmf_set_params(int, float, float, float);
+void mmf_init(int, float, float);
+void mmf_set_params(int, float, float);
 float mmf_process(int, float);
 int mmf_set_freq(int, float);
 int mmf_set_res(int, float);
-int mmf_set_gain(int, float);
 
 void voice_reset(int i);
 void voice_init(void);
@@ -566,6 +563,10 @@ float quantize_bits_int(float v, int bits) {
 int main_running = 1;
 int udp_running = 1;
 
+void system_show(void) {
+  printf("# udp_port %d\n", udp_port);
+}
+
 void show_stats(void) {
   // do something useful
 }
@@ -722,7 +723,6 @@ enum {
   ERR_INVALID_AMP,
   ERR_INVALID_FILTER_MODE,
   ERR_INVALID_FILTER_RES,
-  ERR_INVALID_FILTER_GAIN,
   ERR_INVALID_PAN,
   ERR_INVALID_QUANT,
   ERR_INVALID_FREQ,
@@ -836,11 +836,10 @@ char *voice_format(int v, char *out) {
     ptr += n;
   }
   if (voice_filter_mode[v]) {
-    n = sprintf(ptr, " J%d K%g Q%g G%g",
+    n = sprintf(ptr, " J%d K%g Q%g",
       voice_filter_mode[v],
       voice_filter_freq[v],
-      voice_filter_res[v],
-      voice_filter_gain[v]);
+      voice_filter_res[v]);
     ptr += n;
   }
   if (voice_cz_mode[v]) {
@@ -868,7 +867,7 @@ char *voice_format(int v, char *out) {
     ptr += n;
   }
   if (voice_disconnect[v]) {
-    n = sprintf(ptr, " n%g", voice_note[v]);
+    n = sprintf(ptr, " m%d", voice_disconnect[v]);
     ptr += n;
   }
   if (!envelope_is_flat(v)) {
@@ -986,7 +985,6 @@ enum {
   FUNC_FILTER_MODE,
   FUNC_FILTER_FREQ,
   FUNC_FILTER_RES,
-  FUNC_FILTER_GAIN,
   FUNC_COPY,
   // subfunctions
   FUNC_HELP,
@@ -1041,9 +1039,9 @@ char *display_func_func_str[FUNC_UNKNOWN+1] = {
   [FUNC_RESET] = "reset",
   [FUNC_FILTER_MODE] = "filter-mode",
   [FUNC_FILTER_FREQ] = "filter-freq",
-  [FUNC_FILTER_GAIN] = "filter-gain",
   [FUNC_FILTER_RES] = "filter-q",
   [FUNC_COPY] = "copy-voice",
+  [FUNC_WAVE_DEFAULT] = "wave-get-default",
   [FUNC_UNKNOWN] = "unknown",
   //
   [FUNC_HELP] = "help",
@@ -1237,7 +1235,7 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
       case '#':
         return 0;
       case '\0':
-        if (output) puts("# NULL!");
+        //if (output) puts("# NULL!");
         break;
       case ':':
         //puts("# COLON");
@@ -1261,6 +1259,7 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
           case 's':
             v = parse_none(FUNC_SYS, FUNC_STATS1);
             if (output) {
+              system_show();
               show_threads();
               audio_show();
             }
@@ -1344,7 +1343,7 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
           voice_show_all(voice);
           ptr++;
         } else {
-          voice_show(voice, '*');
+          voice_show(voice, ' ');
         }
         break;
       case 'a':
@@ -1469,8 +1468,7 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
           voice_filter_mode[voice] = (int)v.args[0];
           mmf_set_params(voice,
             voice_filter_freq[voice],
-            voice_filter_res[voice],
-            voice_filter_gain[voice]);
+            voice_filter_res[voice]);
         } else return ERR_PARSING_ERROR;
         break;
       case 'K':
@@ -1489,16 +1487,6 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
           ptr += v.next;
           if (v.args[0] > 0) {
             mmf_set_res(voice, v.args[0]);
-            r = 0;
-          }
-        } else return ERR_PARSING_ERROR;
-        break;
-      case 'G':
-        v = parse(ptr, FUNC_FILTER_GAIN, FUNC_NULL, 2);
-        if (v.argc == 1) {
-          ptr += v.next;
-          if (v.args[0] > 0) {
-            mmf_set_gain(voice, v.args[0]);
             r = 0;
           }
         } else return ERR_PARSING_ERROR;
@@ -1588,8 +1576,10 @@ int main(int argc, char *argv[]) {
       if (argv[i][0] == '-') {
         switch (argv[i][1]) {
           case 'd': debug = 1; break;
-          case 'p': if ((i+i) < argc) { udp_port = (int)strtol(argv[i+1], NULL, 10); i++; } break;
-          case 'l': if ((i+i) < argc) { load_patch_number = (int)strtol(argv[i+1], NULL, 10); i++; } break;
+          case 't': trace = 1; break;
+          case 'p': udp_port = (int)strtol(&(argv[i][2]), NULL, 0); break;
+          case 'l': load_patch_number = (int)strtol(&argv[i][2], NULL, 0); break;
+          case 's': scope_start(0); break;
           default:
             printf("# unknown switch '%s'\n", argv[i]);
             exit(1);
@@ -1617,6 +1607,7 @@ int main(int argc, char *argv[]) {
   });
 
   if (audio_show() != 0) return 1;
+  system_show();
 
   pthread_setname_np(pthread_self(), "skred-main");
 
@@ -1885,7 +1876,7 @@ void voice_reset(int i) {
   envelope_init(i, 0.0f, 0.0f, 1.0f, 0.0f);
   voice_freq[i] = 440.0f;
   osc_set_wave_table_index(i, WAVE_TABLE_SINE);
-  mmf_init(i, 8000.0f, 0.707f, 1.0f);
+  mmf_init(i, 8000.0f, 0.707f);
   voice_filter_mode[i] = 0;
 }
 
@@ -1918,6 +1909,9 @@ int udp_open(int port) {
 }
 
 void *udp_main(void *arg) {
+  if (udp_port <= 0) {
+    return NULL;
+  }
   int sock = udp_open(udp_port);
   if (sock < 0) {
     puts("# udp thread cannot run");
@@ -2423,7 +2417,7 @@ int cmod_set(int voice, int o, float f) {
 // freq: cutoff frequency in Hz
 // resonance: resonance factor (0.1 to 10.0, where 0.707 is no resonance)
 // sample_rate: audio sample rate in Hz
-void mmf_init(int n, float f, float resonance, float gain) {
+void mmf_init(int n, float f, float resonance) {
     // Clear delay lines
     voice_filter[n].x1 = voice_filter[n].x2 = 0.0f;
     voice_filter[n].y1 = voice_filter[n].y2 = 0.0f;
@@ -2431,15 +2425,13 @@ void mmf_init(int n, float f, float resonance, float gain) {
     // Store parameters
     voice_filter[n].last_freq = -1.0f;  // Force coefficient calculation
     voice_filter[n].last_resonance = -1.0f;
-    voice_filter[n].last_gain = -999.0f;
     voice_filter[n].last_mode = -1;
 
     voice_filter_freq[n] = f;
     voice_filter_res[n] = resonance;
-    voice_filter_gain[n] = gain;
 
     // Calculate initial coefficients
-    mmf_set_params(n, f, resonance, gain);
+    mmf_set_params(n, f, resonance);
 }
 
 enum {
@@ -2448,26 +2440,21 @@ enum {
   FILTER_BANDPASS = 3,
   FILTER_NOTCH = 4,
   FILTER_ALL_PASS = 5,
-  FILTER_PEAKING = 6,
-  FILTER_LOW_SHELF = 7,
-  FILTER_HIGH_SHELF = 8,
 };
 
 
 // Set parameters - only recalculates coefficients if values changed
-void mmf_set_params(int n, float f, float resonance, float gain) {
+void mmf_set_params(int n, float f, float resonance) {
     // Only recalculate if parameters changed
     if (
       f == voice_filter[n].last_freq &&
       resonance == voice_filter[n].last_resonance &&
-      gain == voice_filter[n].last_gain &&
       voice_filter_mode[n] == voice_filter[n].last_mode) {
         return;  // No work needed!
     }
 
     voice_filter[n].last_freq = f;
     voice_filter[n].last_resonance = resonance;
-    voice_filter[n].last_gain = gain;
     voice_filter[n].last_mode = voice_filter_mode[n];
 
     // Calculate filter coefficients (expensive operations only done here)
@@ -2525,41 +2512,6 @@ void mmf_set_params(int n, float f, float resonance, float gain) {
           a1 = -2.0f * cos_omega;
           a2 = 1.0f - alpha;
           break;
-
-      case FILTER_PEAKING: {
-          float A = powf(10.0f, gain / 40.0f);  // Convert dB to linear
-          b0 = 1.0f + alpha * A;
-          b1 = -2.0f * cos_omega;
-          b2 = 1.0f - alpha * A;
-          a0 = 1.0f + alpha / A;
-          a1 = -2.0f * cos_omega;
-          a2 = 1.0f - alpha / A;
-          break;
-      }
-
-      case FILTER_LOW_SHELF: {
-          float A = powf(10.0f, gain / 40.0f);
-          float beta = sqrtf(A) / resonance;
-          b0 = A * ((A + 1.0f) - (A - 1.0f) * cos_omega + beta * sin_omega);
-          b1 = 2.0f * A * ((A - 1.0f) - (A + 1.0f) * cos_omega);
-          b2 = A * ((A + 1.0f) - (A - 1.0f) * cos_omega - beta * sin_omega);
-          a0 = (A + 1.0f) + (A - 1.0f) * cos_omega + beta * sin_omega;
-          a1 = -2.0f * ((A - 1.0f) + (A + 1.0f) * cos_omega);
-          a2 = (A + 1.0f) + (A - 1.0f) * cos_omega - beta * sin_omega;
-          break;
-      }
-
-      case FILTER_HIGH_SHELF: {
-          float A = powf(10.0f, gain / 40.0f);
-          float beta = sqrtf(A) / resonance;
-          b0 = A * ((A + 1.0f) + (A - 1.0f) * cos_omega + beta * sin_omega);
-          b1 = -2.0f * A * ((A - 1.0f) + (A + 1.0f) * cos_omega);
-          b2 = A * ((A + 1.0f) + (A - 1.0f) * cos_omega - beta * sin_omega);
-          a0 = (A + 1.0f) - (A - 1.0f) * cos_omega + beta * sin_omega;
-          a1 = 2.0f * ((A - 1.0f) - (A + 1.0f) * cos_omega);
-          a2 = (A + 1.0f) - (A - 1.0f) * cos_omega - beta * sin_omega;
-          break;
-        }
     }
 
     // Normalize coefficients
@@ -2571,22 +2523,16 @@ void mmf_set_params(int n, float f, float resonance, float gain) {
 
     voice_filter_freq[n] = f;
     voice_filter_res[n] = resonance;
-    voice_filter_gain[n] = gain;
 }
 
 
 int mmf_set_freq(int n, float f) {
-  mmf_set_params(n, f, voice_filter_res[n], voice_filter_gain[n]);
+  mmf_set_params(n, f, voice_filter_res[n]);
   return 0;
 }
 
 int mmf_set_res(int n, float res) {
-  mmf_set_params(n, voice_filter_freq[n], res, voice_filter_gain[n]);
-  return 0;
-}
-
-int mmf_set_gain(int n, float gain) {
-  mmf_set_params(n, voice_filter_freq[n], voice_filter_res[n], voice_filter_gain[n]);
+  mmf_set_params(n, voice_filter_freq[n], res);
   return 0;
 }
 
@@ -2605,7 +2551,7 @@ int voice_copy(int v, int n) {
   cz_set(n, voice_cz_mode[v], voice_cz_distortion[v]);
   cmod_set(n, voice_cz_mod_osc[v], voice_cz_mod_depth[v]);
   voice_filter_mode[n] = voice_filter_mode[v];
-  mmf_init(n, voice_filter_freq[v], voice_filter_res[v], voice_filter_gain[v]);
+  mmf_init(n, voice_filter_freq[v], voice_filter_res[v]);
   return 0;
 }
 
