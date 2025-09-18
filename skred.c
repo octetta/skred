@@ -273,6 +273,94 @@ float cz_phasor(int n, float p, float d, int table_size) {
 }
 
 
+#if 1
+float osc_next(int voice, float phase_inc) {
+    if (osc[voice].finished) return 0.0f;
+    if (voice_direction[voice]) phase_inc *= -1.0f;
+
+    // Step phase
+    osc[voice].phase += phase_inc;
+
+    // NaN check
+    if (!isfinite(osc[voice].phase)) {
+      puts("##1");
+        osc[voice].phase = 0.0f;
+        osc[voice].finished = osc[voice].one_shot;
+        return 0.0f;
+    }
+
+    int table_size = osc[voice].table_size;
+
+    // Clamp loop boundaries to valid range
+    float loop_start = osc[voice].loop_enabled ? (float)osc[voice].loop_start : 0.0f;
+    float loop_end   = osc[voice].loop_enabled ? (float)osc[voice].loop_end   : (float)table_size;
+    if (loop_end <= loop_start) {
+      loop_start = 0.0f;
+      loop_end = (float)table_size;
+    }
+
+    // Handle forward playback
+    if (phase_inc >= 0.0f) {
+        // One-shot forward
+        if (osc[voice].one_shot && osc[voice].phase >= loop_end) {
+          if (osc[voice].loop_enabled) {
+            osc[voice].phase = osc[voice].loop_start;
+            // puts("##3a");
+          } else {
+            osc[voice].phase = loop_end - 1e-6f;
+            osc[voice].finished = 1;
+            // puts("##3b"); // make work for loop points
+          }
+        }
+        // Loop forward
+        else if (osc[voice].loop_enabled && osc[voice].phase >= loop_end) {
+            osc[voice].phase = loop_start + fmodf(osc[voice].phase - loop_start, loop_end - loop_start);
+            //puts("##4");
+        }
+        // Wrap full table
+        else if (!osc[voice].loop_enabled && osc[voice].phase >= (float)table_size) {
+            osc[voice].phase -= (float)table_size;
+        }
+    }
+    // Handle backward playback
+    else {
+        // One-shot backward
+        if (osc[voice].one_shot && osc[voice].phase < loop_start) {
+          if (osc[voice].loop_enabled) {
+            osc[voice].phase = loop_end;
+            //puts("##5a");
+          } else {
+            osc[voice].phase = loop_start;
+            osc[voice].finished = 1;
+            //puts("##5b"); // make work for loop points
+          }
+        }
+        // Loop backward
+        else if (osc[voice].loop_enabled && osc[voice].phase < loop_start) {
+            osc[voice].phase = loop_end - fmodf(loop_start - osc[voice].phase, loop_end - loop_start);
+            //puts("##6");
+        }
+        // Wrap full table
+        else if (!osc[voice].loop_enabled && osc[voice].phase < 0.0f) {
+            osc[voice].phase += (float)osc[voice].table_size;
+        }
+    }
+
+    int idx;
+    if (voice_cz_mode[voice]) {
+      int dv = voice_cz_mod_osc[voice];
+      float dm = 1.0f;
+      if (dv >= 0) dm = voice_sample[dv] * voice_cz_mod_depth[voice];
+      idx = (int)cz_phasor(voice_cz_mode[voice], osc[voice].phase, voice_cz_distortion[voice] + dm, table_size);
+      //idx = (int)cz_phasor(cz[voice], osc[voice].phase, czd[voice], table_size);
+    } else {
+      idx = (int)osc[voice].phase;
+    }
+    if (idx >= table_size) idx = table_size - 1;
+    if (idx < 0) idx = 0;
+    return osc[voice].table[idx];
+}
+#else
 float osc_next(int voice, float phase_inc) {
     if (osc[voice].finished) return 0.0f;
     if (voice_direction[voice]) phase_inc *= -1.0f;
@@ -292,7 +380,13 @@ float osc_next(int voice, float phase_inc) {
     // Clamp loop boundaries to valid range
     float loop_start = osc[voice].loop_enabled ? (float)osc[voice].loop_start : 0.0f;
     float loop_end   = osc[voice].loop_enabled ? (float)osc[voice].loop_end   : (float)table_size;
-    if (loop_end <= loop_start) { loop_start = 0.0f; loop_end = (float)table_size; }
+    if (loop_end <= loop_start) {
+      if (osc[voice].one_shot) {
+        puts("# one_shot loop end?");
+      }
+      loop_start = 0.0f;
+      loop_end = (float)table_size;
+    }
 
     // Handle forward playback
     if (phase_inc >= 0.0f) {
@@ -341,8 +435,9 @@ float osc_next(int voice, float phase_inc) {
     if (idx < 0) idx = 0;
     return osc[voice].table[idx];
 }
+#endif
 
-void osc_set_wt(int voice, int wave) {
+void osc_set_wave_table_index(int voice, int wave) {
   if (wave_table_data[wave] && wave_size[wave] && wave_rate[wave] > 0.0) {
     voice_wave_table_index[voice] = wave;
     int update_freq = 0;
@@ -496,8 +591,8 @@ void engine(float *buffer, int num_frames, int num_channels, void *user_data) { 
     float sample_right = 0.0f;
     float f = 00.f;
     for (int n = 0; n < VOICE_MAX; n++) {
-      if (voice_amp[n] == 0) continue;
       if (osc[n].finished) continue;
+      if (voice_amp[n] == 0) continue;
       if (voice_freq_mod_osc[n] >= 0) {
         int m = voice_freq_mod_osc[n];
         float g = voice_sample[m] * voice_freq_mod_depth[n];
@@ -700,7 +795,7 @@ float voice_pop(voice_stack_t *s) {
 char *voice_format(int v, char *out) {
   if (out == NULL) return "(NULL)";
   char *ptr = out;
-  int n = sprintf(ptr, "v%d w%d b%d B%d n%g f%g a%g p%g c%d,%g J%d K%g Q%g G%g",
+  int n = sprintf(ptr, "v%d w%d b%d B%d n%g f%g a%g p%g c%d,%g J%d K%g Q%g G%g I%d O%d",
     v,
     voice_wave_table_index[v],
     voice_direction[v],
@@ -710,7 +805,12 @@ char *voice_format(int v, char *out) {
     voice_user_amp[v],
     voice_pan[v],
     voice_cz_mode[v], voice_cz_distortion[v],
-    voice_filter_mode[v], voice_filter_freq[v], voice_filter_res[v], voice_filter_gain[v]);
+    voice_filter_mode[v],
+    voice_filter_freq[v],
+    voice_filter_res[v],
+    voice_filter_gain[v],
+    osc[v].finished,
+    osc[v].one_shot);
   ptr += n;
   if (0) {
     n = sprintf(ptr, " q%d", voice_quantize[v]);
@@ -1744,7 +1844,7 @@ void voice_reset(int i) {
   voice_direction[i] = 0;
   envelope_init(i, 1.1f, 0.2f, 0.7f, 0.5f, 44100.0f);
   voice_freq[i] = 440.0f;
-  osc_set_wt(i, WAVE_TABLE_SINE);
+  osc_set_wave_table_index(i, WAVE_TABLE_SINE);
   mmf_init(i, 8000.0f, 0.707f, 1.0f);
   voice_filter_mode[i] = 0;
 }
@@ -1850,7 +1950,6 @@ void *scope_main(void *arg) {
     sleep(1);
   }
 #else
-  int tsize = 10;
 #include "raylib.h"
 #include "rlgl.h"
   //
@@ -1905,15 +2004,6 @@ void *scope_main(void *arg) {
     }
     if (IsKeyDown(KEY_TWO)) {
       if (show_r == 1) show_r = 0; else show_r = 1;
-    }
-    if (IsKeyDown(KEY_T)) {
-      if (shifted) {
-        tsize -= 1;
-        if (tsize < 10) tsize = 10;
-      } else {
-        tsize += 1;
-        if (tsize > 20) tsize = 20;
-      }
     }
     if (IsKeyDown(KEY_A)) {
       if (shifted) {
@@ -1999,7 +2089,7 @@ void *scope_main(void *arg) {
     sprintf(osd, "M%g,%g %d:%ld", tick_max, tick_inc, tick_frames, sample_count);
     DrawText(osd, SCREENWIDTH-250, SCREENHEIGHT-20, 20, BLUE);
     voice_format(console_voice, osd);
-    DrawText(osd, 10, SCREENHEIGHT-40, tsize, YELLOW);
+    DrawText(osd, 10, SCREENHEIGHT-40, 20, YELLOW);
     EndDrawing();
   }
   //
@@ -2045,7 +2135,7 @@ int amp_set(int voice, float f) {
 int wave_set(int voice, int wave) {
   if (wave >= 0 && wave < WAVE_TABLE_MAX) {
     scope_wave_index = wave;
-    osc_set_wt(voice, wave);
+    osc_set_wave_table_index(voice, wave);
     scope_wave_update(osc[voice].table, osc[voice].table_size);
   } else return ERR_INVALID_WAVE;
   return 0;
