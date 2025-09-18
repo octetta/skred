@@ -492,7 +492,7 @@ envelope_t voice_amp_envelope[VOICE_MAX];
 
 // Initialize the envelope
 void envelope_init(int v, float attack_time, float decay_time,
-               float sustain_level, float release_time, float ignore) {
+               float sustain_level, float release_time) {
     voice_amp_envelope[v].a = attack_time;
     voice_amp_envelope[v].d = decay_time;
     voice_amp_envelope[v].s = sustain_level;
@@ -792,27 +792,62 @@ float voice_pop(voice_stack_t *s) {
   return n;
 }
 
+int envelope_is_flat(int v) {
+  if (voice_amp_envelope[v].a == 0.0f &&
+    voice_amp_envelope[v].d == 0.0f &&
+    voice_amp_envelope[v].s == 1.0f &&
+    voice_amp_envelope[v].r == 0.0f) return 1;
+  return 0;
+}
+
 char *voice_format(int v, char *out) {
   if (out == NULL) return "(NULL)";
   char *ptr = out;
-  int n = sprintf(ptr, "v%d w%d b%d B%d n%g f%g a%g p%g c%d,%g J%d K%g Q%g G%g I%d O%d",
-    v,
-    voice_wave_table_index[v],
-    voice_direction[v],
-    osc[v].loop_enabled,
-    voice_note[v],
-    voice_freq[v],
-    voice_user_amp[v],
-    voice_pan[v],
-    voice_cz_mode[v], voice_cz_distortion[v],
-    voice_filter_mode[v],
-    voice_filter_freq[v],
-    voice_filter_res[v],
-    voice_filter_gain[v],
-    osc[v].finished,
-    osc[v].one_shot);
-  ptr += n;
+  int n = 0;
+  if (1) {
+    n = sprintf(ptr, "v%d w%d f%g a%g",
+      v,
+      voice_wave_table_index[v],
+      voice_freq[v],
+      voice_user_amp[v]);
+    ptr += n;
+  }
+  if (voice_direction[v]) {
+    n = sprintf(ptr, " b%d", voice_direction[v]);
+    ptr += n;
+  }
+  if (osc[v].loop_enabled) {
+    n = sprintf(ptr, " B%d",
+      osc[v].loop_enabled);
+    ptr += n;
+  }
   if (0) {
+    n = sprintf(ptr, " I%d O%d",
+      osc[v].finished,
+      osc[v].one_shot);
+    ptr += n;
+  }
+  if (voice_pan[v]) {
+    n = sprintf(ptr, " p%g", voice_pan[v]);
+    ptr += n;
+  }
+  if (voice_note[v]) {
+    n = sprintf(ptr, " n%g", voice_note[v]);
+    ptr += n;
+  }
+  if (voice_filter_mode[v]) {
+    n = sprintf(ptr, " J%d K%g Q%g G%g",
+      voice_filter_mode[v],
+      voice_filter_freq[v],
+      voice_filter_res[v],
+      voice_filter_gain[v]);
+    ptr += n;
+  }
+  if (voice_cz_mode[v]) {
+    n = sprintf(ptr, " c%d,%g", voice_cz_mode[v], voice_cz_distortion[v]);
+    ptr += n;
+  }
+  if (voice_quantize[v]) {
     n = sprintf(ptr, " q%d", voice_quantize[v]);
     ptr += n;
   }
@@ -832,13 +867,18 @@ char *voice_format(int v, char *out) {
     n = sprintf(ptr, " P%d,%g", voice_pan_mod_osc[v], voice_pan_mod_depth[v]);
     ptr += n;
   }
-  n = sprintf(ptr, " m%d E%g,%g,%g,%g",
-    voice_disconnect[v],
-    voice_amp_envelope[v].a,
-    voice_amp_envelope[v].d,
-    voice_amp_envelope[v].s,
-    voice_amp_envelope[v].r);
+  if (voice_disconnect[v]) {
+    n = sprintf(ptr, " n%g", voice_note[v]);
     ptr += n;
+  }
+  if (!envelope_is_flat(v)) {
+    n = sprintf(ptr, " E%g,%g,%g,%g",
+      voice_amp_envelope[v].a,
+      voice_amp_envelope[v].d,
+      voice_amp_envelope[v].s,
+      voice_amp_envelope[v].r);
+    ptr += n;
+  }
   if (0) {
     n = sprintf(ptr, " # %g/%g", osc[v].phase, osc[v].phase_inc);
     ptr += n;
@@ -1842,7 +1882,7 @@ void voice_reset(int i) {
   voice_disconnect[i] = 0;
   voice_quantize[i] = 0;
   voice_direction[i] = 0;
-  envelope_init(i, 1.1f, 0.2f, 0.7f, 0.5f, 44100.0f);
+  envelope_init(i, 0.0f, 0.0f, 1.0f, 0.0f);
   voice_freq[i] = 440.0f;
   osc_set_wave_table_index(i, WAVE_TABLE_SINE);
   mmf_init(i, 8000.0f, 0.707f, 1.0f);
@@ -2319,7 +2359,7 @@ int pan_set(int voice, float f) {
 }
 
 int envelope_set(int voice, float a, float d, float s, float r) {
-  envelope_init(voice, a, d, s, r, MAIN_SAMPLE_RATE);
+  envelope_init(voice, a, d, s, r);
   return 0;
 }
 
