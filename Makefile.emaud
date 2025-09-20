@@ -1,0 +1,49 @@
+# Makefile for building miniaudio example with Emscripten
+
+# Emscripten compiler
+CC = emcc
+
+# Source files
+SOURCES = miniaudio_example.c
+
+# Output files
+TARGET = miniaudio_example
+JS_OUTPUT = $(TARGET).js
+WASM_OUTPUT = $(TARGET).wasm
+
+# Compiler flags
+CFLAGS = -O2 \
+         -s WASM=1 \
+         -s EXPORTED_FUNCTIONS="['_main', '_start_audio', '_stop_audio', '_set_frequency']" \
+         -s EXPORTED_RUNTIME_METHODS="['ccall', 'cwrap']" \
+         -s ALLOW_MEMORY_GROWTH=1 \
+         -s USE_SDL=0 \
+         -s DISABLE_EXCEPTION_CATCHING=0 \
+         -s ASYNCIFY=1 \
+         # --shell-file shell.html
+
+# Include directories (adjust path to where miniaudio.h is located)
+INCLUDES = -I.
+
+# Build target
+all: $(JS_OUTPUT)
+
+$(JS_OUTPUT): $(SOURCES) miniaudio.h
+	$(CC) $(CFLAGS) $(INCLUDES) $(SOURCES) -o $(JS_OUTPUT)
+
+# Clean build files
+clean:
+	rm -f $(JS_OUTPUT) $(WASM_OUTPUT) miniaudio_example.html
+
+# Development server (requires Python)
+serve: all
+	@echo "Starting development server on http://localhost:8000"
+	@echo "Open your browser and navigate to http://localhost:8000"
+	python3 -m http.server 8000
+
+# Alternative serve command for Python 2
+serve2: all
+	@echo "Starting development server on http://localhost:8000"
+	python2 -m SimpleHTTPServer 8000
+
+.PHONY: all clean serve serve2

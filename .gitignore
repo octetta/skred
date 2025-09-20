@@ -17,3 +17,5 @@ rle1
 .skred_window
 scope-shared
 scope
+miniaudio_example.js
+miniaudio_example.wasm

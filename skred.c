@@ -136,6 +136,21 @@ float wave_offset_hz[WAVE_TABLE_MAX];
 
 void wave_free(void);
 
+//
+float voice_phase[VOICE_MAX];
+float voice_phase_inc[VOICE_MAX];
+float *voice_table[VOICE_MAX];
+int voice_table_size[VOICE_MAX];
+int voice_one_shot[VOICE_MAX];
+int voice_finished[VOICE_MAX];
+int voice_loop_enabled[VOICE_MAX];
+float voice_table_rate[VOICE_MAX];
+int voice_loop_start[VOICE_MAX];
+int voice_loop_end[VOICE_MAX];
+int voice_midi_note[VOICE_MAX];
+float voice_offset_hz[VOICE_MAX];
+//
+
 float voice_freq[VOICE_MAX];
 float voice_note[VOICE_MAX];
 float voice_sample[VOICE_MAX];

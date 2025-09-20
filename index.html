@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Miniaudio Emscripten Example</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 600px; 
+            margin: 50px auto; 
+            padding: 20px; 
+        }
+        button { 
+            padding: 10px 20px; 
+            margin: 10px; 
+            font-size: 16px; 
+            cursor: pointer; 
+        }
+        .controls { 
+            margin: 20px 0; 
+        }
+        #output { 
+            background: #f0f0f0; 
+            padding: 10px; 
+            border-radius: 5px; 
+            font-family: monospace; 
+            white-space: pre-wrap; 
+            max-height: 200px; 
+            overflow-y: auto; 
+        }
+    </style>
+</head>
+<body>
+    <h1>Miniaudio with Emscripten</h1>
+    <p>This example demonstrates how to use miniaudio with a data callback in Emscripten.</p>
+    
+    <div class="controls">
+        <button onclick="startAudio()">Start Audio</button>
+        <button onclick="stopAudio()">Stop Audio</button>
+        <br>
+        <label for="freq">Frequency: </label>
+        <input type="range" id="freq" min="200" max="1000" value="440" 
+               oninput="setFrequency(this.value)">
+        <span id="freqValue">440 Hz</span>
+    </div>
+    
+    <div id="output">Ready to load WebAssembly module...\n</div>
+
+    <script>
+        // Capture console output
+        const outputDiv = document.getElementById('output');
+        const originalLog = console.log;
+        console.log = function(...args) {
+            outputDiv.textContent += args.join(' ') + '\n';
+            outputDiv.scrollTop = outputDiv.scrollHeight;
+            originalLog.apply(console, args);
+        };
+
+        // WebAssembly module will be available as Module
+        var Module = {
+            onRuntimeInitialized: function() {
+                console.log('WebAssembly module loaded successfully!');
+            },
+            print: function(text) {
+                console.log(text);
+            },
+            printErr: function(text) {
+                console.log('Error: ' + text);
+            }
+        };
+
+        function startAudio() {
+            if (Module._start_audio) {
+                const result = Module._start_audio();
+                if (result !== 0) {
+                    console.log('Failed to start audio, error code: ' + result);
+                }
+            } else {
+                console.log('Module not ready yet');
+            }
+        }
+
+        function stopAudio() {
+            if (Module._stop_audio) {
+                Module._stop_audio();
+            } else {
+                console.log('Module not ready yet');
+            }
+        }
+
+        function setFrequency(value) {
+            document.getElementById('freqValue').textContent = value + ' Hz';
+            if (Module._set_frequency) {
+                Module._set_frequency(parseFloat(value));
+            }
+        }
+    </script>
+    
+    <!-- Load the compiled WebAssembly module -->
+    <script src="miniaudio_example.js"></script>
+</body>
+</html>
