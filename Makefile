@@ -1,5 +1,7 @@
 EXE = \
 	skred \
+	scope-shared \
+	scope \
   #
 
 all : $(EXE)
@@ -23,6 +25,15 @@ COPTS = \
 RLINC = -I raylib-quickstart-main/build/external/raylib-master/src
 RLLIB = -L raylib-quickstart-main/bin/Debug
 
+scope-shared.o : scope-shared.c scope-shared.h
+	gcc $(COPTS) -c $<
+
+scope-shared : scope-shared.c
+	gcc -DSCOPE_SHARED_DEMO $^ -o $@
+
+scope : scope.c $(ELIB)
+	gcc -D_GNU_SOURCE -DUSE_RAYLIB $(RLINC) $(RLLIB) $^ -o $@ -lraylib -lm
+
 miniwav.o : miniwav.c miniwav.h
 	gcc $(COPTS) -c $<
 
@@ -34,9 +45,6 @@ raylib-quickstart-main/Makefile :
   
 skred.o: skred.c raylib-quickstart-main/Makefile
 	gcc -DUSE_RAYLIB $(RLINC) $(COPTS) -c $<
-
-seq.o: seq.c seq.h
-	gcc $(COPTS) -c $<
 
 skred : skred.o miniwav.o amysamples.o $(ELIB)
 	gcc -DUSE_RAYLIB $(RLINC) $(RLLIB) $(COPTS) $^ -o $@ $(LIB) -lraylib

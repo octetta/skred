@@ -1,11 +1,22 @@
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <errno.h>
 #include <math.h>
 
+//#define USE_SOKOL
+#ifdef USE_SOKOL
+
 #define SOKOL_AUDIO_IMPL
 #include "sokol_audio.h"
+
+#else
+
+#include "miniaudio.h"
+
+#endif
 
 float tick_max = 10.0f;
 float tick_inc = 1.0f;
@@ -86,6 +97,7 @@ enum {
 };
 
 int audio_show(void) {
+#ifdef USE_SOKOL
   if (saudio_isvalid()) {
     printf("# audio backend is running\n");
     printf("# audio sample count %ld\n", sample_count);
@@ -99,6 +111,8 @@ int audio_show(void) {
     return 1;
   }
   return 0;
+#else
+#endif
 }
 
 #include "linenoise.h"
@@ -584,7 +598,14 @@ float scope_buffer_get(int *index) {
   return a;
 }
 
+#ifdef USE_SOKOL
 void engine(float *buffer, int num_frames, int num_channels, void *user_data) { // , void *user_data) {
+#else
+void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
+  float *buffer = (float *)pOutput;
+  int num_frames = (int)frameCount;
+  int num_channels = pDevice->playback.channels;
+#endif
   tick(num_frames);
   for (int i = 0; i < num_frames; i++) {
     sample_count++;
@@ -1559,8 +1580,15 @@ void tick(int frames) {
   static float i = 0;
   static int j = 0;
   if (i == 0) {
-    if (j&1) voice_trigger(21);
-    else voice_trigger(20);
+    if (j&1) {
+      //voice_trigger(21);
+      envelope_velocity(20, 0);
+      envelope_velocity(21, 1);
+    } else {
+      //voice_trigger(20);
+      envelope_velocity(21, 0);
+      envelope_velocity(20, 1);
+    }
     j++;
   }
   i += tick_inc;
@@ -1593,6 +1621,7 @@ int main(int argc, char *argv[]) {
   wave_table_init();
   voice_init();
 
+#ifdef USE_SOKOL
   // Initialize Sokol Audio
   saudio_setup(&(saudio_desc){
     // .stream_cb = stream_cb,
@@ -1605,6 +1634,19 @@ int main(int argc, char *argv[]) {
     //.num_packets = 1,
     // .user_data = &my_data, // todo
   });
+#else
+  ma_device_config config = ma_device_config_init(ma_device_type_playback);
+  config.playback.format = ma_format_f32;
+  config.playback.channels = 2;
+  config.sampleRate = 44100;
+  config.dataCallback = data_callback;
+  config.periodSizeInFrames = 512;
+  config.periodSizeInMilliseconds = 0;
+  config.periods = 3;
+  ma_device device;
+  ma_device_init(NULL, &config, &device);
+  ma_device_start(&device);
+#endif
 
   if (audio_show() != 0) return 1;
   system_show();
@@ -1638,7 +1680,11 @@ int main(int argc, char *argv[]) {
   linenoiseHistorySave(HISTORY_FILE);
 
   // Cleanup
+#ifdef USE_SOKOL
   saudio_shutdown();
+#else
+  ma_device_uninit(&device);
+#endif
 
   udp_running = 0;
   scope_running = 0;
@@ -2365,6 +2411,7 @@ int envelope_velocity(int voice, float f) {
     if (osc[voice].one_shot) {
       osc_trigger(voice);
     }
+      osc_trigger(voice);
     amp_envelope_trigger(voice, f);
   }
   return 0;
