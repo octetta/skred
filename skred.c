@@ -206,6 +206,7 @@ int mmf_set_res(int, float);
 void voice_reset(int i);
 void voice_init(void);
 
+#if 0
 typedef struct {
   float phase;            // Current position in table
   float phase_inc;        // Phase increment per host sample
@@ -222,6 +223,7 @@ typedef struct {
 } osc_t;
 
 osc_t osc[VOICE_MAX];
+#endif
 
 enum {
   SCOPE_TRIGGER_BOTH,
@@ -250,8 +252,8 @@ int scope_channel = -1; // -1 means all
 
 float osc_get_phase_inc(int v, float f) {
   float g = f;
-  if (osc[v].one_shot) g /= osc[v].offset_hz;
-  float phase_inc = (g * (float)osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / MAIN_SAMPLE_RATE);
+  if (voice_one_shot[v]) g /= voice_offset_hz[v];
+  float phase_inc = (g * (float)voice_table_size[v]) / voice_table_rate[v] * (voice_table_rate[v] / MAIN_SAMPLE_RATE);
   return phase_inc;
 }
 
@@ -259,8 +261,8 @@ void osc_set_freq(int v, float f) {
   // Compute the frequency in "table samples per system sample"
   // This works even if table_rate ≠ system rate
   float g = f;
-  if (osc[v].one_shot) g /= osc[v].offset_hz;
-  osc[v].phase_inc = (g * (float)osc[v].table_size) / osc[v].table_rate * (osc[v].table_rate / MAIN_SAMPLE_RATE);
+  if (voice_one_shot[v]) g /= voice_offset_hz[v];
+  voice_phase_inc[v] = (g * (float)voice_table_size[v]) / voice_table_rate[v] * (voice_table_rate[v] / MAIN_SAMPLE_RATE);
 }
 
 float cz_phasor(int n, float p, float d, int table_size) {
@@ -299,27 +301,26 @@ float cz_phasor(int n, float p, float d, int table_size) {
 }
 
 
-#if 1
 float osc_next(int voice, float phase_inc) {
-    if (osc[voice].finished) return 0.0f;
+    if (voice_finished[voice]) return 0.0f;
     if (voice_direction[voice]) phase_inc *= -1.0f;
 
     // Step phase
-    osc[voice].phase += phase_inc;
+    voice_phase[voice] += phase_inc;
 
     // NaN check
-    if (!isfinite(osc[voice].phase)) {
+    if (!isfinite(voice_phase[voice])) {
       puts("##1");
-        osc[voice].phase = 0.0f;
-        osc[voice].finished = osc[voice].one_shot;
+        voice_phase[voice] = 0.0f;
+        voice_finished[voice] = voice_one_shot[voice];
         return 0.0f;
     }
 
-    int table_size = osc[voice].table_size;
+    int table_size = voice_table_size[voice];
 
     // Clamp loop boundaries to valid range
-    float loop_start = osc[voice].loop_enabled ? (float)osc[voice].loop_start : 0.0f;
-    float loop_end   = osc[voice].loop_enabled ? (float)osc[voice].loop_end   : (float)table_size;
+    float loop_start = voice_loop_enabled[voice] ? (float)voice_loop_start[voice] : 0.0f;
+    float loop_end   = voice_loop_enabled[voice] ? (float)voice_loop_end[voice]   : (float)table_size;
     if (loop_end <= loop_start) {
       loop_start = 0.0f;
       loop_end = (float)table_size;
@@ -328,47 +329,47 @@ float osc_next(int voice, float phase_inc) {
     // Handle forward playback
     if (phase_inc >= 0.0f) {
         // One-shot forward
-        if (osc[voice].one_shot && osc[voice].phase >= loop_end) {
-          if (osc[voice].loop_enabled) {
-            osc[voice].phase = osc[voice].loop_start;
+        if (voice_one_shot[voice] && voice_phase[voice] >= loop_end) {
+          if (voice_loop_enabled[voice]) {
+            voice_phase[voice] = voice_loop_start[voice];
             // puts("##3a");
           } else {
-            osc[voice].phase = loop_end - 1e-6f;
-            osc[voice].finished = 1;
+            voice_phase[voice] = loop_end - 1e-6f;
+            voice_finished[voice] = 1;
             // puts("##3b"); // make work for loop points
           }
         }
         // Loop forward
-        else if (osc[voice].loop_enabled && osc[voice].phase >= loop_end) {
-            osc[voice].phase = loop_start + fmodf(osc[voice].phase - loop_start, loop_end - loop_start);
+        else if (voice_loop_enabled[voice] && voice_phase[voice] >= loop_end) {
+            voice_phase[voice] = loop_start + fmodf(voice_phase[voice] - loop_start, loop_end - loop_start);
             //puts("##4");
         }
         // Wrap full table
-        else if (!osc[voice].loop_enabled && osc[voice].phase >= (float)table_size) {
-            osc[voice].phase -= (float)table_size;
+        else if (!voice_loop_enabled[voice] && voice_phase[voice] >= (float)table_size) {
+            voice_phase[voice] -= (float)table_size;
         }
     }
     // Handle backward playback
     else {
         // One-shot backward
-        if (osc[voice].one_shot && osc[voice].phase < loop_start) {
-          if (osc[voice].loop_enabled) {
-            osc[voice].phase = loop_end;
+        if (voice_one_shot[voice] && voice_phase[voice] < loop_start) {
+          if (voice_loop_enabled[voice]) {
+            voice_phase[voice] = loop_end;
             //puts("##5a");
           } else {
-            osc[voice].phase = loop_start;
-            osc[voice].finished = 1;
+            voice_phase[voice] = loop_start;
+            voice_finished[voice] = 1;
             //puts("##5b"); // make work for loop points
           }
         }
         // Loop backward
-        else if (osc[voice].loop_enabled && osc[voice].phase < loop_start) {
-            osc[voice].phase = loop_end - fmodf(loop_start - osc[voice].phase, loop_end - loop_start);
+        else if (voice_loop_enabled[voice] && voice_phase[voice] < loop_start) {
+            voice_phase[voice] = loop_end - fmodf(loop_start - voice_phase[voice], loop_end - loop_start);
             //puts("##6");
         }
         // Wrap full table
-        else if (!osc[voice].loop_enabled && osc[voice].phase < 0.0f) {
-            osc[voice].phase += (float)osc[voice].table_size;
+        else if (!voice_loop_enabled[voice] && voice_phase[voice] < 0.0f) {
+            voice_phase[voice] += (float)voice_table_size[voice];
         }
     }
 
@@ -377,111 +378,35 @@ float osc_next(int voice, float phase_inc) {
       int dv = voice_cz_mod_osc[voice];
       float dm = 1.0f;
       if (dv >= 0) dm = voice_sample[dv] * voice_cz_mod_depth[voice];
-      idx = (int)cz_phasor(voice_cz_mode[voice], osc[voice].phase, voice_cz_distortion[voice] + dm, table_size);
-      //idx = (int)cz_phasor(cz[voice], osc[voice].phase, czd[voice], table_size);
+      idx = (int)cz_phasor(voice_cz_mode[voice], voice_phase[voice], voice_cz_distortion[voice] + dm, table_size);
+      //idx = (int)cz_phasor(cz[voice], voice_phase[voice], czd[voice], table_size);
     } else {
-      idx = (int)osc[voice].phase;
+      idx = (int)voice_phase[voice];
     }
     if (idx >= table_size) idx = table_size - 1;
     if (idx < 0) idx = 0;
-    return osc[voice].table[idx];
+    return voice_table[voice][idx];
 }
-#else
-float osc_next(int voice, float phase_inc) {
-    if (osc[voice].finished) return 0.0f;
-    if (voice_direction[voice]) phase_inc *= -1.0f;
-
-    // Step phase
-    osc[voice].phase += phase_inc;
-
-    // NaN check
-    if (!isfinite(osc[voice].phase)) {
-        osc[voice].phase = 0.0f;
-        osc[voice].finished = osc[voice].one_shot;
-        return 0.0f;
-    }
-
-    int table_size = osc[voice].table_size;
-
-    // Clamp loop boundaries to valid range
-    float loop_start = osc[voice].loop_enabled ? (float)osc[voice].loop_start : 0.0f;
-    float loop_end   = osc[voice].loop_enabled ? (float)osc[voice].loop_end   : (float)table_size;
-    if (loop_end <= loop_start) {
-      if (osc[voice].one_shot) {
-        puts("# one_shot loop end?");
-      }
-      loop_start = 0.0f;
-      loop_end = (float)table_size;
-    }
-
-    // Handle forward playback
-    if (phase_inc >= 0.0f) {
-        // One-shot forward
-        if (osc[voice].one_shot && osc[voice].phase >= loop_end) {
-            osc[voice].phase = loop_end - 1e-6f;
-            osc[voice].finished = 1;
-        }
-        // Loop forward
-        else if (osc[voice].loop_enabled && osc[voice].phase >= loop_end) {
-            osc[voice].phase = loop_start + fmodf(osc[voice].phase - loop_start, loop_end - loop_start);
-        }
-        // Wrap full table
-        else if (!osc[voice].loop_enabled && osc[voice].phase >= (float)table_size) {
-            osc[voice].phase -= (float)table_size;
-        }
-    }
-    // Handle backward playback
-    else {
-        // One-shot backward
-        if (osc[voice].one_shot && osc[voice].phase < loop_start) {
-            osc[voice].phase = loop_start;
-            osc[voice].finished = 1;
-        }
-        // Loop backward
-        else if (osc[voice].loop_enabled && osc[voice].phase < loop_start) {
-            osc[voice].phase = loop_end - fmodf(loop_start - osc[voice].phase, loop_end - loop_start);
-        }
-        // Wrap full table
-        else if (!osc[voice].loop_enabled && osc[voice].phase < 0.0f) {
-            osc[voice].phase += (float)osc[voice].table_size;
-        }
-    }
-
-    int idx;
-    if (voice_cz_mode[voice]) {
-      int dv = voice_cz_mod_osc[voice];
-      float dm = 1.0f;
-      if (dv >= 0) dm = voice_sample[dv] * voice_cz_mod_depth[voice];
-      idx = (int)cz_phasor(voice_cz_mode[voice], osc[voice].phase, voice_cz_distortion[voice] + dm, table_size);
-      //idx = (int)cz_phasor(cz[voice], osc[voice].phase, czd[voice], table_size);
-    } else {
-      idx = (int)osc[voice].phase;
-    }
-    if (idx >= table_size) idx = table_size - 1;
-    if (idx < 0) idx = 0;
-    return osc[voice].table[idx];
-}
-#endif
 
 void osc_set_wave_table_index(int voice, int wave) {
   if (wave_table_data[wave] && wave_size[wave] && wave_rate[wave] > 0.0) {
     voice_wave_table_index[voice] = wave;
     int update_freq = 0;
-    if (wave_one_shot[wave]) osc[voice].finished = 1;
+    if (wave_one_shot[wave]) voice_finished[voice] = 1;
     if (
-      osc[voice].table_rate != wave_rate[wave] ||
-      osc[voice].table_size != wave_size[wave]
+      voice_table_rate[voice] != wave_rate[wave] ||
+      voice_table_size[voice] != wave_size[wave]
       ) update_freq = 1;
-    osc[voice].table_rate = wave_rate[wave];
-    osc[voice].table_size = wave_size[wave];
-    osc[voice].table = wave_table_data[wave];
-    osc[voice].one_shot = wave_one_shot[wave];
-    osc[voice].loop_start = wave_loop_start[wave];
-    osc[voice].loop_enabled = wave_loop_enabled[wave];
-    osc[voice].loop_end = wave_loop_end[wave];
-    osc[voice].midi_note = wave_midi_note[wave];
-    osc[voice].offset_hz = wave_offset_hz[wave];
-    // osc[voice].phase = 0;
+    voice_table_rate[voice] = wave_rate[wave];
+    voice_table_size[voice] = wave_size[wave];
+    voice_table[voice] = wave_table_data[wave];
+    voice_one_shot[voice] = wave_one_shot[wave];
+    voice_loop_start[voice] = wave_loop_start[wave];
+    voice_loop_enabled[voice] = wave_loop_enabled[wave];
+    voice_loop_end[voice] = wave_loop_end[wave];
+    voice_midi_note[voice] = wave_midi_note[wave];
+    voice_offset_hz[voice] = wave_offset_hz[wave];
+    // voice_phase[voice] = 0;
     if (update_freq) {
       osc_set_freq(voice, voice_freq[voice]);
     }
@@ -489,13 +414,13 @@ void osc_set_wave_table_index(int voice, int wave) {
 }
 
 void osc_trigger(int voice) {
-  if (1 || osc[voice].one_shot) {
+  if (1 || voice_one_shot[voice]) {
     if (voice_direction[voice]) {
-      osc[voice].phase = (float)(osc[voice].table_size - 1);
+      voice_phase[voice] = (float)(voice_table_size[voice] - 1);
     } else {
-      osc[voice].phase = 0;
+      voice_phase[voice] = 0;
     }
-    osc[voice].finished = 0;
+    voice_finished[voice] = 0;
   }
 }
 
@@ -628,7 +553,7 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
     float sample_right = 0.0f;
     float f = 00.f;
     for (int n = 0; n < VOICE_MAX; n++) {
-      if (osc[n].finished) continue;
+      if (voice_finished[n]) continue;
       if (voice_amp[n] == 0) continue;
       if (voice_freq_mod_osc[n] >= 0) {
         int m = voice_freq_mod_osc[n];
@@ -636,7 +561,7 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
         float h = osc_get_phase_inc(n, voice_freq[n] + g);
         f = osc_next(n, h);
       } else {
-        f = osc_next(n, osc[n].phase_inc);
+        f = osc_next(n, voice_phase_inc[n]);
       }
       voice_sample[n] = f;
       if (voice_quantize[n]) voice_sample[n] = quantize_bits_int(voice_sample[n], voice_quantize[n]);
@@ -852,15 +777,15 @@ char *voice_format(int v, char *out) {
     n = sprintf(ptr, " b%d", voice_direction[v]);
     ptr += n;
   }
-  if (osc[v].loop_enabled) {
+  if (voice_loop_enabled[v]) {
     n = sprintf(ptr, " B%d",
-      osc[v].loop_enabled);
+      voice_loop_enabled[v]);
     ptr += n;
   }
   if (0) {
     n = sprintf(ptr, " I%d O%d",
-      osc[v].finished,
-      osc[v].one_shot);
+      voice_finished[v],
+      voice_one_shot[v]);
     ptr += n;
   }
   if (voice_pan[v]) {
@@ -915,11 +840,11 @@ char *voice_format(int v, char *out) {
     ptr += n;
   }
   if (0) {
-    n = sprintf(ptr, " # %g/%g", osc[v].phase, osc[v].phase_inc);
+    n = sprintf(ptr, " # %g/%g", voice_phase[v], voice_phase_inc[v]);
     ptr += n;
   }
-  if (0 && osc[v].one_shot) {
-    n = sprintf(ptr, " %d/%g", osc[v].midi_note, osc[v].offset_hz);
+  if (0 && voice_one_shot[v]) {
+    n = sprintf(ptr, " %d/%g", voice_midi_note[v], voice_offset_hz[v]);
     ptr += n;
   }
   return out;
@@ -1115,8 +1040,8 @@ char *func_func_str(int n) {
 
 void scope_wave_update(const float *table, int size) {
   scope_wave_len = 0;
-  //float *table = osc[voice].table;
-  //int size = osc[voice].table_size;
+  //float *table = voice_table[voice];
+  //int size = voice_table_size[voice];
   downsample_block_average_min_max(table, size, scope_wave_data, SCOPE_WAVE_WIDTH, scope_wave_min, scope_wave_max);
   scope_wave_len = SCOPE_WAVE_WIDTH;
 }
@@ -2231,7 +2156,7 @@ int wave_set(int voice, int wave) {
   if (wave >= 0 && wave < WAVE_TABLE_MAX) {
     scope_wave_index = wave;
     osc_set_wave_table_index(voice, wave);
-    scope_wave_update(osc[voice].table, osc[voice].table_size);
+    scope_wave_update(voice_table[voice], voice_table_size[voice]);
   } else return ERR_INVALID_WAVE;
   return 0;
 }
@@ -2246,20 +2171,20 @@ int wave_reset(int voice, int n) {
 }
 
 int wave_default(int voice) {
-  float g = midi2hz((float)osc[voice].midi_note);
+  float g = midi2hz((float)voice_midi_note[voice]);
   voice_freq[voice] = g;
-  voice_note[voice] = (float)osc[voice].midi_note;
+  voice_note[voice] = (float)voice_midi_note[voice];
   osc_set_freq(voice, g);
-  scope_wave_update(osc[voice].table, osc[voice].table_size);
+  scope_wave_update(voice_table[voice], voice_table_size[voice]);
   return 0;
 }
 
 int wave_loop(int voice, int state) {
   if (state < 0) {
-    if (osc[voice].loop_enabled == 0) state = 1;
+    if (voice_loop_enabled[voice] == 0) state = 1;
     else state = 0;
   }
-  osc[voice].loop_enabled = state;
+  voice_loop_enabled[voice] = state;
   return 0;
 }
 
@@ -2423,7 +2348,7 @@ int envelope_velocity(int voice, float f) {
     amp_envelope_release(voice);
   } else {
     voice_use_amp_envelope[voice] = 1;
-    if (osc[voice].one_shot) {
+    if (voice_one_shot[voice]) {
       osc_trigger(voice);
     }
       osc_trigger(voice);
