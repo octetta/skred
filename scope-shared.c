@@ -1,85 +1,59 @@
-#if 1
-
 #include "scope-shared.h"
 
-#else
-
-#include <fcntl.h>
-#include <signal.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
-
-#define SCOPE_SIZE (44100 * 2)
-
-typedef struct {
-  int writer_fd;
-  int reader_fd;
-  int size;
-  int pointer;
-  float data[SCOPE_SIZE];
-  float mini[2048];
-  char data_label[1024];
-  float mini_label[80];
-} scope_buffer_t;
-
-#define SCOPE_NAME "skred.scope"
-
-#endif
-
-scope_buffer_t *scope_writer_setup(void) {
-  int shm_fd = shm_open(SCOPE_NAME, O_CREAT | O_RDWR, 0666);
-  if (shm_fd < 0) {
-    perror("# shm_open failed");
+scope_buffer_t *scope_setup(scope_share_t *b, char *mode) {
+  if (b == NULL) return NULL;
+  if (mode == NULL) return NULL;
+  if (mode[0] == 'w') {
+    // WRITER
+    int shm_fd = shm_open(SCOPE_NAME, O_CREAT | O_RDWR, 0666);
+    if (shm_fd < 0) {
+      perror("# shm_open failed");
+      return NULL;
+    }
+    if (ftruncate(shm_fd, sizeof(scope_buffer_t)) != 0) {
+      perror("# ftruncate failed");
+      close(shm_fd);
+      // shm_unlink(SCOPE_NAME);
+      return NULL;
+    }
+    b->scope = mmap(NULL, sizeof(scope_buffer_t), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    if (b->scope == MAP_FAILED) {
+      perror("mmap failed");
+      close(shm_fd);
+      // shm_unlink(SCOPE_NAME);
+      return NULL;
+    }
+    b->shm_fd = shm_fd;
+    if (mlock(b->scope, sizeof(scope_buffer_t)) == -1) {  // Prevent paging
+      perror("mlock failed");  // Non-fatal, but log
+    }
+    return b->scope;
+  } else if (mode[0] == 'r') {
+    // READER
+    int shm_fd = shm_open(SCOPE_NAME, O_RDWR, 0666);
+    if (shm_fd < 0) {
+      perror("shm_open failed");
+      return NULL;
+    }
+    b->scope = mmap(NULL, sizeof(scope_buffer_t), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    if (b->scope == MAP_FAILED) {
+      perror("mmap failed");
+      close(shm_fd);
+      return NULL;
+    }
+    b->shm_fd = shm_fd;
+    return b->scope;
+  } else {
+    // WRONG!
     return NULL;
   }
-  if (ftruncate(shm_fd, sizeof(scope_buffer_t)) == -1) {
-    perror("# ftruncate failed");
-    close(shm_fd);
-    // shm_unlink(SCOPE_NAME);
-    exit(1);
-  }
-  scope_buffer_t *scope = mmap(NULL, sizeof(scope_buffer_t), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-  if (scope == MAP_FAILED) {
-    perror("mmap failed");
-    close(shm_fd);
-    // shm_unlink(SCOPE_NAME);
-    exit(1);
-  }
-  scope->writer_fd = shm_fd;
-  if (mlock(scope, sizeof(scope_buffer_t)) == -1) {  // Prevent paging
-    perror("mlock failed");  // Non-fatal, but log
-  }
-  return scope;
 }
 
-void scope_writer_cleanup(scope_buffer_t *shared) {
-  close(shared->writer_fd);
-  munmap(shared, sizeof(scope_buffer_t));
-}
-
-scope_buffer_t *scope_reader_setup(void) {
-  int shm_fd = shm_open(SCOPE_NAME, O_RDWR, 0666);
-  if (shm_fd < 0) {
-    perror("shm_open failed");
-    return NULL;
-  }
-  scope_buffer_t *scope = mmap(NULL, sizeof(scope_buffer_t), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-  if (scope == MAP_FAILED) {
-    perror("mmap failed");
-    close(shm_fd);
-  }
-  scope->reader_fd = shm_fd;
-  return scope;
-}
-
-void scope_reader_cleanup(scope_buffer_t *shared) {
-  close(shared->reader_fd);
-  munmap(shared, sizeof(scope_buffer_t));
+void scope_cleanup(scope_share_t *b) {
+  if (b == NULL) return;
+  if (b->shm_fd >= 0) close(b->shm_fd);
+  b->shm_fd = -1;
+  munmap(b->scope, sizeof(scope_buffer_t));
 }
 
 #ifdef SCOPE_SHARED_DEMO
@@ -103,7 +77,8 @@ float rng_float(void) {
 }
 
 void writer(void) {
-  scope_buffer_t *scope = scope_writer_setup();
+  scope_share_t b;
+  scope_buffer_t *scope = scope_setup(&b, "w");
   if (scope == NULL) {
     printf("!PROBLEM!\n");
     return;
@@ -112,7 +87,7 @@ void writer(void) {
   signal(SIGTERM, cleanup);
   printf("# writer startup\n");
   int i = 0;
-  for (i = 0; i < SCOPE_SIZE; i++) scope->data[i] = 0;
+  for (i = 0; i < SCOPE_WIDTH_IN_SAMPLES; i++) scope->buffer_left[i] = 0;
   puts("# wait 2 seconds");
   sleep(2);
   float f = 0.1f;
@@ -121,7 +96,7 @@ void writer(void) {
   printf("# writer running\n");
 #define WSLEEP (500) // 500 usec = .5 msec
   while (main_running) {
-    scope->data[i % SCOPE_SIZE] = f;
+    scope->buffer_left[i % SCOPE_WIDTH_IN_SAMPLES] = f;
     f = rng_float();
     usleep(WSLEEP);
     t+=WSLEEP;
@@ -130,14 +105,15 @@ void writer(void) {
       printf("# 1sec, %ld total writes\n", c);
     }
     i++;
-    if (i >= SCOPE_SIZE) i = 0;
+    if (i >= SCOPE_WIDTH_IN_SAMPLES) i = 0;
   }
   printf("# writer cleanup\n");
-  scope_writer_cleanup(scope);
+  scope_cleanup(&b);
 }
 
 void reader(void) {
-  scope_buffer_t *scope = scope_reader_setup();
+  scope_share_t b;
+  scope_buffer_t *scope = scope_setup(&b, "r");
   if (scope == NULL) {
     printf("!PROBLEM!\n");
     return;
@@ -149,8 +125,8 @@ void reader(void) {
     int plus = 0;
     int minus = 0;
     int zero = 0;
-    for (int i = 0; i < SCOPE_SIZE; i++) {
-      float f = scope->data[i];
+    for (int i = 0; i < SCOPE_WIDTH_IN_SAMPLES; i++) {
+      float f = scope->buffer_left[i];
       if (f < 0) minus++;
       if (f == 0) zero++;
       if (f > 0) plus++;
@@ -159,7 +135,7 @@ void reader(void) {
     sleep(1);
   }
   printf("# reader cleanup\n");
-  scope_reader_cleanup(scope);
+  scope_cleanup(&b);
 }
 
 int main(int argc, char *argv[]) {

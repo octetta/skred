@@ -1,10 +1,45 @@
-#include <stdio.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+/*
+
+ voice = 
+ 
+   wave table index
+ 
+   freq -> phase_inc
+   
+   freq modulation source, freq modulation depth -> freq
+
+   phase
+
+   phase distortion type, phase distortion amount -> phase
+   
+   phase distortion modulation source, phase distortion depth -> phase distortion amount
+*/
+
+#include <arpa/inet.h>
+#include <dirent.h>
 #include <errno.h>
 #include <math.h>
+#include <netdb.h>
+#include <pthread.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <time.h>
+#include <unistd.h>
+
+#include "linenoise.h"
+#include "miniwav.h"
+#include "skred.h"
+
+#include "scope-shared.h"
+
+static int scope_enable = 0;
+static scope_buffer_t safety;
+static scope_buffer_t *new_scope = &safety;
 
 //#define USE_SOKOL
 #ifdef USE_SOKOL
@@ -14,6 +49,9 @@
 
 #else
 
+// TODO use the .c version to speed compilation
+
+#define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
 
 #endif
@@ -32,7 +70,6 @@ int trace = 0;
 int console_voice = 0;
 
 #define HISTORY_FILE ".sok1_history"
-#define MAIN_SAMPLE_RATE (44100)
 #define VOICE_MAX (32)
 #define CHANNEL_NUM (2)
 #define AMY_FACTOR (0.025f)
@@ -40,17 +77,12 @@ int console_voice = 0;
 #define UDP_PORT 60440
 int udp_port = UDP_PORT;
 
-#define SCREENWIDTH (800)
-#define SCREENHEIGHT (480)
-
-#define SCOPE_LEN (MAIN_SAMPLE_RATE)
-
 // inspired by AMY :)
 enum {
   WAVE_TABLE_SINE,     // 0
   WAVE_TABLE_SQR,      // 1
-  WAVE_TABLE_SAW_DOWN,    // 2
-  WAVE_TABLE_SAW_UP,    // 3
+  WAVE_TABLE_SAW_DOWN, // 2
+  WAVE_TABLE_SAW_UP,   // 3
   WAVE_TABLE_TRI,      // 4
   WAVE_TABLE_NOISE,    // 5
 
@@ -69,9 +101,9 @@ enum {
   WAVE_TABLE_KRG13,
   WAVE_TABLE_KRG14,
   WAVE_TABLE_KRG15,
-  WAVE_TABLE_KRG16,
+  WAVE_TABLE_KRG16, // 47
 
-  WAVE_TABLE_KRG17,
+  WAVE_TABLE_KRG17, // 48
   WAVE_TABLE_KRG18,
   WAVE_TABLE_KRG19,
   WAVE_TABLE_KRG20,
@@ -86,7 +118,7 @@ enum {
   WAVE_TABLE_KRG29,
   WAVE_TABLE_KRG30,
   WAVE_TABLE_KRG31,
-  WAVE_TABLE_KRG32,
+  WAVE_TABLE_KRG32, // 63
 
   AMY_SAMPLE_00 = 100,
   AMY_SAMPLE_99 = 100+99,
@@ -115,10 +147,6 @@ int audio_show(void) {
 #endif
 }
 
-#include "linenoise.h"
-
-#include <pthread.h>
-#include <time.h>
 
 #define SAVE_WAVE_LEN (8)
 static float *save_wave_list[SAVE_WAVE_LEN]; // to keep from crashing the engine, have a place to store free-ed waves
@@ -154,7 +182,6 @@ float voice_offset_hz[VOICE_MAX];
 float voice_freq[VOICE_MAX];
 float voice_note[VOICE_MAX];
 float voice_sample[VOICE_MAX];
-float samples[VOICE_MAX][SCOPE_LEN];
 float voice_amp[VOICE_MAX];
 float voice_user_amp[VOICE_MAX];
 float voice_pan_left[VOICE_MAX];
@@ -224,31 +251,6 @@ typedef struct {
 
 osc_t osc[VOICE_MAX];
 #endif
-
-enum {
-  SCOPE_TRIGGER_BOTH,
-  SCOPE_TRIGGER_RISING,
-  SCOPE_TRIGGER_FALLING,
-};
-
-int scope_trigger_mode = SCOPE_TRIGGER_RISING;
-
-int scope_running = 0;
-int scope_len = SCOPE_LEN;
-float scope_buffer_left[SCOPE_LEN];
-float scope_buffer_right[SCOPE_LEN];
-int scope_buffer_pointer = 0;
-float scope_display_pointer = 0.0f;
-float scope_display_inc = 1.0f;
-float scope_display_mag = 1.0f;
-#define SCOPE_WAVE_WIDTH (SCREENWIDTH/4)
-#define SCOPE_WAVE_HEIGHT (SCREENHEIGHT/2)
-float scope_wave_data[SCOPE_WAVE_WIDTH];
-int scope_wave_index = 0;
-float scope_wave_min[SCOPE_WAVE_WIDTH];
-float scope_wave_max[SCOPE_WAVE_WIDTH];
-int scope_wave_len = 0;
-int scope_channel = -1; // -1 means all
 
 float osc_get_phase_inc(int v, float f) {
   float g = f;
@@ -525,19 +527,6 @@ void show_stats(void) {
   // do something useful
 }
 
-float scope_buffer_get(int *index) {
-  if (index == NULL) return 0;
-  int i = *index;
-  if (i < 0) {
-    i = SCOPE_LEN - 1;
-  } else if (i >= SCOPE_LEN) {
-    i = 0;
-  }
-  float a = (scope_buffer_left[i] + scope_buffer_right[i]) / 2.0f;
-  *index = i;
-  return a;
-}
-
 #ifdef USE_SOKOL
 void engine(float *buffer, int num_frames, int num_channels, void *user_data) { // , void *user_data) {
 #else
@@ -592,21 +581,17 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
         float right = voice_sample[n] * voice_pan_right[n];
         sample_left += left;
         sample_right += right;
-        if (scope_channel == n) {
-          scope_buffer_left[scope_buffer_pointer] = left;
-          scope_buffer_right[scope_buffer_pointer] = right;
-        }
       }
     }
     // Write to all channels
     buffer[i * num_channels + 0] = sample_left;
     buffer[i * num_channels + 1] = sample_right;
-    if (scope_channel < 0) {
-      scope_buffer_left[scope_buffer_pointer] = sample_left;
-      scope_buffer_right[scope_buffer_pointer] = sample_right;
+    if (scope_enable) { // make writing to scope optional
+      new_scope->buffer_left[new_scope->buffer_pointer] = sample_left;
+      new_scope->buffer_right[new_scope->buffer_pointer] = sample_right;
+      new_scope->buffer_pointer++;
+      if (new_scope->buffer_pointer >= new_scope->buffer_len) new_scope->buffer_pointer = 0;
     }
-    scope_buffer_pointer++;
-    if (scope_buffer_pointer >= scope_len) scope_buffer_pointer = 0;
   }
 }
 
@@ -621,11 +606,8 @@ void sleep_float(double seconds) {
 void wave_table_init(void);
 
 void *udp_main(void *arg);
-void *scope_main(void *arg);
 
 int current_voice = 0;
-
-#include <dirent.h>
 
 void show_threads(void) {
   DIR* dir = opendir("/proc/self/task");
@@ -871,7 +853,6 @@ int voice_show_all(int voice) {
 float midi2hz(float f);
 
 pthread_t udp_thread_handle;
-pthread_t scope_thread_handle;
 
 void downsample_block_average_min_max(
   const float *source, int source_len, float *dest, int dest_len,
@@ -1036,14 +1017,10 @@ char *func_func_str(int n) {
   return "no-string";
 }
 
-#include "miniwav.h"
-
 void scope_wave_update(const float *table, int size) {
-  scope_wave_len = 0;
-  //float *table = voice_table[voice];
-  //int size = voice_table_size[voice];
-  downsample_block_average_min_max(table, size, scope_wave_data, SCOPE_WAVE_WIDTH, scope_wave_min, scope_wave_max);
-  scope_wave_len = SCOPE_WAVE_WIDTH;
+  new_scope->wave_len = 0;
+  downsample_block_average_min_max(table, size, new_scope->wave_data, SCOPE_WAVE_WIDTH, new_scope->wave_min, new_scope->wave_max);
+  new_scope->wave_len = SCOPE_WAVE_WIDTH;
 }
 
 int freq_set(int v, float f);
@@ -1060,7 +1037,6 @@ int wave_quant(int voice, int n);
 int voice_set(int n, int *old_voice);
 int voice_copy(int v, int n);
 int voice_trigger(int voice);
-int scope_start(int sub);
 int amp_mod_set(int voice, int o, float f);
 int freq_mod_set(int voice, int o, float f);
 int pan_mod_set(int voice, int o, float f);
@@ -1237,7 +1213,7 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
             break;
           case 'o':
             v = parse_none(FUNC_SYS, FUNC_SCOPE);
-            scope_start(*ptr);
+            scope_enable = 1;
             // sub x for scope_cross = 1
             // sub q for scope_quit = 0
             // sub 0..VOICE_MAX-1 for scope_channel = n
@@ -1357,6 +1333,7 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
         if (v.argc == 1) {
           ptr += v.next;
           r = wave_set(voice, (int)v.args[0]);
+          sprintf(new_scope->wave_text, "w%d", (int)v.args[0]);
         } else return ERR_INVALID_WAVE;
         break;
       case 'T':
@@ -1380,6 +1357,7 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
         if (v.argc == 1) {
           ptr += v.next;
           r = wavetable_show((int)v.args[0]);
+          sprintf(new_scope->wave_text, "w%d", (int)v.args[0]);
         } else return ERR_INVALID_WAVETABLE;
         break;
       case 'M':
@@ -1387,6 +1365,7 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
         if (v.argc == 2) {
           ptr += v.next;
           tick_max_set(v.args[0], v.args[1]);
+          if (scope_enable) sprintf(new_scope->status_text, "M%g,%g", tick_max, tick_inc);
         } else return ERR_INVALID_MOD;
         break;
       case 'm':
@@ -1547,7 +1526,6 @@ int main(int argc, char *argv[]) {
           case 't': trace = 1; break;
           case 'p': udp_port = (int)strtol(&(argv[i][2]), NULL, 0); break;
           case 'l': load_patch_number = (int)strtol(&argv[i][2], NULL, 0); break;
-          case 's': scope_start(0); break;
           default:
             printf("# unknown switch '%s'\n", argv[i]);
             exit(1);
@@ -1601,7 +1579,13 @@ int main(int argc, char *argv[]) {
 
   if (load_patch_number >= 0) patch_load(0, load_patch_number, 0);
 
+  scope_share_t shared;
+  new_scope = scope_setup(&shared, "w");
+  new_scope->buffer_len = SCOPE_WIDTH_IN_SAMPLES;
+  sprintf(new_scope->status_text, "n/a");
+
   while (main_running) {
+    voice_format(current_voice, new_scope->voice_text);
     char *line = linenoise("# ");
     if (line == NULL) {
       main_running = 0;
@@ -1627,7 +1611,6 @@ int main(int argc, char *argv[]) {
 #endif
 
   udp_running = 0;
-  scope_running = 0;
 
   sleep(1); // make sure we don't crash the callback b/c thread timing and wave_data
 
@@ -1640,7 +1623,6 @@ int main(int argc, char *argv[]) {
 
 #define SIZE_SINE (4096)
 #include "retro/korg.h"
-
 #include "amysamples.h"
 
 void normalize_preserve_zero(float *data, int length) {
@@ -1668,7 +1650,6 @@ void normalize_preserve_zero(float *data, int length) {
 }
 
 //
-#include <stdint.h>
 
 typedef struct {
     uint64_t state;
@@ -1872,12 +1853,6 @@ void voice_init(void) {
   }
 }
 
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/time.h>
-
 struct sockaddr_in serve;
 
 int udp_open(int port) {
@@ -1941,194 +1916,6 @@ void *udp_main(void *arg) {
   return NULL;
 }
 
-int find_starting_point(int buffer_snap, int sw) {
-  int j = buffer_snap - sw;
-  float t0 = (scope_buffer_left[j] + scope_buffer_right[j]) / 2.0f;
-  int i = j-1;
-  int c = 1;
-  while (c < SCOPE_LEN) {
-    if (i < 0) i = SCOPE_LEN-1;
-    float t1 = (scope_buffer_left[i] + scope_buffer_right[i]) / 2.0f;
-    if (t0 == 0.0 && t1 == 0.0) {
-      // zero
-    } else if (t0 < 0 && t1 > 0) break;
-    i--;
-    c++;
-    t0 = t1;
-  }
-  return i;
-}
-
-#define MAG_X_INC (0.05)
-
-#define CONFIG_FILE ".skred_window"
-
-void *scope_main(void *arg) {
-  pthread_setname_np(pthread_self(), "skred-scope");
-#ifndef USE_RAYLIB
-  while (scope_running) {
-    sleep(1);
-  }
-#else
-#include "raylib.h"
-#include "rlgl.h"
-  //
-  Vector2 position_in;
-  FILE *file = fopen(CONFIG_FILE, "r");
-  const int screenWidth = SCREENWIDTH;
-  const int screenHeight = SCREENHEIGHT;
-  float mag_x = 1.0f;
-  float sw = (float)screenWidth;
-  if (file != NULL) {
-    /*
-     file contents
-    x y scope_display_mag mag_x
-    */
-    fscanf(file, "%f %f %f %f", &position_in.x, &position_in.y, &scope_display_mag, &mag_x);
-    if (position_in.x < 0) position_in.x = 0;
-    if (position_in.y < 0) position_in.y = 0;
-    if (scope_display_mag <= 0) scope_display_mag = 1;
-    // if (mag_x <= 0) mag_x = 1;
-    fclose(file);
-  } else {
-    printf("# %s read fopen fail\n", CONFIG_FILE);
-  }
-  //
-  SetTraceLogLevel(LOG_NONE);
-  InitWindow(screenWidth, screenHeight, "skred-scope");
-  //
-  SetWindowPosition((int)position_in.x, (int)position_in.y);
-  //
-  Vector2 dot = { (float)screenWidth/2, (float)screenHeight/2 };
-  SetTargetFPS(12);
-  float sh = (float)screenHeight;
-  float h0 = (float)screenHeight / 2.0f;
-  char osd[1024] = "?";
-  int osd_dirty = 1;
-  float y = h0;
-  float a = 1.0f;
-  int show_l = 1;
-  int show_r = 1;
-  Color color_left = {0, 255, 255, 128};
-  Color color_right = {255, 255, 0, 128};
-  Color green0 = {0, 255, 0, 128};
-  Color green1 = {0, 128, 0, 128};
-  while (scope_running && !WindowShouldClose()) {
-    if (mag_x <= 0) mag_x = MAG_X_INC;
-    sw = (float)screenWidth / mag_x;
-    float mw = (float)SCOPE_LEN / 2.0f;
-    if (sw >= mw) sw = mw;
-    int shifted = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
-    if (IsKeyDown(KEY_ONE)) {
-      if (show_l == 1) show_l = 0; else show_l = 1;
-    }
-    if (IsKeyDown(KEY_TWO)) {
-      if (show_r == 1) show_r = 0; else show_r = 1;
-    }
-    if (IsKeyDown(KEY_A)) {
-      if (shifted) {
-        scope_display_mag -= 0.1f;
-        a -= 0.1f;
-      } else {
-        scope_display_mag += 0.1f;
-        a += 0.1f;
-      }
-      osd_dirty++;
-    }
-    if (IsKeyDown(KEY_RIGHT)) {
-      mag_x += (float)MAG_X_INC;
-      osd_dirty++;
-    }
-    if (IsKeyDown(KEY_LEFT)) {
-      mag_x -= (float)MAG_X_INC;
-      osd_dirty++;
-    }
-    if (IsKeyDown(KEY_UP)) {
-      y += 1.0f;
-      osd_dirty++;
-    }
-    if (IsKeyDown(KEY_DOWN)) {
-      y -= 1.0f;
-      osd_dirty++;
-    }
-    if (osd_dirty) {
-      sprintf(osd, "mag_x:%g sw:%g y:%g a:%g mag:%g ch:%d",
-        mag_x, sw, y, a, scope_display_mag, scope_channel);
-    }
-    int buffer_snap = scope_buffer_pointer;
-    BeginDrawing();
-    ClearBackground(BLACK);
-    for (int i = 0; i < scope_wave_len; i++) {
-      int mh = SCOPE_WAVE_HEIGHT / 2;
-      float min = (scope_wave_min[i] / 2.0f + 0.5f) * (float)mh;
-      float max = (scope_wave_max[i] / 2.0f + 0.5f) * (float)mh;
-      int qh = SCOPE_WAVE_HEIGHT / 4;
-      DrawLine(i, (int)max, i, qh, green1);
-      DrawLine(i, (int)min, i, qh, green1);
-      dot.x = (float)i;
-      dot.y = max; DrawCircleV(dot, 1, green0);
-      dot.y = min; DrawCircleV(dot, 1, green0);
-    }
-    // show a wave table
-    if (scope_wave_len) {
-      char s[32];
-      sprintf(s, "%d", scope_wave_index);
-      DrawText(s, 10, 10, 20, YELLOW);
-    }
-    // find starting point for display
-    int start = find_starting_point(buffer_snap, screenWidth);
-    int actual = 0;
-    float x_offset = (float)SCREENWIDTH / 8.0f;
-    start -= (int)x_offset;
-    DrawText(osd, 10, SCREENHEIGHT-20, 20, GREEN);
-    rlPushMatrix();
-    rlTranslatef(0.0f, y, 0.0f); // x,y,z
-    rlScalef(mag_x,scope_display_mag,1.0f);
-      DrawLine(0, 0, (int)sw, 0, DARKGREEN);
-      if (start >= scope_len) start = 0;
-      actual = start;
-      for (int i = 0; i < (int)sw; i++) {
-        if (actual == 0) DrawLine(i, (int)-sh, i, (int)sh, YELLOW);
-        if (actual == buffer_snap) DrawLine(i, (int)-sh, i, (int)sh, BLUE);
-        if (actual >= (SCOPE_LEN-1)) {
-          DrawLine(i, (int)-sh, i, (int)sh, RED);
-          actual = 0;
-        }
-        dot.x = (float)i;
-        if (show_l) {
-          dot.y = scope_buffer_left[actual] * h0 * scope_display_mag;
-          DrawCircleV(dot, 1, color_right);
-        }
-        if (show_r) {
-          dot.y = scope_buffer_right[actual] * h0 * scope_display_mag;
-          DrawCircleV(dot, 1, color_left);
-        }
-        actual++;
-      }
-    rlPopMatrix();
-    sprintf(osd, "M%g,%g %d:%ld", tick_max, tick_inc, tick_frames, sample_count);
-    DrawText(osd, SCREENWIDTH-250, SCREENHEIGHT-20, 20, BLUE);
-    voice_format(console_voice, osd);
-    DrawText(osd, 10, SCREENHEIGHT-40, 20, YELLOW);
-    EndDrawing();
-  }
-  //
-  file = fopen(CONFIG_FILE, "w");
-  if (file != NULL) {
-    Vector2 position_out = GetWindowPosition();
-    fprintf(file, "%g %g %g %g", position_out.x, position_out.y, scope_display_mag, mag_x);
-    fclose(file);
-  } else {
-    printf("# %s write fopen fail\n", CONFIG_FILE);
-  }
-  //
-  CloseWindow();
-  scope_running = 0;
-#endif
-  if (debug) printf("# scope stopping\n");
-  return NULL;
-}
-
 float midi2hz(float f) {
   float g = 440.0f * powf(2.0f, (f - 69.0f) / 12.0f);
   return g;
@@ -2154,9 +1941,8 @@ int amp_set(int voice, float f) {
 
 int wave_set(int voice, int wave) {
   if (wave >= 0 && wave < WAVE_TABLE_MAX) {
-    scope_wave_index = wave;
     osc_set_wave_table_index(voice, wave);
-    scope_wave_update(voice_table[voice], voice_table_size[voice]);
+    if (scope_enable) scope_wave_update(voice_table[voice], voice_table_size[voice]);
   } else return ERR_INVALID_WAVE;
   return 0;
 }
@@ -2216,15 +2002,6 @@ int voice_set(int n, int *old_voice) {
 
 int voice_trigger(int voice) {
   osc_trigger(voice);
-  return 0;
-}
-
-int scope_start(int sub) {
-  if (scope_running == 0) {
-    scope_running = 1;
-    pthread_create(&scope_thread_handle, NULL, scope_main, NULL);
-    pthread_detach(scope_thread_handle);
-  }
   return 0;
 }
 
@@ -2359,7 +2136,6 @@ int envelope_velocity(int voice, float f) {
 
 int wavetable_show(int n) {
   if (n >= 0 && n < WAVE_TABLE_MAX && wave_table_data[n] && wave_size[n]) {
-    scope_wave_index = n;
     float *table = wave_table_data[n];
     int size = wave_size[n];
     int crossing = 0;
@@ -2382,8 +2158,8 @@ int wavetable_show(int n) {
     printf("# w%d size:%d", n, size);
     printf(" +hz:%g midi:%d", wave_offset_hz[n], wave_midi_note[n]);
     puts("");
-    downsample_block_average_min_max(table, size, scope_wave_data, SCOPE_WAVE_WIDTH, scope_wave_min, scope_wave_max);
-    scope_wave_len = SCOPE_WAVE_WIDTH;
+    downsample_block_average_min_max(table, size, new_scope->wave_data, SCOPE_WAVE_WIDTH, new_scope->wave_min, new_scope->wave_max);
+    new_scope->wave_len = SCOPE_WAVE_WIDTH;
   }
   return 0;
 }
