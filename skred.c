@@ -49,9 +49,6 @@ static scope_buffer_t *new_scope = &safety;
 
 #else
 
-// TODO use the .c version to speed compilation
-
-#define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
 
 #endif

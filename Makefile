@@ -46,10 +46,13 @@ raylib-quickstart-main/Makefile :
 skred.o: skred.c raylib-quickstart-main/Makefile
 	gcc $(COPTS) -c $<
 
-skred : skred.o miniwav.o amysamples.o $(ELIB) scope-shared.o
+skred : skred.o miniwav.o amysamples.o $(ELIB) scope-shared.o miniaudio.o
 	gcc $(COPTS) $^ -o $@ $(LIB)
 
 linenoise.o: linenoise.c linenoise.h
+	gcc -c $<
+
+miniaudio.o: miniaudio.c miniaudio.h
 	gcc -c $<
 
 clean :
