@@ -533,8 +533,6 @@ void show_stats(void) {
   // do something useful
 }
 
-//ma_engine engine;
-
 #ifdef USE_SOKOL
 void synth(float *buffer, int num_frames, int num_channels, void *user_data) { // , void *user_data) {
 #else
@@ -627,10 +625,6 @@ void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_
       if (new_scope->buffer_pointer >= new_scope->buffer_len) new_scope->buffer_pointer = 0;
     }
   }
-#if 0
-  ma_uint64 frames_read;
-  ma_engine_read_pcm_frames(&engine, output, frame_count, &frames_read);
-#endif
 }
 
 void sleep_float(double seconds) {
@@ -1641,14 +1635,7 @@ int main(int argc, char *argv[]) {
   config.noClip = MA_TRUE;
   ma_device device;
   ma_device_init(NULL, &config, &device);
-#if 0
-  ma_engine_config eng_cfg = ma_engine_config_init();
-  eng_cfg.pDevice = &device;
-  ma_engine_init(&eng_cfg, &engine);
-#endif
   ma_device_start(&device);
-  //ma_engine_play_sound(&engine, "wave24.wav", 0);
-
 #endif
 
   if (audio_show() != 0) return 1;
@@ -1690,10 +1677,10 @@ int main(int argc, char *argv[]) {
 
   // turn off oscillators smoothly to avoid clicks
   for (int i = 0; i < VOICE_MAX; i++) {
-    //voice_smoother_gain[i] = 0.0f;
-    voice_smoother_smoothing[i] = 0.02f;
-    voice_smoother_enable[i] = 1;
-    amp_set(i, 0.0f);
+    float amp = voice_amp[i];
+    if (amp > 0.0f) {
+      amp_set(i, 0.01);
+    }
   }
   sleep_float(.5); // give a bit of time for the smoothing to apply
 
