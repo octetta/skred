@@ -566,6 +566,7 @@ void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_
       // mmf EXPERIMENTAL
       if (voice_filter_mode[n]) voice_sample[n] = mmf_process(n, voice_sample[n]);
 
+#if 0
       // apply amp to sample
       float amp = voice_amp[n];
       if (voice_smoother_enable[n]) {
@@ -583,6 +584,26 @@ void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_
         float g = voice_sample[m] * voice_amp_mod_depth[n];
         voice_sample[n] *= g;
       }
+#else
+      // apply amp to sample
+      float amp = voice_amp[n];
+      float env = 1.0f;
+      if (voice_use_amp_envelope[n]) {
+        env = amp_envelope_step(n) * voice_amp_envelope[n].velocity;
+      }
+      float mod = 1.0f;
+      if (voice_amp_mod_osc[n] >= 0) {
+        int m = voice_amp_mod_osc[n];
+        mod = voice_sample[m] * voice_amp_mod_depth[n];
+      }
+      float final = amp * env * mod;
+      if (voice_smoother_enable[n]) {
+        voice_smoother_gain[n] += voice_smoother_smoothing[n] * (final - voice_smoother_gain[n]);
+        final = voice_smoother_gain[n];
+      }
+      voice_sample[n] *= final;
+#endif
+
       // accumulate samples
       if (voice_disconnect[n] == 0) {
         if (voice_pan_mod_osc[n] >= 0) {
