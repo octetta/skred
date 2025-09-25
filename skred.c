@@ -53,6 +53,13 @@ static scope_buffer_t *new_scope = &safety;
 
 #endif
 
+#define HISTORY_FILE ".sok1_history"
+#define VOICE_MAX (32)
+#define AUDIO_CHANNELS (2)
+#define AMY_FACTOR (0.025f)
+#define UDP_PORT (60440)
+#define FRAMES_PER_CALLBACK (512)
+
 float tick_max = 10.0f;
 float tick_inc = 1.0f;
 int tick_frames = 0;
@@ -66,12 +73,6 @@ int trace = 0;
 
 int console_voice = 0;
 
-#define HISTORY_FILE ".sok1_history"
-#define VOICE_MAX (32)
-#define CHANNEL_NUM (2)
-#define AMY_FACTOR (0.025f)
-
-#define UDP_PORT 60440
 int udp_port = UDP_PORT;
 
 // inspired by AMY :)
@@ -146,7 +147,7 @@ int audio_show(void) {
 
 
 #define SAVE_WAVE_LEN (8)
-static float *save_wave_list[SAVE_WAVE_LEN]; // to keep from crashing the engine, have a place to store free-ed waves
+static float *save_wave_list[SAVE_WAVE_LEN]; // to keep from crashing the synth, have a place to store free-ed waves
 static int save_wave_ptr = 0;
 
 float *wave_table_data[WAVE_TABLE_MAX];
@@ -202,6 +203,14 @@ int voice_wave_table_index[VOICE_MAX];
 
 int voice_cz_mode[VOICE_MAX];
 float voice_cz_distortion[VOICE_MAX];
+
+int voice_smoother_enable[VOICE_MAX];
+float voice_smoother_gain[VOICE_MAX];
+float voice_smoother_smoothing[VOICE_MAX];
+
+int voice_glissando_enable[VOICE_MAX];
+float voice_glissando_speed[VOICE_MAX];
+float voice_glissando_target[VOICE_MAX];
 
 // Low-pass filter state structure
 typedef struct {
@@ -413,7 +422,7 @@ void osc_set_wave_table_index(int voice, int wave) {
 }
 
 void osc_trigger(int voice) {
-  if (1 || voice_one_shot[voice]) {
+  if (voice_one_shot[voice]) {
     if (voice_direction[voice]) {
       voice_phase[voice] = (float)(voice_table_size[voice] - 1);
     } else {
@@ -524,12 +533,14 @@ void show_stats(void) {
   // do something useful
 }
 
+//ma_engine engine;
+
 #ifdef USE_SOKOL
-void engine(float *buffer, int num_frames, int num_channels, void *user_data) { // , void *user_data) {
+void synth(float *buffer, int num_frames, int num_channels, void *user_data) { // , void *user_data) {
 #else
-void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
-  float *buffer = (float *)pOutput;
-  int num_frames = (int)frameCount;
+void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
+  float *buffer = (float *)output;
+  int num_frames = (int)frame_count;
   int num_channels = pDevice->playback.channels;
 #endif
   tick(num_frames);
@@ -556,11 +567,16 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
       if (voice_filter_mode[n]) voice_sample[n] = mmf_process(n, voice_sample[n]);
 
       // apply amp to sample
+      float amp = voice_amp[n];
+      if (voice_smoother_enable[n]) {
+        voice_smoother_gain[n] += voice_smoother_smoothing[n] * (amp - voice_smoother_gain[n]);
+        amp = voice_smoother_gain[n];
+      }
       if (voice_use_amp_envelope[n]) {
         float env = amp_envelope_step(n) * voice_amp_envelope[n].velocity;
-        voice_sample[n] *= (env * voice_amp[n]);
+        voice_sample[n] *= (env * amp);
       } else {
-        voice_sample[n] *= voice_amp[n];
+        voice_sample[n] *= amp;
       }
       if (voice_amp_mod_osc[n] >= 0) {
         int m = voice_amp_mod_osc[n];
@@ -590,6 +606,10 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
       if (new_scope->buffer_pointer >= new_scope->buffer_len) new_scope->buffer_pointer = 0;
     }
   }
+#if 0
+  ma_uint64 frames_read;
+  ma_engine_read_pcm_frames(&engine, output, frame_count, &frames_read);
+#endif
 }
 
 void sleep_float(double seconds) {
@@ -810,12 +830,24 @@ char *voice_format(int v, char *out) {
     n = sprintf(ptr, " m%d", voice_disconnect[v]);
     ptr += n;
   }
+  if (voice_smoother_enable[v]) {
+    n = sprintf(ptr, " s%g", voice_smoother_smoothing[v]);
+    ptr += n;
+  }
+  if (voice_glissando_enable[v]) {
+    n = sprintf(ptr, " g%g", voice_glissando_speed[v]);
+    ptr += n;
+  }
   if (!envelope_is_flat(v)) {
     n = sprintf(ptr, " E%g,%g,%g,%g",
       voice_amp_envelope[v].a,
       voice_amp_envelope[v].d,
       voice_amp_envelope[v].s,
       voice_amp_envelope[v].r);
+    ptr += n;
+  }
+  if (0) {
+    n = sprintf(ptr, " # %g", voice_smoother_gain[v]);
     ptr += n;
   }
   if (0) {
@@ -925,6 +957,8 @@ enum {
   FUNC_FILTER_FREQ,
   FUNC_FILTER_RES,
   FUNC_COPY,
+  FUNC_SMOOTHER,
+  FUNC_GLISSANDO,
   // subfunctions
   FUNC_HELP,
   FUNC_SEQ_START,
@@ -982,6 +1016,8 @@ char *display_func_func_str[FUNC_UNKNOWN+1] = {
   [FUNC_COPY] = "copy-voice",
   [FUNC_WAVE_DEFAULT] = "wave-get-default",
   [FUNC_UNKNOWN] = "unknown",
+  [FUNC_SMOOTHER] = "smoother",
+  [FUNC_GLISSANDO] = "glissando",
   //
   [FUNC_HELP] = "help",
   [FUNC_SEQ_START] = "seq-start",
@@ -1442,6 +1478,30 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
           r = envelope_set(voice, v.args[0], v.args[1], v.args[2], v.args[3]);
         } else return ERR_PARSING_ERROR;
         break;
+      case 's':
+        v = parse(ptr, FUNC_SMOOTHER, FUNC_NULL, 1);
+        if (v.argc == 1) {
+          if (v.args[0] <= 0.0f) {
+            voice_smoother_enable[voice] = 0;
+          } else {
+            voice_smoother_enable[voice] = 1;
+            voice_smoother_smoothing[voice] = v.args[0];
+          }
+          ptr += v.next;
+        } else return ERR_PARSING_ERROR;
+        break;
+      case 'g':
+        v = parse(ptr, FUNC_GLISSANDO, FUNC_NULL, 1);
+        if (v.argc == 1) {
+          if (v.args[0] <= 0.0f) {
+            voice_glissando_enable[voice] = 0;
+          } else {
+            voice_glissando_enable[voice] = 1;
+            voice_glissando_speed[voice] = v.args[0];
+          }
+          ptr += v.next;
+        } else return ERR_PARSING_ERROR;
+        break;
       case 'S':
         v = parse(ptr, FUNC_RESET, FUNC_NULL, 1);
         if (v.argc == 1) {
@@ -1540,11 +1600,10 @@ int main(int argc, char *argv[]) {
   // Initialize Sokol Audio
   saudio_setup(&(saudio_desc){
     // .stream_cb = stream_cb,
-    .stream_userdata_cb = engine,
+    .stream_userdata_cb = synth,
     .user_data = &my_data,
     .sample_rate = MAIN_SAMPLE_RATE,
-    .num_channels = CHANNEL_NUM, // Stereo
-    .buffer_frames = 512,
+    .num_channels = AUDIO_CHANNELS, // Stereo
     //.packet_frames = 256,
     //.num_packets = 1,
     // .user_data = &my_data, // todo
@@ -1552,15 +1611,23 @@ int main(int argc, char *argv[]) {
 #else
   ma_device_config config = ma_device_config_init(ma_device_type_playback);
   config.playback.format = ma_format_f32;
-  config.playback.channels = 2;
-  config.sampleRate = 44100;
-  config.dataCallback = data_callback;
-  config.periodSizeInFrames = 512;
+  config.playback.channels = AUDIO_CHANNELS;
+  config.sampleRate = MAIN_SAMPLE_RATE;
+  config.dataCallback = synth;
+  config.periodSizeInFrames = FRAMES_PER_CALLBACK;
   config.periodSizeInMilliseconds = 0;
   config.periods = 3;
+  config.noClip = MA_TRUE;
   ma_device device;
   ma_device_init(NULL, &config, &device);
+#if 0
+  ma_engine_config eng_cfg = ma_engine_config_init();
+  eng_cfg.pDevice = &device;
+  ma_engine_init(&eng_cfg, &engine);
+#endif
   ma_device_start(&device);
+  //ma_engine_play_sound(&engine, "wave24.wav", 0);
+
 #endif
 
   if (audio_show() != 0) return 1;
@@ -1600,6 +1667,15 @@ int main(int argc, char *argv[]) {
   }
   linenoiseHistorySave(HISTORY_FILE);
 
+  // turn off oscillators smoothly to avoid clicks
+  for (int i = 0; i < VOICE_MAX; i++) {
+    //voice_smoother_gain[i] = 0.0f;
+    voice_smoother_smoothing[i] = 0.02f;
+    voice_smoother_enable[i] = 1;
+    amp_set(i, 0.0f);
+  }
+  sleep_float(.5); // give a bit of time for the smoothing to apply
+
   // Cleanup
 #ifdef USE_SOKOL
   saudio_shutdown();
@@ -1609,7 +1685,7 @@ int main(int argc, char *argv[]) {
 
   udp_running = 0;
 
-  sleep(1); // make sure we don't crash the callback b/c thread timing and wave_data
+  sleep_float(.5); // make sure we don't crash the callback b/c thread timing and wave_data
 
   wave_free();
 
@@ -1842,6 +1918,14 @@ void voice_reset(int i) {
   osc_set_wave_table_index(i, WAVE_TABLE_SINE);
   mmf_init(i, 8000.0f, 0.707f);
   voice_filter_mode[i] = 0;
+  //
+  voice_smoother_enable[i] = 1;
+  voice_smoother_gain[i] = 0.0f;
+  voice_smoother_smoothing[i] = 0.02f;
+  //
+  voice_glissando_enable[i] = 0;
+  voice_glissando_speed[i] = 0.0f;
+  voice_glissando_target[i] = voice_freq[i];
 }
 
 void voice_init(void) {
@@ -2125,7 +2209,7 @@ int envelope_velocity(int voice, float f) {
     if (voice_one_shot[voice]) {
       osc_trigger(voice);
     }
-      osc_trigger(voice);
+    //osc_trigger(voice);
     amp_envelope_trigger(voice, f);
   }
   return 0;
@@ -2378,7 +2462,7 @@ void audio_callback(float* input_buffer, float* output_buffer, int num_samples) 
     static int initialized = 0;
     
     if (!initialized) {
-        lpf_init(&filter, 1000.0f, 0.707f, 44100.0f);
+        lpf_init(&filter, 1000.0f, 0.707f, (float)MAIN_SAMPLE_RATE);
         initialized = 1;
     }
     

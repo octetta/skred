@@ -64,6 +64,8 @@ void *scope_main(void *arg) {
   const int screenHeight = SCOPE_HEIGHT_IN_PIXELS;
   float mag_x = 1.0f;
   float sw = (float)screenWidth;
+  int fps = 10;
+  int last_fps = fps;
   if (file != NULL) {
     /*
      file contents
@@ -85,7 +87,7 @@ void *scope_main(void *arg) {
   SetWindowPosition((int)position_in.x, (int)position_in.y);
   //
   Vector2 dot = { (float)screenWidth/2, (float)screenHeight/2 };
-  SetTargetFPS(10);
+  SetTargetFPS(fps);
   float sh = (float)screenHeight;
   float h0 = (float)screenHeight / 2.0f;
   char osd[1024] = "?";
@@ -104,13 +106,22 @@ void *scope_main(void *arg) {
     float mw = (float)SCOPE_WIDTH_IN_SAMPLES / 2.0f;
     if (sw >= mw) sw = mw;
     int shifted = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+    if (IsKeyPressed(KEY_ZERO)) fps--;
+    if (IsKeyPressed(KEY_NINE)) fps++;
+    if (fps <= 0) fps = 1;
+    if (fps > 60) fps = 60;
+    if (fps != last_fps) {
+      osd_dirty++;
+      SetTargetFPS(fps);
+      last_fps = fps;
+    }
     if (IsKeyDown(KEY_ONE)) {
       if (show_l == 1) show_l = 0; else show_l = 1;
     }
     if (IsKeyDown(KEY_TWO)) {
       if (show_r == 1) show_r = 0; else show_r = 1;
     }
-    if (IsKeyDown(KEY_A)) {
+    if (IsKeyPressed(KEY_A)) {
       if (shifted) {
         scope_display_mag -= 0.1f;
         a -= 0.1f;
@@ -120,25 +131,25 @@ void *scope_main(void *arg) {
       }
       osd_dirty++;
     }
-    if (IsKeyDown(KEY_RIGHT)) {
+    if (IsKeyPressed(KEY_RIGHT)) {
       mag_x += (float)MAG_X_INC;
       osd_dirty++;
     }
-    if (IsKeyDown(KEY_LEFT)) {
+    if (IsKeyPressed(KEY_LEFT)) {
       mag_x -= (float)MAG_X_INC;
       osd_dirty++;
     }
-    if (IsKeyDown(KEY_UP)) {
+    if (IsKeyPressed(KEY_UP)) {
       y += 1.0f;
       osd_dirty++;
     }
-    if (IsKeyDown(KEY_DOWN)) {
+    if (IsKeyPressed(KEY_DOWN)) {
       y -= 1.0f;
       osd_dirty++;
     }
     if (osd_dirty) {
-      sprintf(osd, "%g,%g %g,%g",
-        mag_x, sw, a, scope_display_mag);
+      sprintf(osd, "%g,%g %g,%g %d",
+        mag_x, sw, a, scope_display_mag, fps);
     }
     int buffer_snap = scope->buffer_pointer;
     BeginDrawing();
