@@ -239,25 +239,6 @@ int mmf_set_res(int, float);
 void voice_reset(int i);
 void voice_init(void);
 
-#if 0
-typedef struct {
-  float phase;            // Current position in table
-  float phase_inc;        // Phase increment per host sample
-  float *table;           // Pointer to waveform or sample
-  int table_size;         // Length of table
-  int one_shot;
-  int finished;
-  int loop_enabled;
-  float table_rate;       // Native sample rate of the table
-  int loop_start;
-  int loop_end;
-  int midi_note;
-  float offset_hz;
-} osc_t;
-
-osc_t osc[VOICE_MAX];
-#endif
-
 float osc_get_phase_inc(int v, float f) {
   float g = f;
   if (voice_one_shot[v]) g /= voice_offset_hz[v];
@@ -564,25 +545,6 @@ void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_
       // mmf EXPERIMENTAL
       if (voice_filter_mode[n]) voice_sample[n] = mmf_process(n, voice_sample[n]);
 
-#if 0
-      // apply amp to sample
-      float amp = voice_amp[n];
-      if (voice_smoother_enable[n]) {
-        voice_smoother_gain[n] += voice_smoother_smoothing[n] * (amp - voice_smoother_gain[n]);
-        amp = voice_smoother_gain[n];
-      }
-      if (voice_use_amp_envelope[n]) {
-        float env = amp_envelope_step(n) * voice_amp_envelope[n].velocity;
-        voice_sample[n] *= (env * amp);
-      } else {
-        voice_sample[n] *= amp;
-      }
-      if (voice_amp_mod_osc[n] >= 0) {
-        int m = voice_amp_mod_osc[n];
-        float g = voice_sample[m] * voice_amp_mod_depth[n];
-        voice_sample[n] *= g;
-      }
-#else
       // apply amp to sample
       float amp = voice_amp[n];
       float env = 1.0f;
@@ -600,7 +562,6 @@ void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_
         final = voice_smoother_gain[n];
       }
       voice_sample[n] *= final;
-#endif
 
       // accumulate samples
       if (voice_disconnect[n] == 0) {
