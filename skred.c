@@ -186,11 +186,14 @@ float voice_pan_left[VOICE_MAX];
 float voice_pan_right[VOICE_MAX];
 float voice_pan[VOICE_MAX];
 int voice_use_amp_envelope[VOICE_MAX];
+
 int voice_freq_mod_osc[VOICE_MAX];
+float voice_freq_mod_depth[VOICE_MAX];
+float voice_freq_scale[VOICE_MAX];
+
 int voice_pan_mod_osc[VOICE_MAX];
 int voice_amp_mod_osc[VOICE_MAX];
 int voice_cz_mod_osc[VOICE_MAX];
-float voice_freq_mod_depth[VOICE_MAX];
 float voice_pan_mod_depth[VOICE_MAX];
 float voice_amp_mod_depth[VOICE_MAX];
 float voice_cz_mod_depth[VOICE_MAX];
@@ -532,10 +535,20 @@ void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_
       if (voice_finished[n]) continue;
       if (voice_amp[n] == 0) continue;
       if (voice_freq_mod_osc[n] >= 0) {
+#if 1
+        // try to use modulators phase_inc instead of recalculating...
+        // REQUIRES re-thinking how I'm scaling frequency modulators via wire...
+        // REVISIT experiments to see if this still makes sense
+        int mod = voice_freq_mod_osc[n];
+        float g = voice_sample[mod] * voice_freq_mod_depth[n];
+        float inc = voice_phase_inc[n] + (voice_phase_inc[mod] * voice_freq_scale[n] * g);
+        f = osc_next(n, inc);
+#else
         int m = voice_freq_mod_osc[n];
         float g = voice_sample[m] * voice_freq_mod_depth[n];
         float h = osc_get_phase_inc(n, voice_freq[n] + g);
         f = osc_next(n, h);
+#endif
       } else {
         f = osc_next(n, voice_phase_inc[n]);
       }
@@ -1878,6 +1891,8 @@ void voice_reset(int i) {
   voice_use_amp_envelope[i] = 0;
   voice_amp_mod_osc[i] = -1;
   voice_freq_mod_osc[i] = -1;
+  voice_freq_mod_depth[i] = 0.0f;
+  voice_freq_scale[i] = 1.0f;
   voice_pan_mod_osc[i] = -1;
   voice_disconnect[i] = 0;
   voice_quantize[i] = 0;
@@ -2104,6 +2119,7 @@ int freq_mod_set(int voice, int o, float f) {
   if (o < 0 && o >= VOICE_MAX) return ERR_INVALID_VOICE;
   voice_freq_mod_osc[voice] = o;
   voice_freq_mod_depth[voice] = f;
+  voice_freq_scale[voice] = voice_table_size[voice] / voice_table_size[o];
   return 0;
 }
 
