@@ -164,7 +164,7 @@ void wave_free(void);
 //
 float volume_main = 1.0f;
 float volume_actual = AMY_FACTOR;
-float volume_smoothed = 0;
+float volume_smoothed = 0.0f;
 float volume_smoothing = 0.002f;
 
 int volume_set(float v) {
@@ -524,6 +524,7 @@ void system_show(void) {
 }
 
 void show_stats(void) {
+  printf("; V%g # %g,%g,%g\n", volume_main, volume_actual, volume_smoothed, volume_smoothing);
   // do something useful
 }
 
@@ -540,12 +541,11 @@ void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_
     sample_count++;
     float sample_left = 0.0f;
     float sample_right = 0.0f;
-    float f = 00.f;
+    float f = 0.0f;
     for (int n = 0; n < VOICE_MAX; n++) {
       if (voice_finished[n]) continue;
       if (voice_amp[n] == 0) continue;
       if (voice_freq_mod_osc[n] >= 0) {
-#if 1
         // try to use modulators phase_inc instead of recalculating...
         // REQUIRES re-thinking how I'm scaling frequency modulators via wire...
         // REVISIT experiments to see if this still makes sense
@@ -553,27 +553,21 @@ void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_
         float g = voice_sample[mod] * voice_freq_mod_depth[n];
         float inc = voice_phase_inc[n] + (voice_phase_inc[mod] * voice_freq_scale[n] * g);
         f = osc_next(n, inc);
-#else
-        int m = voice_freq_mod_osc[n];
-        float g = voice_sample[m] * voice_freq_mod_depth[n];
-        float h = osc_get_phase_inc(n, voice_freq[n] + g);
-        f = osc_next(n, h);
-#endif
       } else {
         f = osc_next(n, voice_phase_inc[n]);
       }
       voice_sample[n] = f;
+
+      // apply quantizer
       if (voice_quantize[n]) voice_sample[n] = quantize_bits_int(voice_sample[n], voice_quantize[n]);
 
-      // mmf EXPERIMENTAL
+      // apply multi-mode filter
       if (voice_filter_mode[n]) voice_sample[n] = mmf_process(n, voice_sample[n]);
 
       // apply amp to sample
       float amp = voice_amp[n];
       float env = 1.0f;
-      if (voice_use_amp_envelope[n]) {
-        env = amp_envelope_step(n) * voice_amp_envelope[n].velocity;
-      }
+      if (voice_use_amp_envelope[n]) env = amp_envelope_step(n) * voice_amp_envelope[n].velocity;
       float mod = 1.0f;
       if (voice_amp_mod_osc[n] >= 0) {
         int m = voice_amp_mod_osc[n];
@@ -586,33 +580,34 @@ void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_
       }
       voice_sample[n] *= final;
 
-      // accumulate samples
       if (voice_disconnect[n] == 0) {
+        // accumulate samples
         if (voice_pan_mod_osc[n] >= 0) {
+          // handle pan modulation
           float q = voice_sample[voice_pan_mod_osc[n]] * voice_pan_mod_depth[n];
-          voice_pan_left[n] = (1.0f - q) / 2.0f;
+          voice_pan_left[n]  = (1.0f - q) / 2.0f;
           voice_pan_right[n] = (1.0f + q) / 2.0f;
         }
-        float left = voice_sample[n] * voice_pan_left[n];
+        float left  = voice_sample[n] * voice_pan_left[n];
         float right = voice_sample[n] * voice_pan_right[n];
-        sample_left += left;
+        sample_left  += left;
         sample_right += right;
       }
     }
     // Adjust to main volume: smooth it otherwise is sounds crummy with realtime changes
     volume_smoothed += volume_smoothing * (volume_actual - volume_smoothed);
 
-    sample_left *= volume_smoothed;
+    sample_left  *= volume_smoothed;
     sample_right *= volume_smoothed;
 
     // Write to all channels
     buffer[i * num_channels + 0] = sample_left;
     buffer[i * num_channels + 1] = sample_right;
     if (scope_enable) { // make writing to scope optional
-      new_scope->buffer_left[new_scope->buffer_pointer] = sample_left;
+      new_scope->buffer_left[new_scope->buffer_pointer]  = sample_left;
       new_scope->buffer_right[new_scope->buffer_pointer] = sample_right;
       new_scope->buffer_pointer++;
-      if (new_scope->buffer_pointer >= new_scope->buffer_len) new_scope->buffer_pointer = 0;
+      new_scope->buffer_pointer %= new_scope->buffer_len;
     }
   }
 }
