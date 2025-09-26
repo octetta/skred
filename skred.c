@@ -145,7 +145,6 @@ int audio_show(void) {
 #endif
 }
 
-
 #define SAVE_WAVE_LEN (8)
 static float *save_wave_list[SAVE_WAVE_LEN]; // to keep from crashing the synth, have a place to store free-ed waves
 static int save_wave_ptr = 0;
@@ -162,6 +161,17 @@ float wave_offset_hz[WAVE_TABLE_MAX];
 
 void wave_free(void);
 
+//
+float volume_main = 1.0f;
+float volume_actual = AMY_FACTOR;
+float volume_smoothed = 0;
+float volume_smoothing = 0.002f;
+
+int volume_set(float v) {
+  volume_main = v;
+  volume_actual = v * AMY_FACTOR;
+  return 0;
+}
 //
 float voice_phase[VOICE_MAX];
 float voice_phase_inc[VOICE_MAX];
@@ -589,6 +599,12 @@ void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_
         sample_right += right;
       }
     }
+    // Adjust to main volume: smooth it otherwise is sounds crummy with realtime changes
+    volume_smoothed += volume_smoothing * (volume_actual - volume_smoothed);
+
+    sample_left *= volume_smoothed;
+    sample_right *= volume_smoothed;
+
     // Write to all channels
     buffer[i * num_channels + 0] = sample_left;
     buffer[i * num_channels + 1] = sample_right;
@@ -664,7 +680,7 @@ enum {
   ERR_INVALID_DEBUG,
   ERR_INVALID_MUTE,
   ERR_INVALID_EXT_SAMPLE,
-  ERR_PARSING_ERROR,
+  ERR_PARSING,
   ERR_INVALID_PATCH,
   ERR_INVALID_MIDI_NOTE,
   ERR_INVALID_MOD,
@@ -699,7 +715,7 @@ char *all_err_str[ERR_UNKNOWN+1] = {
   [ERR_INVALID_DEBUG] = "invalid debug",
   [ERR_INVALID_MUTE] = "invalid mute",
   [ERR_INVALID_EXT_SAMPLE] = "invalid external sample",
-  [ERR_PARSING_ERROR] = "parsing error",
+  [ERR_PARSING] = "parsing error",
   [ERR_INVALID_PATCH] = "invalid patch",
   [ERR_INVALID_MIDI_NOTE] = "invalid midi note",
   [ERR_INVALID_MOD] = "invalid mod",
@@ -971,6 +987,7 @@ enum {
   FUNC_METRO,
   FUNC_WAVE_DEFAULT,
   FUNC_CZ,
+  FUNC_VOLUME_SET,
   //
   FUNC_UNKNOWN,
 };
@@ -1028,6 +1045,7 @@ char *display_func_func_str[FUNC_UNKNOWN+1] = {
   [FUNC_METRO] = "metro",
   [FUNC_WAVE_READ] = "wave-read",
   [FUNC_CZ] = "cz",
+  [FUNC_VOLUME_SET] = "volume",
 };
 
 char *func_func_str(int n) {
@@ -1194,10 +1212,8 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
       case '#':
         return 0;
       case '\0':
-        //if (output) puts("# NULL!");
         break;
       case ':':
-        //puts("# COLON");
         switch (*ptr++) {
           case '\0': return 100;
           case 'q': return -1;
@@ -1249,9 +1265,8 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
               if (v.argc == 1) {
                 ptr += v.next;
                 which = (int)v.args[0];
-              } else return ERR_INVALID_PATCH;
+              } else return ERR_PARSING;
               r = patch_load(voice, which, output);
-              //if (r != 0) return r;
             }
             break;
           case 'w':
@@ -1268,7 +1283,7 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
                 ptr += v.next;
                 which = (int)v.args[0];
                 where = EXT_SAMPLE_00;
-              } else return ERR_INVALID_EXT_SAMPLE;
+              } else return ERR_PARSING;
               r = wave_load(which, where);
             }
             break;
@@ -1309,54 +1324,59 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
         v = parse(ptr, FUNC_AMP, FUNC_NULL, 1);
         if (v.argc == 1) {
           ptr += v.next;
-          r = amp_set(voice, v.args[0]);
-        } else return ERR_INVALID_AMP;
+        } else return ERR_PARSING;
+        r = amp_set(voice, v.args[0]);
         break;
       case 'p':
         v = parse(ptr, FUNC_PAN, FUNC_NULL, 1);
         if (v.argc == 1) {
           ptr += v.next;
-          r = pan_set(voice, v.args[0]);
-        } else return ERR_INVALID_PAN;
+        } else return ERR_PARSING;
+        r = pan_set(voice, v.args[0]);
         break;
       case 'q':
         v = parse(ptr, FUNC_QUANT, FUNC_NULL, 1);
         if (v.argc == 1) {
           ptr += v.next;
-          r = wave_quant(voice, (int)v.args[0]);
-        } else return ERR_INVALID_QUANT;
+        } else return ERR_PARSING;
+        r = wave_quant(voice, (int)v.args[0]);
         break;
       case 'f':
         v = parse(ptr, FUNC_FREQ, FUNC_NULL, 1);
         if (v.argc == 1) {
           ptr += v.next;
-          r = freq_set(voice, v.args[0]);
-        } else return ERR_INVALID_FREQ;
+        } else return ERR_PARSING;
+        r = freq_set(voice, v.args[0]);
         break;
       case 'v':
         v = parse(ptr, FUNC_VOICE, FUNC_NULL, 1);
         if (v.argc == 1) {
           ptr += v.next;
-          r = voice_set((int)v.args[0], &voice);
-          if (output) {
-            console_voice = voice;
-          }
-        } else return ERR_INVALID_VOICE;
+        } else return ERR_PARSING;
+        r = voice_set((int)v.args[0], &voice);
+        if (output) console_voice = voice;
+        break;
+      case 'V':
+        v = parse(ptr, FUNC_VOLUME_SET, FUNC_NULL, 1);
+        if (v.argc == 1) {
+          ptr += v.next;
+        } else return ERR_PARSING;
+        r = volume_set((int)v.args[0]);
         break;
       case '>':
         v = parse(ptr, FUNC_COPY, FUNC_NULL, 1);
         if (v.argc == 1) {
           ptr += v.next;
-          r = voice_copy(voice, (int)v.args[0]);
-        } else return ERR_INVALID_VOICE;
+        } else return ERR_PARSING;
+        r = voice_copy(voice, (int)v.args[0]);
         break;
       case 'w':
         v = parse(ptr, FUNC_WAVE, FUNC_NULL, 1);
         if (v.argc == 1) {
           ptr += v.next;
-          r = wave_set(voice, (int)v.args[0]);
-          sprintf(new_scope->wave_text, "w%d", (int)v.args[0]);
-        } else return ERR_INVALID_WAVE;
+        } else return ERR_PARSING;
+        r = wave_set(voice, (int)v.args[0]);
+        sprintf(new_scope->wave_text, "w%d", (int)v.args[0]);
         break;
       case 'T':
         v = parse_none(FUNC_TRIGGER, FUNC_NULL);
@@ -1378,17 +1398,17 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
         v = parse(ptr, FUNC_WAVE_SHOW, FUNC_NULL, 1);
         if (v.argc == 1) {
           ptr += v.next;
-          r = wavetable_show((int)v.args[0]);
-          sprintf(new_scope->wave_text, "w%d", (int)v.args[0]);
-        } else return ERR_INVALID_WAVETABLE;
+        } else return ERR_PARSING;
+        r = wavetable_show((int)v.args[0]);
+        sprintf(new_scope->wave_text, "w%d", (int)v.args[0]);
         break;
       case 'M':
         v = parse(ptr, FUNC_METRO, FUNC_NULL, 2);
         if (v.argc == 2) {
           ptr += v.next;
-          tick_max_set(v.args[0], v.args[1]);
-          if (scope_enable) sprintf(new_scope->status_text, "M%g,%g", tick_max, tick_inc);
-        } else return ERR_INVALID_MOD;
+        } else return ERR_PARSING;
+        tick_max_set(v.args[0], v.args[1]);
+        if (scope_enable) sprintf(new_scope->status_text, "M%g,%g", tick_max, tick_inc);
         break;
       case 'm':
         v = parse_none(FUNC_MUTE, FUNC_NULL);
@@ -1410,8 +1430,8 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
         v = parse(ptr, FUNC_MIDI, FUNC_NULL, 1);
         if (v.argc == 1) {
           ptr += v.next;
-          r = freq_midi(voice, v.args[0]);
-        } else return ERR_INVALID_MIDI_NOTE;
+        } else return ERR_PARSING;
+        r = freq_midi(voice, v.args[0]);
         break;
       case 'A':
         v = parse(ptr, FUNC_AMP_MOD, FUNC_NULL, 2);
@@ -1421,7 +1441,7 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
         } else if (v.argc == 1) {
           ptr += v.next;
           r = amp_mod_set(voice, -1, 0);
-        } else return ERR_PARSING_ERROR;
+        } else return ERR_PARSING;
         break;
       case 'J':
         v = parse(ptr, FUNC_FILTER_MODE, FUNC_NULL, 2);
@@ -1431,7 +1451,7 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
           mmf_set_params(voice,
             voice_filter_freq[voice],
             voice_filter_res[voice]);
-        } else return ERR_PARSING_ERROR;
+        } else return ERR_PARSING;
         break;
       case 'K':
         v = parse(ptr, FUNC_FILTER_FREQ, FUNC_NULL, 2);
@@ -1441,7 +1461,7 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
             mmf_set_freq(voice, v.args[0]);
             r = 0;
           }
-        } else return ERR_PARSING_ERROR;
+        } else return ERR_PARSING;
         break;
       case 'Q':
         v = parse(ptr, FUNC_FILTER_RES, FUNC_NULL, 2);
@@ -1451,21 +1471,21 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
             mmf_set_res(voice, v.args[0]);
             r = 0;
           }
-        } else return ERR_PARSING_ERROR;
+        } else return ERR_PARSING;
         break;
       case 'l':
         v = parse(ptr, FUNC_VELOCITY, FUNC_NULL, 1);
         if (v.argc == 1) {
           ptr += v.next;
-          r = envelope_velocity(voice, v.args[0]);
-        } else return ERR_PARSING_ERROR;
+        } else return ERR_PARSING;
+        r = envelope_velocity(voice, v.args[0]);
         break;
       case 'E':
         v = parse(ptr, FUNC_ENVELOPE, FUNC_NULL, 4);
         if (v.argc == 4) {
           ptr += v.next;
-          r = envelope_set(voice, v.args[0], v.args[1], v.args[2], v.args[3]);
-        } else return ERR_PARSING_ERROR;
+        } else return ERR_PARSING;
+        r = envelope_set(voice, v.args[0], v.args[1], v.args[2], v.args[3]);
         break;
       case 's':
         v = parse(ptr, FUNC_SMOOTHER, FUNC_NULL, 1);
@@ -1477,7 +1497,7 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
             voice_smoother_smoothing[voice] = v.args[0];
           }
           ptr += v.next;
-        } else return ERR_PARSING_ERROR;
+        } else return ERR_PARSING;
         break;
       case 'g':
         v = parse(ptr, FUNC_GLISSANDO, FUNC_NULL, 1);
@@ -1489,14 +1509,14 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
             voice_glissando_speed[voice] = v.args[0];
           }
           ptr += v.next;
-        } else return ERR_PARSING_ERROR;
+        } else return ERR_PARSING;
         break;
       case 'S':
         v = parse(ptr, FUNC_RESET, FUNC_NULL, 1);
         if (v.argc == 1) {
           ptr += v.next;
-          r = wave_reset(voice, (int)v.args[0]);
-        } else return ERR_PARSING_ERROR;
+        } else return ERR_PARSING;
+        r = wave_reset(voice, (int)v.args[0]);
         break;
       case 'F':
         v = parse(ptr, FUNC_FREQ_MOD, FUNC_NULL, 2);
@@ -1506,7 +1526,7 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
         } else if (v.argc == 1) {
           ptr += v.next;
           r = freq_mod_set(voice, -1, 0);
-        } else return ERR_PARSING_ERROR;
+        } else return ERR_PARSING;
         break;
       case 'P':
         v = parse(ptr, FUNC_PAN_MOD, FUNC_NULL, 2);
@@ -1516,7 +1536,7 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int output) {
         } else if (v.argc == 1) {
           ptr += v.next;
           r = pan_mod_set(voice, -1, 0);
-        } else return ERR_PARSING_ERROR;
+        } else return ERR_PARSING;
         break;
       //
       default:
@@ -1649,13 +1669,9 @@ int main(int argc, char *argv[]) {
   }
   linenoiseHistorySave(HISTORY_FILE);
 
-  // turn off oscillators smoothly to avoid clicks
-  for (int i = 0; i < VOICE_MAX; i++) {
-    float amp = voice_amp[i];
-    if (amp > 0.0f) {
-      amp_set(i, 0.01);
-    }
-  }
+  // turn down volume smoothly to avoid clicks
+  volume_set(0);
+  //
   sleep_float(.5); // give a bit of time for the smoothing to apply
 
   // Cleanup
@@ -1998,7 +2014,7 @@ int freq_set(int voice, float f) {
 int amp_set(int voice, float f) {
   if (f >= 0) {
     voice_use_amp_envelope[voice] = 0;
-    voice_amp[voice] = f * AMY_FACTOR;
+    voice_amp[voice] = f;
     voice_user_amp[voice] = f;
   } else return ERR_AMPLITUDE_OUT_OF_RANGE;
   return 0;
