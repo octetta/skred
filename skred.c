@@ -855,7 +855,7 @@ void voice_show(int v, char c) {
   char e[8] = "";
   if (c != ' ') sprintf(e, " # *");
   voice_format(v, s);
-  printf("# %s%s\n", s, e);
+  printf("; %s%s\n", s, e);
 }
 
 int voice_show_all(int voice) {

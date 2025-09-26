@@ -6,8 +6,8 @@ set min_val 0.0
 set max_val 1.1
 set step_val 0.0001
 set current_val 0.5
-set wire_string "c1,%s"
-set wire_check 0
+set wire_string "v0 f%s"
+set wire_check 1
 
 set window_title "fire"
 
@@ -34,10 +34,7 @@ proc dest {addr port} {
 
 dest $addr $port
 
-proc wire {msg} {
-    # puts $msg
-    puts -nonewline $::sock $msg
-}
+proc wire {msg} { puts -nonewline $::sock $msg }
 
 # Procedure to be called when slider changes
 proc fire {value} {
@@ -131,22 +128,13 @@ bind .inputs.entryFormat <Return> updateSlider
 frame .sliderFrame ;# -relief raised -bd 1
 pack .sliderFrame -side top -fill both -expand true -padx 4 -pady 4
 
-# Create slider label
-# label .sliderFrame.label -text "value"
-# pack .sliderFrame.label -side top -anchor w
-
 # Create the slider
 scale .slider -from $min_val -to $max_val -resolution $step_val \
     -orient horizontal -variable current_val -command {fire}
 pack .slider -in .sliderFrame -side top -fill x -pady 10
 
-# Create current value display
-# label .sliderFrame.current -textvariable current_val -relief sunken -bd 1
-# pack .sliderFrame.current -side top -anchor w
-
 # Initialize display
 
-###
 proc backgroundSelf {} {
     global argv0 argv
     
