@@ -162,14 +162,16 @@ float wave_offset_hz[WAVE_TABLE_MAX];
 void wave_free(void);
 
 //
-float volume_main = 1.0f;
-float volume_actual = AMY_FACTOR;
-float volume_smoothed = 0.0f;
-float volume_smoothing = 0.002f;
+float volume_user = 1.0f;
+float volume_final = AMY_FACTOR;
+float volume_smoother_gain = 0.0f;
+float volume_smoother_smoothing = 0.002f;
+float volume_threshold = 0.05f;
+float volume_smoother_higher_smoothing = 0.3f;
 
 int volume_set(float v) {
-  volume_main = v;
-  volume_actual = v * AMY_FACTOR;
+  volume_user = v;
+  volume_final = v * AMY_FACTOR;
   return 0;
 }
 //
@@ -524,7 +526,7 @@ void system_show(void) {
 }
 
 void show_stats(void) {
-  printf("; V%g # %g,%g,%g\n", volume_main, volume_actual, volume_smoothed, volume_smoothing);
+  printf("; V%g # %g,%g,%g\n", volume_user, volume_final, volume_smoother_gain, volume_smoother_smoothing);
   // do something useful
 }
 
@@ -594,11 +596,13 @@ void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_
         sample_right += right;
       }
     }
-    // Adjust to main volume: smooth it otherwise is sounds crummy with realtime changes
-    volume_smoothed += volume_smoothing * (volume_actual - volume_smoothed);
 
-    sample_left  *= volume_smoothed;
-    sample_right *= volume_smoothed;
+    // Adjust to main volume: smooth it otherwise is sounds crummy with realtime changes
+    volume_smoother_gain += volume_smoother_smoothing * (volume_final - volume_smoother_gain);
+    float volume_adjusted = volume_smoother_gain;
+
+    sample_left  *= volume_adjusted;
+    sample_right *= volume_adjusted;
 
     // Write to all channels
     buffer[i * num_channels + 0] = sample_left;
@@ -608,6 +612,8 @@ void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_
       new_scope->buffer_right[new_scope->buffer_pointer] = sample_right;
       new_scope->buffer_pointer++;
       new_scope->buffer_pointer %= new_scope->buffer_len;
+      sprintf(new_scope->status_text, "%g %g %g %g",
+        volume_user, volume_final, volume_smoother_gain, volume_smoother_smoothing);
     }
   }
 }
