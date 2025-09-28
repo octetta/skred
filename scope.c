@@ -15,9 +15,6 @@ static scope_buffer_t *scope = &safety;
 #include "raylib.h"
 #include "rlgl.h"
 
-int debug = 1;
-int trace = 0;
-
 enum {
   SCOPE_TRIGGER_BOTH,
   SCOPE_TRIGGER_RISING,
@@ -79,7 +76,7 @@ void *scope_main(void *arg) {
     // if (mag_x <= 0) mag_x = 1;
     fclose(file);
   } else {
-    printf("# %s read fopen fail\n", CONFIG_FILE);
+    //printf("# %s read fopen fail\n", CONFIG_FILE);
   }
   //
   SetTraceLogLevel(LOG_NONE);
@@ -212,12 +209,11 @@ void *scope_main(void *arg) {
     fprintf(file, "%g %g %g %g", position_out.x, position_out.y, scope_display_mag, mag_x);
     fclose(file);
   } else {
-    printf("# %s write fopen fail\n", CONFIG_FILE);
+    //printf("# %s write fopen fail\n", CONFIG_FILE);
   }
   //
   CloseWindow();
   scope_running = 0;
-  if (debug) printf("# scope stopping\n");
   sleep(5);
   return NULL;
 }
