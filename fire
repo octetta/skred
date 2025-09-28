@@ -1,24 +1,24 @@
-#!/usr/bin/env wish
+#!/usr/bin/env tclsh
 
-# Global variables for slider configuration
+proc daemonize {} {
+  global argv argv0
+  set cmd [list exec tclsh $argv0]
+  lappend cmd -daemon
+  lappend cmd {*}$argv
+  lappend cmd &
+  if {[catch $cmd result]} {
+    puts stderr "did not fork -> $result"
+    exit 1
+  }
+  exit 0
+  # Fork first child
+  if {[catch {exec tclsh [info script] -daemon &} result]} {
+    puts stderr "Failed to fork: $result"
+    exit 1
+  }
+  exit 0
+}
 
-set min_val 0.0
-set max_val 1.1
-set step_val 0.0001
-set current_val 0.5
-set wire_string "v0 f%s"
-set wire_check 1
-
-set window_title "fire"
-
-if {$argc > 0} {set min_val [lindex $argv 0]}
-if {$argc > 1} {set max_val [lindex $argv 1]}
-if {$argc > 2} {set step_val [lindex $argv 2]}
-if {$argc > 3} {set wire_string [lindex $argv 3]}
-if {$argc > 4} {set current_val [lindex $argv 4]}
-if {$argc > 5} {set window_title [lindex $argv 5]}
-
-package require Tk
 package require udp
 
 set addr 127.0.0.1
@@ -28,15 +28,86 @@ set sock [udp_open]
 fconfigure $sock -buffering none -translation binary
 
 proc dest {addr port} {
-    # puts "-> $addr $port"
-    fconfigure $::sock -remote [list $addr $port]
+  fconfigure $::sock -remote [list $addr $port]
 }
 
 dest $addr $port
 
 proc wire {msg} { puts -nonewline $::sock $msg }
 
-# Procedure to be called when slider changes
+# Check if already running as daemon
+if {[lsearch $argv "-daemon"] != -1} {
+  close stdin
+  close stdout
+  close stderr
+    
+  # Change working directory to root
+  # cd /
+    
+  set min_val 0.0
+  set max_val 1.1
+  set step_val 0.0001
+  set current_val 0.5
+  set wire_string "v0 f%s"
+  set wire_check 1
+  set window_title "fire"
+
+  if {$argc > 1} {set min_val [lindex $argv 1]}
+  if {$argc > 2} {set max_val [lindex $argv 2]}
+  if {$argc > 3} {set step_val [lindex $argv 3]}
+  if {$argc > 4} {set wire_string [lindex $argv 4]}
+  if {$argc > 5} {set current_val [lindex $argv 5]}
+  if {$argc > 6} {set window_title [lindex $argv 6]}
+  
+  package require Tk
+  wm title . $window_title
+  wm geometry . ;# 400x350
+
+  # Create frame for input fields
+  frame .inputs ;# -relief raised -bd 1
+  pack .inputs -side top -fill x -padx 4 -pady 4
+
+  # Create labels and entry fields for A, B, C, and Format
+  label .inputs.labelA -text "min"
+  entry .inputs.entryA -textvariable min_val -width 10
+  grid .inputs.labelA .inputs.entryA -sticky w -padx 5 -pady 2
+
+  label .inputs.labelB -text "max"
+  entry .inputs.entryB -textvariable max_val -width 10
+  grid .inputs.labelB .inputs.entryB -sticky w -padx 5 -pady 2
+
+  label .inputs.labelC -text "step"
+  entry .inputs.entryC -textvariable step_val -width 10
+  grid .inputs.labelC .inputs.entryC -sticky w -padx 5 -pady 2
+
+  label .inputs.labelFormat -text "wire"
+  entry .inputs.entryFormat -textvariable wire_string -width 20
+  checkbutton .inputs.entryCheck -variable wire_check -text {}
+  # grid .inputs.labelFormat .inputs.entryFormat -sticky w -padx 5 -pady 2
+  grid .inputs.labelFormat .inputs.entryFormat .inputs.entryCheck -sticky w -padx 5 -pady 2
+
+  # Update button
+  button .inputs.update -text "update" -command updateSlider
+  grid .inputs.update -columnspan 2 -pady 2
+
+  # Bind Enter key to update slider for each entry field
+  bind .inputs.entryA <Return> updateSlider
+  bind .inputs.entryB <Return> updateSlider
+  bind .inputs.entryC <Return> updateSlider
+  bind .inputs.entryFormat <Return> updateSlider
+
+  # Create frame for slider
+  frame .sliderFrame ;# -relief raised -bd 1
+  pack .sliderFrame -side top -fill both -expand true -padx 4 -pady 4
+
+  # Create the slider
+  scale .slider -from $min_val -to $max_val -resolution $step_val \
+    -orient horizontal -variable current_val -command {fire}
+  pack .slider -in .sliderFrame -side top -fill x -pady 10
+} else {
+  daemonize
+}
+
 proc fire {value} {
     global current_val wire_string
     global wire_check
@@ -87,69 +158,6 @@ proc updateSlider {} {
     # puts "Slider updated: Min=$min_val, Max=$max_val, Step=$step_val"
 }
 
+proc main {min_val max_val step_val current_val wire_string wire_check window_title} {
 # Create main window
-wm title . $window_title
-wm geometry . ;# 400x350
-
-# Create frame for input fields
-frame .inputs ;# -relief raised -bd 1
-pack .inputs -side top -fill x -padx 4 -pady 4
-
-# Create labels and entry fields for A, B, C, and Format
-label .inputs.labelA -text "min"
-entry .inputs.entryA -textvariable min_val -width 10
-grid .inputs.labelA .inputs.entryA -sticky w -padx 5 -pady 2
-
-label .inputs.labelB -text "max"
-entry .inputs.entryB -textvariable max_val -width 10
-grid .inputs.labelB .inputs.entryB -sticky w -padx 5 -pady 2
-
-label .inputs.labelC -text "step"
-entry .inputs.entryC -textvariable step_val -width 10
-grid .inputs.labelC .inputs.entryC -sticky w -padx 5 -pady 2
-
-label .inputs.labelFormat -text "wire"
-entry .inputs.entryFormat -textvariable wire_string -width 20
-checkbutton .inputs.entryCheck -variable wire_check -text {}
-# grid .inputs.labelFormat .inputs.entryFormat -sticky w -padx 5 -pady 2
-grid .inputs.labelFormat .inputs.entryFormat .inputs.entryCheck -sticky w -padx 5 -pady 2
-
-# Update button
-button .inputs.update -text "update" -command updateSlider
-grid .inputs.update -columnspan 2 -pady 2
-
-# Bind Enter key to update slider for each entry field
-bind .inputs.entryA <Return> updateSlider
-bind .inputs.entryB <Return> updateSlider
-bind .inputs.entryC <Return> updateSlider
-bind .inputs.entryFormat <Return> updateSlider
-
-# Create frame for slider
-frame .sliderFrame ;# -relief raised -bd 1
-pack .sliderFrame -side top -fill both -expand true -padx 4 -pady 4
-
-# Create the slider
-scale .slider -from $min_val -to $max_val -resolution $step_val \
-    -orient horizontal -variable current_val -command {fire}
-pack .slider -in .sliderFrame -side top -fill x -pady 10
-
-# Initialize display
-
-proc backgroundSelf {} {
-    global argv0 argv
-    
-    if {![info exists ::env(WISH_DETACHED)]} {
-        set ::env(WISH_DETACHED) 1
-        
-        # Try to background using platform-appropriate method
-        if {$::tcl_platform(platform) eq "windows"} {
-            exec wish $argv0 {*}$argv &
-        } else {
-            exec nohup wish $argv0 {*}$argv > /dev/null &
-        }
-        exit 0
-    }
 }
-
-# Call background function at startup
-backgroundSelf
