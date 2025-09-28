@@ -1,10 +1,11 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include <errno.h>
 #include <math.h>
 #include <pthread.h>
+#include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "scope-shared.h"
 
@@ -231,11 +232,21 @@ int scope_start(int sub) {
 }
 
 int main(int argc, char *argv[]) {
+  pid_t pid = fork();
+  if (pid < 0) {
+    exit(1);
+  }
+  if (pid > 0) {
+    exit(0);
+  }
+  if (setsid() < 0) {
+    exit(2);
+  }
   scope_share_t shared;
   scope = scope_setup(&shared, "r");
   if (scope == NULL) {
     printf("# can't attach to shared scope buffer\n");
-    exit(1);
+    exit(3);
   }
   // ugly but safe for now
   scope->wave_text[0] = '\0';
