@@ -54,7 +54,7 @@ int find_starting_point(int buffer_snap, int sw) {
 pthread_t scope_thread_handle;
 
 void *scope_main(void *arg) {
-  pthread_setname_np(pthread_self(), "skred-scope");
+  pthread_setname_np(pthread_self(), "skred-o-scope");
   //
   Vector2 position_in;
   FILE *file = fopen(CONFIG_FILE, "r");
@@ -80,7 +80,7 @@ void *scope_main(void *arg) {
   }
   //
   SetTraceLogLevel(LOG_NONE);
-  InitWindow(screenWidth, screenHeight, "skred-scope");
+  InitWindow(screenWidth, screenHeight, "skred-o-scope");
   //
   SetWindowPosition((int)position_in.x, (int)position_in.y);
   //

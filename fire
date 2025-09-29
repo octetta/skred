@@ -11,12 +11,6 @@ proc daemonize {} {
     exit 1
   }
   exit 0
-  # Fork first child
-  if {[catch {exec tclsh [info script] -daemon &} result]} {
-    puts stderr "Failed to fork: $result"
-    exit 1
-  }
-  exit 0
 }
 
 package require udp
@@ -41,16 +35,17 @@ if {[lsearch $argv "-daemon"] != -1} {
   close stdout
   close stderr
     
-  # Change working directory to root
-  # cd /
+  # Change working directory to /tmp (safe?)
+  cd /tmp
     
-  set min_val 0.0
-  set max_val 1.1
+  set min_val 0
+  set max_val 880
   set step_val 0.0001
-  set current_val 0.5
+  set current_val 440
   set wire_string "v0 f%s"
-  set wire_check 1
   set window_title "fire"
+
+  set wire_check 1
 
   if {$argc > 1} {set min_val [lindex $argv 1]}
   if {$argc > 2} {set max_val [lindex $argv 2]}
