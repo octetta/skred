@@ -1036,6 +1036,7 @@ enum {
   FUNC_WHITESPACE,
   FUNC_METRO,
   FUNC_SEQ,
+  FUNC_MAIN_SEQ,
   FUNC_STEP,
   FUNC_PATTERN,
   FUNC_WAVE_DEFAULT,
@@ -1080,6 +1081,7 @@ char *display_func_func_str[FUNC_UNKNOWN+1] = {
   //
   [FUNC_HELP] = "help",
   [FUNC_SEQ] = "seq",
+  [FUNC_MAIN_SEQ] = "main-seq",
   [FUNC_STEP] = "step",
   [FUNC_PATTERN] = "pattern",
   [FUNC_QUIT] = "quit",
@@ -1501,6 +1503,36 @@ int wire(char *line, wire_t *w, int output) {
           }
           break;
         case 'Z':
+          v = parse(ptr, FUNC_MAIN_SEQ, FUNC_NULL, 1);
+          if (v.argc == 1) {
+            ptr += v.next;
+            switch ((int)v.args[0]) {
+              case 0: // stop
+                for (int p = 0; p < PATTERNS_MAX; p++) {
+                  seq_paused[p] = 1;
+                  seq_pointer[p] = 0;
+                }
+                break;
+              case 1: // start
+                for (int p = 0; p < PATTERNS_MAX; p++) {
+                  seq_paused[p] = 0;
+                  seq_pointer[p] = 0;
+                }
+                break;
+              case 2: // pause
+                for (int p = 0; p < PATTERNS_MAX; p++) {
+                  seq_paused[p] = 1;
+                }
+                break;
+              case 3: // resume
+                for (int p = 0; p < PATTERNS_MAX; p++) {
+                  seq_paused[p] = 0;
+                }
+                break;
+            }
+          }
+          break;
+        case 'z':
           v = parse(ptr, FUNC_SEQ, FUNC_NULL, 1);
           if (v.argc == 1) {
             ptr += v.next;
