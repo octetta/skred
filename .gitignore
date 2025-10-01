@@ -1,3 +1,6 @@
+synth_parser.[ch]
+synth_parser.out
+lemon
 itest.tcl
 .idea
 tmp

@@ -41,6 +41,7 @@ typedef struct {
   char wave_text[1024];
   char voice_text[1024];
   char status_text[1024];
+  char debug_text[1024];
 } scope_buffer_t;
 
 typedef struct {

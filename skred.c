@@ -41,31 +41,21 @@ static int scope_enable = 0;
 static scope_buffer_t safety;
 static scope_buffer_t *new_scope = &safety;
 
-//#define USE_SOKOL
-#ifdef USE_SOKOL
-
-#define SOKOL_AUDIO_IMPL
-#include "sokol_audio.h"
-
-#else
-
 #include "miniaudio.h"
-
-#endif
 
 #define HISTORY_FILE ".sok1_history"
 #define VOICE_MAX (32)
 #define AUDIO_CHANNELS (2)
 #define AMY_FACTOR (0.025f)
 #define UDP_PORT (60440)
-#define FRAMES_PER_CALLBACK (1024)
+#define SYNTH_FRAMES_PER_CALLBACK (512)
+#define SEQ_FRAMES_PER_CALLBACK (128)
 
 float tick_max = 10.0f;
 float tick_inc = 1.0f;
 int tick_frames = 0;
 static volatile uint64_t sample_count = 0;
 
-void tick(int);
 void tick_max_set(float, float);
 
 int debug = 0;
@@ -140,8 +130,13 @@ int audio_show(void) {
     printf("# did not start audio backend\n");
     return 1;
   }
+    printf("# audio backend is running\n");
+    printf("# audio sample count %ld\n", sample_count);
   return 0;
 #else
+  printf("# audio backend is running\n");
+  printf("# audio sample count %ld\n", sample_count);
+  return 0;
 #endif
 }
 
@@ -522,6 +517,23 @@ float quantize_bits_int(float v, int bits) {
 int main_running = 1;
 int udp_running = 1;
 
+#define VOICE_STACK_LEN (8)
+typedef struct {
+  float s[VOICE_STACK_LEN];
+  int ptr;
+} voice_stack_t;
+
+#define WIRE_BUFFER_MAX (1024)
+typedef struct {
+  int voice;
+  voice_stack_t stack;
+  int state;
+  char buffer[WIRE_BUFFER_MAX];
+  int buffer_pointer;
+} wire_t;
+
+int wire(char *line, wire_t *w, int output);
+
 void system_show(void) {
   printf("# udp_port %d\n", udp_port);
 }
@@ -531,15 +543,57 @@ void show_stats(void) {
   // do something useful
 }
 
-#ifdef USE_SOKOL
-void synth(float *buffer, int num_frames, int num_channels, void *user_data) { // , void *user_data) {
-#else
+#define PATTERNS_MAX (16)
+#define SEQ_STEPS_MAX (256)
+#define STEP_MAX (256)
+char seq_pattern[PATTERNS_MAX][SEQ_STEPS_MAX][STEP_MAX] = {
+};
+
+int pattern_pointer = 0;
+int seq_pointer[PATTERNS_MAX];
+int seq_paused[PATTERNS_MAX];
+
+void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
+  // global floats : tick_max / tick_inc (M30,1 in wire would do tick_max = 30.0f tick_inc = 1.0f
+  static int first = 1;
+  if (first) {
+    pthread_setname_np(pthread_self(), "seq");
+    first = 0;
+  }
+  static uint64_t frame_total = 0;
+  static float i = 0;
+  static int voice = 0;
+  static voice_stack_t vs;
+  static wire_t w = { .voice = 0, .state = 0};
+  static int state = 0;
+  if (i == 0) {
+    sprintf(new_scope->debug_text, "%d/%d %s",
+      pattern_pointer, seq_pointer[pattern_pointer],
+      seq_pattern[pattern_pointer][seq_pointer[pattern_pointer]]);
+    for (int p = 0; p < PATTERNS_MAX; p++) {
+      if (seq_paused[p]) continue;
+      wire(seq_pattern[p][seq_pointer[p]], &w, 0);
+      seq_pointer[p]++;
+      switch (seq_pattern[p][seq_pointer[p]][0]) {
+        case '\0':
+          seq_pointer[p] = 0;
+          break;
+      }
+    }
+  }
+  i += tick_inc;
+  if (i >= tick_max) i = 0;
+}
+
 void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
+  static int first = 1;
+  if (first) {
+    pthread_setname_np(pthread_self(), "synth");
+    first = 0;
+  }
   float *buffer = (float *)output;
   int num_frames = (int)frame_count;
   int num_channels = pDevice->playback.channels;
-#endif
-  tick(num_frames);
   for (int i = 0; i < num_frames; i++) {
     sample_count++;
     float sample_left = 0.0f;
@@ -739,12 +793,6 @@ char *err_str(int n) {
   }
   return "no-string";
 }
-
-#define VOICE_STACK_LEN (8)
-typedef struct {
-  float s[VOICE_STACK_LEN];
-  int ptr;
-} voice_stack_t;
 
 void voice_push(voice_stack_t *s, float n) {
   s->ptr++;
@@ -972,10 +1020,6 @@ enum {
   FUNC_GLISSANDO,
   // subfunctions
   FUNC_HELP,
-  FUNC_SEQ_START,
-  FUNC_SEQ_STOP,
-  FUNC_SEQ_PAUSE,
-  FUNC_SEQ_RESUME,
   FUNC_QUIT,
   FUNC_STATS0,
   FUNC_STATS1,
@@ -991,6 +1035,9 @@ enum {
   FUNC_COMMENT,
   FUNC_WHITESPACE,
   FUNC_METRO,
+  FUNC_SEQ,
+  FUNC_STEP,
+  FUNC_PATTERN,
   FUNC_WAVE_DEFAULT,
   FUNC_CZ,
   FUNC_VOLUME_SET,
@@ -1032,10 +1079,9 @@ char *display_func_func_str[FUNC_UNKNOWN+1] = {
   [FUNC_GLISSANDO] = "glissando",
   //
   [FUNC_HELP] = "help",
-  [FUNC_SEQ_START] = "seq-start",
-  [FUNC_SEQ_STOP] = "seq-stop",
-  [FUNC_SEQ_PAUSE] = "seq-pause",
-  [FUNC_SEQ_RESUME] = "seq-resume",
+  [FUNC_SEQ] = "seq",
+  [FUNC_STEP] = "step",
+  [FUNC_PATTERN] = "pattern",
   [FUNC_QUIT] = "quit",
   [FUNC_STATS0] = "stats-0",
   [FUNC_STATS1] = "stats-1",
@@ -1185,7 +1231,9 @@ value_t parse(const char *ptr, int func, int sub_func, int argc) {
   return v;
 }
 
-int wire(char *line, int *this_voice, voice_stack_t *vs, int *state, int output) {
+int wire(char *line, wire_t *w, int output) {
+  wire_t safe;
+  if (w == NULL) w = &safe;
   size_t len = strlen(line);
   if (len == 0) return 0;
 
@@ -1193,16 +1241,14 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int *state, int output)
   char *max = line + len;
 
   value_t v;
-  int voice = 0;
-  if (this_voice) voice = *this_voice;
+  int voice = w->voice;
 
   int more = 1;
   int r = 0;
 
   char c;
 
-  int local_state = 0;
-  if (state) local_state = *state;
+  int local_state = w->state;
 
   while (more) {
     // guard against over-runs...
@@ -1210,13 +1256,18 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int *state, int output)
     if (*ptr == '\0') break;
     if (local_state != 0) {
       // code protocol section
+      char c = *ptr;
       switch (*ptr++) {
         case '}':
           // do something with accumulated characters...
+          w->buffer[w->buffer_pointer] = '\0';
+          w->buffer[w->buffer_pointer+1] = '\0';
           local_state = 0;
           continue;
         default:
-          // accumulate characters...
+          if (w->buffer_pointer < WIRE_BUFFER_MAX) {
+            w->buffer[w->buffer_pointer++] = c;
+          }
           continue;
       }
     } else {
@@ -1229,12 +1280,13 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int *state, int output)
       switch (*ptr++) {
         case '{':
           local_state = 1;
+          w->buffer_pointer = 0;
           continue;
         case '[':
-          voice_push(vs, (float)voice);
+          voice_push(&w->stack, (float)voice);
           continue;
         case ']':
-          voice = (int)voice_pop(vs);
+          voice = (int)voice_pop(&w->stack);
           continue;
         case '#':
           return 0;
@@ -1431,6 +1483,45 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int *state, int output)
           r = wavetable_show((int)v.args[0]);
           sprintf(new_scope->wave_text, "w%d", (int)v.args[0]);
           break;
+        case 'y':
+          v = parse(ptr, FUNC_PATTERN, FUNC_NULL, 1);
+          if (v.argc == 1) {
+            ptr += v.next;
+            int p = (int)v.args[0];
+            pattern_pointer = p;
+          }
+          break;
+        case 'x':
+          v = parse(ptr, FUNC_STEP, FUNC_NULL, 1);
+          if (v.argc == 1) {
+            ptr += v.next;
+            int p = (int)v.args[0];
+            if (strlen(w->buffer) == 0) seq_pattern[pattern_pointer][p][0] = '\0';
+            strcpy(seq_pattern[pattern_pointer][p], w->buffer);
+          }
+          break;
+        case 'Z':
+          v = parse(ptr, FUNC_SEQ, FUNC_NULL, 1);
+          if (v.argc == 1) {
+            ptr += v.next;
+            switch ((int)v.args[0]) {
+              case 0: // stop
+                seq_paused[pattern_pointer] = 1;
+                seq_pointer[pattern_pointer] = 0;
+                break;
+              case 1: // start
+                seq_pointer[pattern_pointer] = 0;
+                seq_paused[pattern_pointer] = 0;
+                break;
+              case 2: // pause
+                seq_paused[pattern_pointer] = 1;
+                break;
+              case 3: // resume
+                seq_paused[pattern_pointer] = 0;
+                break;
+            }
+          }
+          break;
         case 'M':
           v = parse(ptr, FUNC_METRO, FUNC_NULL, 2);
           if (v.argc == 2) {
@@ -1579,8 +1670,8 @@ int wire(char *line, int *this_voice, voice_stack_t *vs, int *state, int output)
     if (ptr >= max) break;
     if (*ptr == '\0') break;
   }
-  if (this_voice) *this_voice = voice;
-  if (state) *state = local_state;
+  w->voice = voice;
+  w->state = local_state;
   return r;
 }
 
@@ -1589,28 +1680,6 @@ char my_data[] = "hello";
 void tick_max_set(float m, float n) {
   tick_max = m;
   tick_inc = n;
-}
-
-void tick(int frames) {
-  tick_frames = frames;
-  static float i = 0;
-  static int j = 0;
-  if (i == 0) {
-    if (j&1) {
-      //voice_trigger(21);
-      envelope_velocity(20, 0);
-      envelope_velocity(21, 1);
-    } else {
-      //voice_trigger(20);
-      envelope_velocity(21, 0);
-      envelope_velocity(20, 1);
-    }
-    j++;
-  }
-  i += tick_inc;
-  if (i >= tick_max) i = 0;
-  //int voice = 20;
-  //wire("v20T", &voice, NULL, NULL, 0);
 }
 
 int main(int argc, char *argv[]) {
@@ -1636,37 +1705,38 @@ int main(int argc, char *argv[]) {
   wave_table_init();
   voice_init();
 
-#ifdef USE_SOKOL
-  // Initialize Sokol Audio
-  saudio_setup(&(saudio_desc){
-    // .stream_cb = stream_cb,
-    .stream_userdata_cb = synth,
-    .user_data = &my_data,
-    .sample_rate = MAIN_SAMPLE_RATE,
-    .num_channels = AUDIO_CHANNELS, // Stereo
-    //.packet_frames = 256,
-    //.num_packets = 1,
-    // .user_data = &my_data, // todo
-  });
-#else
-  ma_device_config config = ma_device_config_init(ma_device_type_playback);
-  config.playback.format = ma_format_f32;
-  config.playback.channels = AUDIO_CHANNELS;
-  config.sampleRate = MAIN_SAMPLE_RATE;
-  config.dataCallback = synth;
-  config.periodSizeInFrames = FRAMES_PER_CALLBACK;
-  config.periodSizeInMilliseconds = 0;
-  config.periods = 3;
-  config.noClip = MA_TRUE;
-  ma_device device;
-  ma_device_init(NULL, &config, &device);
-  ma_device_start(&device);
-#endif
+  // miniaudio's synth device setup
+  ma_device_config synth_config = ma_device_config_init(ma_device_type_playback);
+  synth_config.playback.format = ma_format_f32;
+  synth_config.playback.channels = AUDIO_CHANNELS;
+  synth_config.sampleRate = MAIN_SAMPLE_RATE;
+  synth_config.dataCallback = synth;
+  synth_config.periodSizeInFrames = SYNTH_FRAMES_PER_CALLBACK;
+  synth_config.periodSizeInMilliseconds = 0;
+  synth_config.periods = 3;
+  synth_config.noClip = MA_TRUE;
+  ma_device synth_device;
+  ma_device_init(NULL, &synth_config, &synth_device);
+  ma_device_start(&synth_device);
+
+  // miniaudio's seq device setup
+  ma_device_config seq_config = ma_device_config_init(ma_device_type_playback);
+  seq_config.playback.format = ma_format_f32;
+  seq_config.playback.channels = AUDIO_CHANNELS;
+  seq_config.sampleRate = MAIN_SAMPLE_RATE;
+  seq_config.dataCallback = seq;
+  seq_config.periodSizeInFrames = SEQ_FRAMES_PER_CALLBACK;
+  seq_config.periodSizeInMilliseconds = 0;
+  seq_config.periods = 3;
+  seq_config.noClip = MA_TRUE;
+  ma_device seq_device;
+  ma_device_init(NULL, &seq_config, &seq_device);
+  ma_device_start(&seq_device);
 
   if (audio_show() != 0) return 1;
   system_show();
 
-  pthread_setname_np(pthread_self(), "skred-main");
+  pthread_setname_np(pthread_self(), "repl");
 
   pthread_create(&udp_thread_handle, NULL, udp_main, NULL);
   pthread_detach(udp_thread_handle);
@@ -1682,6 +1752,7 @@ int main(int argc, char *argv[]) {
   sprintf(new_scope->status_text, "n/a");
 
   int state = 0;
+  wire_t w = {.voice = 0, .state = 0};
 
   while (main_running) {
     voice_format(current_voice, new_scope->voice_text, 0);
@@ -1692,7 +1763,8 @@ int main(int argc, char *argv[]) {
     }
     if (strlen(line) == 0) continue;
     linenoiseHistoryAdd(line);
-    int n = wire(line, &current_voice, &vs, &state, 1);
+    //int n = wire(line, &current_voice, &vs, &state, 1);
+    int n = wire(line, &w, 1);
     if (n < 0) break; // request to stop or error
     if (n > 0) {
       char *s = err_str(n);
@@ -1708,11 +1780,8 @@ int main(int argc, char *argv[]) {
   sleep_float(.5); // give a bit of time for the smoothing to apply
 
   // Cleanup
-#ifdef USE_SOKOL
-  saudio_shutdown();
-#else
-  ma_device_uninit(&device);
-#endif
+  ma_device_uninit(&synth_device);
+  ma_device_uninit(&seq_device);
 
   udp_running = 0;
 
@@ -1993,7 +2062,7 @@ void *udp_main(void *arg) {
     puts("# udp thread cannot run");
     return NULL;
   }
-  pthread_setname_np(pthread_self(), "skred-udp");
+  pthread_setname_np(pthread_self(), "udp");
   struct timeval tv;
   tv.tv_sec = 1;
   tv.tv_usec = 0;
@@ -2007,6 +2076,7 @@ void *udp_main(void *arg) {
   fd_set readfds;
   struct timeval timeout;
   int state = 0;
+  wire_t w = { .voice = 0, .state = 0 };
   while (udp_running) {
     FD_ZERO(&readfds);
     FD_SET(sock, &readfds);
@@ -2020,7 +2090,7 @@ void *udp_main(void *arg) {
         // printf("# from %d\n", ntohs(client.sin_port)); // port
         // in the future, this should get ip and port and use for
         // context amongst multiple udp clients
-        wire(line, &voice, &vs, &state, 0);
+        wire(line, &w, 0);
       } else {
         if (errno == EAGAIN) continue;
       }
@@ -2193,13 +2263,14 @@ int patch_load(int voice, int n, int output) {
   vs.ptr = 0;
   int state = 0;
   if (in) {
+    wire_t w = { .voice = 0, .state = 0 };
     char line[1024];
     while (fgets(line, sizeof(line), in) != NULL) {
       size_t len = strlen(line);
       if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
       if (output) printf("# %s\n", line);
       int temp_voice = voice;
-      r = wire(line, &temp_voice, &vs, &state, trace);
+      r = wire(line, &w, trace);
       if (r != 0) {
         if (output) printf("# error in patch\n");
         break;

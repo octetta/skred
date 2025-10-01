@@ -200,6 +200,7 @@ void *scope_main(void *arg) {
     rlPopMatrix();
     DrawText(scope->status_text, SCOPE_WIDTH_IN_PIXELS-250, SCOPE_HEIGHT_IN_PIXELS-20, 20, BLUE);
     DrawText(scope->voice_text, 10, SCOPE_HEIGHT_IN_PIXELS-40, 20, YELLOW);
+    DrawText(scope->debug_text, 10, SCOPE_HEIGHT_IN_PIXELS-60, 20, RED);
     EndDrawing();
   }
   //
