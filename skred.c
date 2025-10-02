@@ -54,7 +54,7 @@ static scope_buffer_t *new_scope = &safety;
 float tick_max = 10.0f;
 float tick_inc = 1.0f;
 int tick_frames = 0;
-static volatile uint64_t sample_count = 0;
+static volatile uint64_t synth_sample_count = 0;
 
 void tick_max_set(float, float);
 
@@ -115,30 +115,6 @@ enum {
   EXT_SAMPLE_99 = 200 + 99,
   WAVE_TABLE_MAX
 };
-
-int audio_show(void) {
-#ifdef USE_SOKOL
-  if (saudio_isvalid()) {
-    printf("# audio backend is running\n");
-    printf("# audio sample count %ld\n", sample_count);
-    printf("# requested sample rate %d, actual sample rate %d\n",
-      (int)MAIN_SAMPLE_RATE,
-      saudio_sample_rate());
-    printf("# buffer frames %d\n", saudio_buffer_frames());
-    printf("# number of channels %d\n", saudio_channels());
-  } else {
-    printf("# did not start audio backend\n");
-    return 1;
-  }
-    printf("# audio backend is running\n");
-    printf("# audio sample count %ld\n", sample_count);
-  return 0;
-#else
-  printf("# audio backend is running\n");
-  printf("# audio sample count %ld\n", sample_count);
-  return 0;
-#endif
-}
 
 #define SAVE_WAVE_LEN (8)
 static float *save_wave_list[SAVE_WAVE_LEN]; // to keep from crashing the synth, have a place to store free-ed waves
@@ -239,6 +215,16 @@ float voice_filter_freq[VOICE_MAX];
 float voice_filter_res[VOICE_MAX];
 int voice_filter_mode[VOICE_MAX];
 mmf_t voice_filter[VOICE_MAX];
+
+int audio_show(void) {
+  printf("# synth backend is running\n");
+  printf("# synth total voice count %d\n", VOICE_MAX);
+  int active = 0;
+  for (int i = 0; i < VOICE_MAX; i++) if (voice_amp[i] != 0) active++;
+  printf("# synth active voice count %d\n", active);
+  printf("# synth sample count %ld\n", synth_sample_count);
+  return 0;
+}
 
 void mmf_init(int, float, float);
 void mmf_set_params(int, float, float);
@@ -459,7 +445,7 @@ void envelope_init(int v, float attack_time, float decay_time,
 
 // Trigger the envelope (note on)
 void amp_envelope_trigger(int v, float f) {
-    voice_amp_envelope[v].sample_start = sample_count;
+    voice_amp_envelope[v].sample_start = synth_sample_count;
     voice_amp_envelope[v].sample_release = 0;
     voice_amp_envelope[v].velocity = f;
     voice_amp_envelope[v].is_active = 1;
@@ -468,7 +454,7 @@ void amp_envelope_trigger(int v, float f) {
 // Release the envelope (note off)
 void amp_envelope_release(int v) {
     if (voice_amp_envelope[v].is_active) {
-        voice_amp_envelope[v].sample_release = sample_count;
+        voice_amp_envelope[v].sample_release = synth_sample_count;
     }
 }
 
@@ -476,7 +462,7 @@ void amp_envelope_release(int v) {
 float amp_envelope_step(int v) {
     if (!voice_amp_envelope[v].is_active) return 0;
 
-    float samples_since_start = (float)(sample_count - voice_amp_envelope[v].sample_start);
+    float samples_since_start = (float)(synth_sample_count - voice_amp_envelope[v].sample_start);
 
     // Attack phase
     if (samples_since_start < voice_amp_envelope[v].attack_time) {
@@ -497,7 +483,7 @@ float amp_envelope_step(int v) {
     }
 
     // Release phase
-    float samples_since_release = (float)(sample_count - voice_amp_envelope[v].sample_release);
+    float samples_since_release = (float)(synth_sample_count - voice_amp_envelope[v].sample_release);
     if (samples_since_release < voice_amp_envelope[v].release_time) {
         float release_progress = samples_since_release / voice_amp_envelope[v].release_time;
         return voice_amp_envelope[v].sustain_level * (1.0f - release_progress); // linear ramp down
@@ -523,13 +509,50 @@ typedef struct {
   int ptr;
 } voice_stack_t;
 
-#define WIRE_BUFFER_MAX (1024)
+#define QUEUED_MAX (1024)
+#define QUEUE_SIZE (1024)
+
+enum {
+  Q_FREE = 0,
+  Q_PREP = 1,
+  Q_READY = 2,
+  Q_USING = 3,
+};
+
+typedef struct {
+  int state;
+  uint64_t when;
+  char what[QUEUED_MAX];
+  int voice;
+} queued_t;
+
+queued_t work_queue[QUEUE_SIZE];
+
+int queue_item(uint64_t when, char *what, int voice) {
+  int p = -1;
+  for (int q = 0; q < QUEUE_SIZE; q++) {
+    if (work_queue[q].state == Q_FREE) {
+      work_queue[q].state = Q_PREP;
+      work_queue[q].when = when;
+      work_queue[q].voice = voice;
+      strcpy(work_queue[q].what, what);
+      work_queue[q].state = Q_READY;
+      p = q;
+      break;
+    }
+  }
+  return p;
+}
+
+#define WIRE_SCRATCH_MAX (1024)
 typedef struct {
   int voice;
   voice_stack_t stack;
   int state;
-  char buffer[WIRE_BUFFER_MAX];
-  int buffer_pointer;
+  char scratch[WIRE_SCRATCH_MAX];
+  int scratch_pointer;
+  char queued[QUEUED_MAX];
+  int queued_pointer;
 } wire_t;
 
 int wire(char *line, wire_t *w, int output);
@@ -541,6 +564,11 @@ void system_show(void) {
 void show_stats(void) {
   printf("; V%g # %g,%g,%g\n", volume_user, volume_final, volume_smoother_gain, volume_smoother_smoothing);
   // do something useful
+  for (int i = 0; i < QUEUE_SIZE; i++) {
+    if (work_queue[i].state != Q_FREE) {
+      printf("# [%d] (%d) @%ld {%s}\n", i, work_queue[i].state, work_queue[i].when, work_queue[i].what);
+    }
+  }
 }
 
 #define PATTERNS_MAX (16)
@@ -560,12 +588,26 @@ void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_co
     pthread_setname_np(pthread_self(), "seq");
     first = 0;
   }
+  
   static uint64_t frame_total = 0;
   static float i = 0;
   static int voice = 0;
   static voice_stack_t vs;
-  static wire_t w = { .voice = 0, .state = 0};
   static int state = 0;
+  
+  static wire_t v = { .voice = 0, .state = 0};
+
+  for (int q = 0; q < QUEUE_SIZE; q++) {
+    if ((work_queue[q].state == Q_READY) && (work_queue[q].when < synth_sample_count)) {
+      work_queue[q].state = Q_USING;
+      v.voice = work_queue[q].voice;
+      wire(work_queue[q].what, &v, 0);
+      work_queue[q].state = Q_FREE;
+    }
+  }
+
+  static wire_t w = { .voice = 0, .state = 0};
+
   if (i == 0) {
     sprintf(new_scope->debug_text, "%d/%d %s",
       pattern_pointer, seq_pointer[pattern_pointer],
@@ -595,7 +637,7 @@ void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_
   int num_frames = (int)frame_count;
   int num_channels = pDevice->playback.channels;
   for (int i = 0; i < num_frames; i++) {
-    sample_count++;
+    synth_sample_count++;
     float sample_left = 0.0f;
     float sample_right = 0.0f;
     float f = 0.0f;
@@ -1251,6 +1293,9 @@ int wire(char *line, wire_t *w, int output) {
   char c;
 
   int local_state = w->state;
+  uint64_t queue_now = 0;
+  w->queued_pointer = 0;
+  w->queued[0] = '\0';
 
   while (more) {
     // guard against over-runs...
@@ -1262,13 +1307,13 @@ int wire(char *line, wire_t *w, int output) {
       switch (*ptr++) {
         case '}':
           // do something with accumulated characters...
-          w->buffer[w->buffer_pointer] = '\0';
-          w->buffer[w->buffer_pointer+1] = '\0';
+          w->scratch[w->scratch_pointer] = '\0';
+          w->scratch[w->scratch_pointer+1] = '\0';
           local_state = 0;
           continue;
         default:
-          if (w->buffer_pointer < WIRE_BUFFER_MAX) {
-            w->buffer[w->buffer_pointer++] = c;
+          if (w->scratch_pointer < WIRE_SCRATCH_MAX) {
+            w->scratch[w->scratch_pointer++] = c;
           }
           continue;
       }
@@ -1277,12 +1322,24 @@ int wire(char *line, wire_t *w, int output) {
       // skip whitespace and semicolons
       ptr += strspn(ptr, ignore);
       if (debug) printf("# [%ld] '%c' (%d)\n", ptr-line, *ptr, *ptr);
+      if (queue_now) {
+        // we started queue-ing, so...
+        char c = *ptr;
+        if (c != '~') {
+          // unless we see a '~', stuff everything into a buffer...
+          // TODO can check if there's a '#' and bail early...
+          w->queued[w->queued_pointer++] = c;
+          w->queued[w->queued_pointer] = '\0'; // make sure there's a null-terminator...
+          ptr++;
+          continue;
+        }
+      }
       r = 0;
       int verbose = 0;
       switch (*ptr++) {
         case '{':
           local_state = 1;
-          w->buffer_pointer = 0;
+          w->scratch_pointer = 0;
           continue;
         case '[':
           voice_push(&w->stack, (float)voice);
@@ -1372,11 +1429,44 @@ int wire(char *line, wire_t *w, int output) {
           }
           break;
         case '~':
+#if 0
+          // used to stop the wire and execute...
           v = parse(ptr, FUNC_DELAY, FUNC_NULL, 1);
           if (v.argc == 1) {
             ptr += v.next;
             if (v.args[0] >= 0 && v.args[0] <= 15) sleep_float(v.args[0]);
           }
+#else
+          // now need to queue for seq to pick up "later"
+          v = parse(ptr, FUNC_DELAY, FUNC_NULL, 1);
+          if (v.argc == 1) {
+            ptr += v.next;
+            if (v.args[0] == 0) {
+              // queue any previous items
+              if (w->queued_pointer) {
+                queue_item(queue_now, w->queued, voice);
+                w->queued_pointer = 0;
+              }
+              // switch back to "real-time"
+              printf("# back to real-time\n");
+              queue_now = 0;
+            } else if (v.args[0] > 0) {
+              uint64_t queue_new = (uint64_t)(v.args[0] * (float)MAIN_SAMPLE_RATE);
+              queue_new += synth_sample_count;
+              if (queue_new != queue_now) {
+                // queue any previous items
+                if (w->queued_pointer) {
+                  queue_item(queue_now, w->queued, voice);
+                  w->queued_pointer = 0;
+                }
+                // start new queue-ing
+                queue_now = queue_new;
+              }
+              // mark synth sample count (now) + argument converted from seconds -> samples
+              // and start queueing...
+            }
+          }
+#endif
           break;
         case 'c':
           v = parse(ptr, FUNC_CZ, FUNC_NULL, 2);
@@ -1465,7 +1555,7 @@ int wire(char *line, wire_t *w, int output) {
           v = parse_none(FUNC_TRIGGER, FUNC_NULL);
           voice_trigger(voice);
           break;
-        case '+':
+        case '/':
           v = parse_none(FUNC_WAVE_DEFAULT, FUNC_NULL);
           wave_default(voice);
           break;
@@ -1498,8 +1588,8 @@ int wire(char *line, wire_t *w, int output) {
           if (v.argc == 1) {
             ptr += v.next;
             int p = (int)v.args[0];
-            if (strlen(w->buffer) == 0) seq_pattern[pattern_pointer][p][0] = '\0';
-            strcpy(seq_pattern[pattern_pointer][p], w->buffer);
+            if (strlen(w->scratch) == 0) seq_pattern[pattern_pointer][p][0] = '\0';
+            strcpy(seq_pattern[pattern_pointer][p], w->scratch);
           }
           break;
         case 'Z':
@@ -1701,6 +1791,11 @@ int wire(char *line, wire_t *w, int output) {
     if (r != 0) break;
     if (ptr >= max) break;
     if (*ptr == '\0') break;
+  }
+  // queue left-over items
+  if (w->queued_pointer) {
+    queue_item(queue_now, w->queued, voice);
+    w->queued_pointer = 0;
   }
   w->voice = voice;
   w->state = local_state;

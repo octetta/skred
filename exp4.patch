@@ -1,5 +1,5 @@
 v1 w0 f1 a1 m1
-v2 w145+ n60 a4 F3,.1 P4,.2
-v3 w2 f6 a5 m1
-v4 w0 f5 a1 m1
+v2 w145/ n60 a20 F3,.1 P4,.2
+v3 w2 f6 a10 m1
+v4 w0 f5 a10 m1
 v2 T v3 T v2 T ~.1 T ~.1 T
