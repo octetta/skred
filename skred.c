@@ -234,6 +234,9 @@ int mmf_set_res(int, float);
 
 void voice_reset(int i);
 void voice_init(void);
+void pattern_reset(int p);
+void seq_init(void);
+void pattern_show(int pattern_pointer);
 
 float osc_get_phase_inc(int v, float f) {
   float g = f;
@@ -574,12 +577,13 @@ void show_stats(void) {
 #define PATTERNS_MAX (16)
 #define SEQ_STEPS_MAX (256)
 #define STEP_MAX (256)
-char seq_pattern[PATTERNS_MAX][SEQ_STEPS_MAX][STEP_MAX] = {
-};
+char seq_pattern[PATTERNS_MAX][SEQ_STEPS_MAX][STEP_MAX];
 
 int pattern_pointer = 0;
 int seq_pointer[PATTERNS_MAX];
+int seq_counter[PATTERNS_MAX];
 int seq_paused[PATTERNS_MAX];
+int seq_modulo[PATTERNS_MAX];
 
 void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
   // global floats : tick_max / tick_inc (M30,1 in wire would do tick_max = 30.0f tick_inc = 1.0f
@@ -595,8 +599,9 @@ void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_co
   static voice_stack_t vs;
   static int state = 0;
   
-  static wire_t v = { .voice = 0, .state = 0};
 
+  // run expired (ready) queued things...
+  static wire_t v = { .voice = 0, .state = 0};
   for (int q = 0; q < QUEUE_SIZE; q++) {
     if ((work_queue[q].state == Q_READY) && (work_queue[q].when < synth_sample_count)) {
       work_queue[q].state = Q_USING;
@@ -607,13 +612,20 @@ void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_co
   }
 
   static wire_t w = { .voice = 0, .state = 0};
-
   if (i == 0) {
+    // next step of patterns TODO revisit the i==0 logic, seems flakey
     sprintf(new_scope->debug_text, "%d/%d %s",
       pattern_pointer, seq_pointer[pattern_pointer],
       seq_pattern[pattern_pointer][seq_pointer[pattern_pointer]]);
     for (int p = 0; p < PATTERNS_MAX; p++) {
       if (seq_paused[p]) continue;
+      if (seq_modulo[p] > 1) {
+        if ((seq_counter[p] % seq_modulo[p]) != 0) {
+          seq_counter[p]++;
+          continue;
+        }
+      }
+      seq_counter[p]++;
       wire(seq_pattern[p][seq_pointer[p]], &w, 0);
       seq_pointer[p]++;
       switch (seq_pattern[p][seq_pointer[p]][0]) {
@@ -1294,6 +1306,7 @@ int wire(char *line, wire_t *w, int output) {
 
   int local_state = w->state;
   uint64_t queue_now = 0;
+  float queue_float_acc = 0.0f;
   w->queued_pointer = 0;
   w->queued[0] = '\0';
 
@@ -1429,29 +1442,22 @@ int wire(char *line, wire_t *w, int output) {
           }
           break;
         case '~':
-#if 0
-          // used to stop the wire and execute...
           v = parse(ptr, FUNC_DELAY, FUNC_NULL, 1);
           if (v.argc == 1) {
             ptr += v.next;
-            if (v.args[0] >= 0 && v.args[0] <= 15) sleep_float(v.args[0]);
-          }
-#else
-          // now need to queue for seq to pick up "later"
-          v = parse(ptr, FUNC_DELAY, FUNC_NULL, 1);
-          if (v.argc == 1) {
-            ptr += v.next;
-            if (v.args[0] == 0) {
+            float t = v.args[0];
+            if (t == 0) {
               // queue any previous items
               if (w->queued_pointer) {
                 queue_item(queue_now, w->queued, voice);
                 w->queued_pointer = 0;
               }
               // switch back to "real-time"
-              printf("# back to real-time\n");
+              queue_float_acc = 0.0f; // not sure this is what I want... revisit
               queue_now = 0;
-            } else if (v.args[0] > 0) {
-              uint64_t queue_new = (uint64_t)(v.args[0] * (float)MAIN_SAMPLE_RATE);
+            } else if (t > 0) {
+              queue_float_acc += t;
+              uint64_t queue_new = (uint64_t)(queue_float_acc * (float)MAIN_SAMPLE_RATE);
               queue_new += synth_sample_count;
               if (queue_new != queue_now) {
                 // queue any previous items
@@ -1466,7 +1472,6 @@ int wire(char *line, wire_t *w, int output) {
               // and start queueing...
             }
           }
-#endif
           break;
         case 'c':
           v = parse(ptr, FUNC_CZ, FUNC_NULL, 2);
@@ -1583,6 +1588,14 @@ int wire(char *line, wire_t *w, int output) {
             pattern_pointer = p;
           }
           break;
+        case '%':
+          v = parse(ptr, FUNC_STEP, FUNC_NULL, 1);
+          if (v.argc == 1) {
+            ptr += v.next;
+            int m = (int)v.args[0];
+            seq_modulo[pattern_pointer] = m;
+          }
+          break;
         case 'x':
           v = parse(ptr, FUNC_STEP, FUNC_NULL, 1);
           if (v.argc == 1) {
@@ -1620,6 +1633,8 @@ int wire(char *line, wire_t *w, int output) {
                 }
                 break;
             }
+          } else {
+            if (output) for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(p);
           }
           break;
         case 'z':
@@ -1642,6 +1657,8 @@ int wire(char *line, wire_t *w, int output) {
                 seq_paused[pattern_pointer] = 0;
                 break;
             }
+          } else {
+            if (output) pattern_show(pattern_pointer);
           }
           break;
         case 'M':
@@ -1831,6 +1848,7 @@ int main(int argc, char *argv[]) {
   linenoiseHistoryLoad(HISTORY_FILE);
   wave_table_init();
   voice_init();
+  seq_init();
 
   // miniaudio's synth device setup
   ma_device_config synth_config = ma_device_config_init(ma_device_type_playback);
@@ -2124,6 +2142,37 @@ void wave_free(void) {
       free(wave_table_data[i]);
       wave_size[i] = 0;
     }
+  }
+}
+
+void pattern_reset(int p) {
+  seq_pointer[p] = 0;
+  seq_paused[p] = 1;
+  seq_counter[p] = 0;
+  seq_modulo[p] = 1;
+  for (int s = 0; s < SEQ_STEPS_MAX; s++) {
+    seq_pattern[p][s][0] = '\0';
+  }
+}
+
+void seq_init(void) {
+  for (int p = 0; p < PATTERNS_MAX; p++) {
+    pattern_reset(p);
+  }
+}
+
+void pattern_show(int pattern_pointer) {
+  int first = 1;
+  for (int s = 0; s < SEQ_STEPS_MAX; s++) {
+    char *line = seq_pattern[pattern_pointer][s];
+    if (strlen(line) == 0) break;
+    if (first) {
+      int state = seq_paused[pattern_pointer];
+      printf("; y%d z%d %%%d # [%d]\n",
+        pattern_pointer, state, seq_modulo[pattern_pointer], seq_pointer[pattern_pointer]);
+      first = 0;
+    }
+    printf("; {%s} x%d\n", line, s);
   }
 }
 
