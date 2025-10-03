@@ -73,6 +73,7 @@ enum {
   WAVE_TABLE_SAW_UP,   // 3
   WAVE_TABLE_TRI,      // 4
   WAVE_TABLE_NOISE,    // 5
+  WAVE_TABLE_NOISE_ALT,// 6
 
   WAVE_TABLE_KRG1 = 32,
   WAVE_TABLE_KRG2,
@@ -163,6 +164,9 @@ float voice_offset_hz[VOICE_MAX];
 float voice_freq[VOICE_MAX];
 float voice_note[VOICE_MAX];
 float voice_sample[VOICE_MAX];
+float voice_sample_hold[VOICE_MAX];
+int voice_sample_hold_count[VOICE_MAX];
+int voice_sample_hold_max[VOICE_MAX];
 float voice_amp[VOICE_MAX];
 float voice_user_amp[VOICE_MAX];
 float voice_pan_left[VOICE_MAX];
@@ -410,6 +414,8 @@ void osc_trigger(int voice) {
       voice_phase[voice] = 0;
     }
     voice_finished[voice] = 0;
+  } else {
+    voice_phase[voice] = 0;
   }
 }
 
@@ -639,10 +645,19 @@ void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_co
   if (i >= tick_max) i = 0;
 }
 
+typedef struct {
+    uint64_t state;
+} AudioRNG;
+
+void audio_rng_init(AudioRNG* rng, uint64_t seed);
+float audio_rng_float(AudioRNG* rng);
+
 void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
+  static AudioRNG synth_random;
   static int first = 1;
   if (first) {
     pthread_setname_np(pthread_self(), "synth");
+    audio_rng_init(&synth_random, 1);
     first = 0;
   }
   float *buffer = (float *)output;
@@ -656,18 +671,34 @@ void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_
     for (int n = 0; n < VOICE_MAX; n++) {
       if (voice_finished[n]) continue;
       if (voice_amp[n] == 0) continue;
-      if (voice_freq_mod_osc[n] >= 0) {
-        // try to use modulators phase_inc instead of recalculating...
-        // REQUIRES re-thinking how I'm scaling frequency modulators via wire...
-        // REVISIT experiments to see if this still makes sense
-        int mod = voice_freq_mod_osc[n];
-        float g = voice_sample[mod] * voice_freq_mod_depth[n];
-        float inc = voice_phase_inc[n] + (voice_phase_inc[mod] * voice_freq_scale[n] * g);
-        f = osc_next(n, inc);
+      if (voice_wave_table_index[n] == WAVE_TABLE_NOISE_ALT) {
+        // bypass lots of stuff if this voice uses random source...
+        f = audio_rng_float(&synth_random);
       } else {
-        f = osc_next(n, voice_phase_inc[n]);
+        if (voice_freq_mod_osc[n] >= 0) {
+          // try to use modulators phase_inc instead of recalculating...
+          // REQUIRES re-thinking how I'm scaling frequency modulators via wire...
+          // REVISIT experiments to see if this still makes sense
+          int mod = voice_freq_mod_osc[n];
+          float g = voice_sample[mod] * voice_freq_mod_depth[n];
+          float inc = voice_phase_inc[n] + (voice_phase_inc[mod] * voice_freq_scale[n] * g);
+          f = osc_next(n, inc);
+        } else {
+          f = osc_next(n, voice_phase_inc[n]);
+        }
       }
-      voice_sample[n] = f;
+      if (voice_sample_hold_max[n]) {
+        if (voice_sample_hold_count[n] == 0) {
+          voice_sample_hold[n] = f;
+        }
+        voice_sample[n] = voice_sample_hold[n];
+        voice_sample_hold_count[n]++;
+        if (voice_sample_hold_count[n] >= voice_sample_hold_max[n]) {
+          voice_sample_hold_count[n] = 0;
+        }
+      } else {
+        voice_sample[n] = f;
+      }
 
       // apply quantizer
       if (voice_quantize[n]) voice_sample[n] = quantize_bits_int(voice_sample[n], voice_quantize[n]);
@@ -913,6 +944,10 @@ char *voice_format(int v, char *out, int verbose) {
     n = sprintf(ptr, " q%d", voice_quantize[v]);
     ptr += n;
   }
+  if (voice_sample_hold_max[v]) {
+    n = sprintf(ptr, " h%d", voice_sample_hold_max[v]);
+    ptr += n;
+  }
   if (voice_amp_mod_osc[v] >= 0 && voice_amp_mod_depth[v] > 0) {
     n = sprintf(ptr, " A%d,%g", voice_amp_mod_osc[v], voice_amp_mod_depth[v]);
     ptr += n;
@@ -1065,6 +1100,7 @@ enum {
   FUNC_PAN,
   FUNC_ENVELOPE,
   FUNC_QUANT,
+  FUNC_HOLD,
   FUNC_RESET,
   FUNC_FILTER_MODE,
   FUNC_FILTER_FREQ,
@@ -1123,6 +1159,7 @@ char *display_func_func_str[FUNC_UNKNOWN+1] = {
   [FUNC_PAN] = "pan",
   [FUNC_ENVELOPE] = "envelope",
   [FUNC_QUANT] = "quant",
+  [FUNC_HOLD] = "hold",
   [FUNC_RESET] = "reset",
   [FUNC_FILTER_MODE] = "filter-mode",
   [FUNC_FILTER_FREQ] = "filter-freq",
@@ -1511,6 +1548,14 @@ int wire(char *line, wire_t *w, int output) {
             ptr += v.next;
           } else return ERR_PARSING;
           r = pan_set(voice, v.args[0]);
+          break;
+        case 'h':
+          v = parse(ptr, FUNC_HOLD, FUNC_NULL, 1);
+          if (v.argc == 1) {
+            ptr += v.next;
+            voice_sample_hold_max[voice] = (int)v.args[0];
+            voice_sample_hold_count[voice] = 0;
+          }
           break;
         case 'q':
           v = parse(ptr, FUNC_QUANT, FUNC_NULL, 1);
@@ -1969,10 +2014,6 @@ void normalize_preserve_zero(float *data, int length) {
 
 //
 
-typedef struct {
-    uint64_t state;
-} AudioRNG;
-
 // Initialize the RNG with a seed
 void audio_rng_init(AudioRNG* rng, uint64_t seed) {
     rng->state = seed ? seed : 1; // Ensure non-zero seed
@@ -2048,7 +2089,7 @@ void wave_table_init(void) {
 
   AudioRNG pink;
   audio_rng_init(&pink, 1);
-  for (int w = WAVE_TABLE_SINE; w <= WAVE_TABLE_NOISE; w++) {
+  for (int w = WAVE_TABLE_SINE; w <= WAVE_TABLE_NOISE_ALT; w++) {
     int size = SIZE_SINE;
     char *name = "?";
     switch (w) {
@@ -2058,6 +2099,7 @@ void wave_table_init(void) {
       case WAVE_TABLE_SAW_UP: name = "saw-up"; break;
       case WAVE_TABLE_TRI:   name = "triangle"; break;
       case WAVE_TABLE_NOISE: name = "noise"; break;
+      case WAVE_TABLE_NOISE_ALT: name = "noise-alt"; break; // not used, here for laziness in experiment
       default: name = "?"; break;
     }
     printf("# make w%d %s\n", w, name);
@@ -2080,6 +2122,7 @@ void wave_table_init(void) {
         case WAVE_TABLE_SAW_UP: f = 1.0f - 2.0f * phase; break;
         case WAVE_TABLE_TRI: f = (phase < 0.5f) ? (4.0f * phase - 1.0f) : (3.0f - 4.0f * phase); break;
         case WAVE_TABLE_NOISE: f = audio_rng_float(&pink); break;
+        case WAVE_TABLE_NOISE_ALT: f = audio_rng_float(&pink); break;
         default: f = 0; break;
       }
       wave_table_data[w][off++] = f;
@@ -2674,9 +2717,12 @@ int voice_copy(int v, int n) {
   amp_mod_set(n, voice_amp_mod_osc[v], voice_amp_mod_depth[v]);
   freq_mod_set(n, voice_freq_mod_osc[v], voice_freq_mod_depth[v]);
   pan_mod_set(n, voice_pan_mod_osc[v], voice_pan_mod_depth[v]);
-  //wave_loop(n,
-  //wave_dir(n,
-  //wave_quant(n,
+  wave_loop(n, voice_loop_enabled[v]);
+  wave_dir(n, voice_direction[v]);
+  wave_quant(n, voice_quantize[v]);
+  voice_sample_hold_max[n] = voice_sample_hold_max[v];
+  voice_sample_hold_count[n] = voice_sample_hold_count[v];
+  voice_sample_hold[n] = voice_sample_hold[v];
   envelope_set(n, voice_amp_envelope[v].a, voice_amp_envelope[v].d, voice_amp_envelope[v].s, voice_amp_envelope[v].r);
   cz_set(n, voice_cz_mode[v], voice_cz_distortion[v]);
   cmod_set(n, voice_cz_mod_osc[v], voice_cz_mod_depth[v]);
