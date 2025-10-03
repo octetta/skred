@@ -27,7 +27,10 @@ proc dest {addr port} {
 
 dest $addr $port
 
-proc wire {msg} { puts -nonewline $::sock $msg }
+proc wire {msg} {
+  puts -nonewline $::sock $msg
+  # puts $msg
+}
 
 # Check if already running as daemon
 if {[lsearch $argv "-daemon"] != -1} {
@@ -42,7 +45,7 @@ if {[lsearch $argv "-daemon"] != -1} {
   set max_val 880
   set step_val 0.0001
   set current_val 440
-  set wire_string "v0 f%s"
+  set wire_string "f%s"
   set window_title "fire"
 
   set wire_check 1
@@ -91,6 +94,37 @@ if {[lsearch $argv "-daemon"] != -1} {
   bind .inputs.entryC <Return> updateSlider
   bind .inputs.entryFormat <Return> updateSlider
 
+  frame .buttonGrid
+  set voice -1
+
+proc toggleButton {num} {
+  global voice
+    
+  if {$voice == $num} {
+    .buttonGrid.b$num configure -relief raised
+    set voice -1
+    return
+  }
+
+  # Deselect previous button
+  if {$voice >= 0} {
+    .buttonGrid.b$voice configure -relief raised
+  }
+    
+  # Select new button
+  set voice $num
+  .buttonGrid.b$num configure -relief sunken
+}
+
+  for {set i 0} {$i < 32} {incr i} {
+    button .buttonGrid.b$i -text $i -padx 0 -pady 0 -font {Arial 7} -bd 1 \
+      -command "toggleButton $i"
+    grid .buttonGrid.b$i -row [expr {$i / 16}] -column [expr {$i % 16}] \
+      -sticky nsew
+  }
+
+  pack .buttonGrid
+
   # Create frame for slider
   frame .sliderFrame ;# -relief raised -bd 1
   pack .sliderFrame -side top -fill both -expand true -padx 4 -pady 4
@@ -105,11 +139,17 @@ if {[lsearch $argv "-daemon"] != -1} {
 
 proc fire {value} {
     global current_val wire_string
+    set tmp $wire_string
+    if {$::voice >= 0} {
+      set tmp "v$::voice $wire_string"
+    } {
+      set tmp $wire_string
+    }
     global wire_check
     if {$wire_check == 0} {
-      set fmt $wire_string
+      set fmt $tmp
     } {
-      set fmt "\[$wire_string\]"
+      set fmt "\[$tmp\]"
     }
     set current_val $value
     set formattedOutput [format $fmt $value]
