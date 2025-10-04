@@ -68,7 +68,9 @@ if {[lsearch $argv "-daemon"] != -1} {
   # Create labels and entry fields for A, B, C, and Format
   label .inputs.labelA -text "min"
   entry .inputs.entryA -textvariable min_val -width 10
-  grid .inputs.labelA .inputs.entryA -sticky w -padx 5 -pady 2
+  font create italicFont -family TkDefaultFont -slant italic
+  entry .inputs.noteA -width 30 -font italicFont -background #FFFF99 -borderwidth 0 -highlightthickness 0
+  grid .inputs.labelA .inputs.entryA .inputs.noteA -sticky w -padx 5 -pady 2
 
   label .inputs.labelB -text "max"
   entry .inputs.entryB -textvariable max_val -width 10
@@ -81,12 +83,11 @@ if {[lsearch $argv "-daemon"] != -1} {
   label .inputs.labelFormat -text "wire"
   entry .inputs.entryFormat -textvariable wire_string -width 20
   checkbutton .inputs.entryCheck -variable wire_check -text {}
-  # grid .inputs.labelFormat .inputs.entryFormat -sticky w -padx 5 -pady 2
   grid .inputs.labelFormat .inputs.entryFormat .inputs.entryCheck -sticky w -padx 5 -pady 2
 
   # Update button
   button .inputs.update -text "update" -command updateSlider
-  grid .inputs.update -columnspan 2 -pady 2
+  grid .inputs.update -columnspan 3 -pady 2 -sticky w
 
   # Bind Enter key to update slider for each entry field
   bind .inputs.entryA <Return> updateSlider
@@ -99,31 +100,28 @@ if {[lsearch $argv "-daemon"] != -1} {
 
 proc toggleButton {num} {
   global voice
-    
   if {$voice == $num} {
     .buttonGrid.b$num configure -relief raised
     set voice -1
     return
   }
-
   # Deselect previous button
   if {$voice >= 0} {
     .buttonGrid.b$voice configure -relief raised
   }
-    
   # Select new button
   set voice $num
   .buttonGrid.b$num configure -relief sunken
 }
 
   for {set i 0} {$i < 32} {incr i} {
-    button .buttonGrid.b$i -text $i -padx 0 -pady 0 -font {Arial 7} -bd 1 \
+    button .buttonGrid.b$i -text v$i -padx 0 -pady 0 -font {Arial 10} -bd 1 \
       -command "toggleButton $i"
     grid .buttonGrid.b$i -row [expr {$i / 16}] -column [expr {$i % 16}] \
       -sticky nsew
   }
 
-  pack .buttonGrid
+  pack .buttonGrid -side left -side top -fill x -pady 1
 
   # Create frame for slider
   frame .sliderFrame ;# -relief raised -bd 1

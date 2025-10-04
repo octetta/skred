@@ -51,6 +51,11 @@ static scope_buffer_t *new_scope = &safety;
 #define SYNTH_FRAMES_PER_CALLBACK (512)
 #define SEQ_FRAMES_PER_CALLBACK (128)
 
+int requested_synth_frames_per_callback = SYNTH_FRAMES_PER_CALLBACK;
+int requested_seq_frames_per_callback = SEQ_FRAMES_PER_CALLBACK;
+int synth_frames_per_callback = 0;
+int seq_frames_per_callback = 0;
+
 float tick_max = 10.0f;
 float tick_inc = 1.0f;
 int tick_frames = 0;
@@ -571,8 +576,11 @@ void system_show(void) {
 }
 
 void show_stats(void) {
-  printf("; V%g # %g,%g,%g\n", volume_user, volume_final, volume_smoother_gain, volume_smoother_smoothing);
   // do something useful
+  printf("# synth frames per callback %d : %gms\n",
+    synth_frames_per_callback, (float)synth_frames_per_callback / (float)MAIN_SAMPLE_RATE * 1000.0f);
+  printf("# seq frames per callback %d : %gms\n",
+    seq_frames_per_callback, (float)seq_frames_per_callback / (float)MAIN_SAMPLE_RATE * 1000.0f);
   for (int i = 0; i < QUEUE_SIZE; i++) {
     if (work_queue[i].state != Q_FREE) {
       printf("# [%d] (%d) @%ld {%s}\n", i, work_queue[i].state, work_queue[i].when, work_queue[i].what);
@@ -596,6 +604,7 @@ void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_co
   static int first = 1;
   if (first) {
     pthread_setname_np(pthread_self(), "seq");
+    seq_frames_per_callback = (int)frame_count;
     first = 0;
   }
   
@@ -616,6 +625,8 @@ void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_co
       work_queue[q].state = Q_FREE;
     }
   }
+
+  static float q;
 
   static wire_t w = { .voice = 0, .state = 0};
   if (i == 0) {
@@ -657,6 +668,7 @@ void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_
   static int first = 1;
   if (first) {
     pthread_setname_np(pthread_self(), "synth");
+    synth_frames_per_callback = (int)frame_count;
     audio_rng_init(&synth_random, 1);
     first = 0;
   }
@@ -668,12 +680,14 @@ void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_
     float sample_left = 0.0f;
     float sample_right = 0.0f;
     float f = 0.0f;
+    float whiteish = audio_rng_float(&synth_random);
     for (int n = 0; n < VOICE_MAX; n++) {
       if (voice_finished[n]) continue;
       if (voice_amp[n] == 0) continue;
       if (voice_wave_table_index[n] == WAVE_TABLE_NOISE_ALT) {
         // bypass lots of stuff if this voice uses random source...
-        f = audio_rng_float(&synth_random);
+        // reuse the one white noise source for each sample
+        f = whiteish;
       } else {
         if (voice_freq_mod_osc[n] >= 0) {
           // try to use modulators phase_inc instead of recalculating...
@@ -1554,7 +1568,7 @@ int wire(char *line, wire_t *w, int output) {
           if (v.argc == 1) {
             ptr += v.next;
             voice_sample_hold_max[voice] = (int)v.args[0];
-            voice_sample_hold_count[voice] = 0;
+            //voice_sample_hold_count[voice] = 0;
           }
           break;
         case 'q':
@@ -1881,6 +1895,8 @@ int main(int argc, char *argv[]) {
           case 't': trace = 1; break;
           case 'p': udp_port = (int)strtol(&(argv[i][2]), NULL, 0); break;
           case 'l': load_patch_number = (int)strtol(&argv[i][2], NULL, 0); break;
+          case '1': requested_synth_frames_per_callback = (int)strtol(&argv[i][2], NULL, 0); break;
+          case '2': requested_seq_frames_per_callback = (int)strtol(&argv[i][2], NULL, 0); break;
           default:
             printf("# unknown switch '%s'\n", argv[i]);
             exit(1);
@@ -1901,7 +1917,7 @@ int main(int argc, char *argv[]) {
   synth_config.playback.channels = AUDIO_CHANNELS;
   synth_config.sampleRate = MAIN_SAMPLE_RATE;
   synth_config.dataCallback = synth;
-  synth_config.periodSizeInFrames = SYNTH_FRAMES_PER_CALLBACK;
+  synth_config.periodSizeInFrames = requested_synth_frames_per_callback;
   synth_config.periodSizeInMilliseconds = 0;
   synth_config.periods = 3;
   synth_config.noClip = MA_TRUE;
@@ -1915,7 +1931,7 @@ int main(int argc, char *argv[]) {
   seq_config.playback.channels = AUDIO_CHANNELS;
   seq_config.sampleRate = MAIN_SAMPLE_RATE;
   seq_config.dataCallback = seq;
-  seq_config.periodSizeInFrames = SEQ_FRAMES_PER_CALLBACK;
+  seq_config.periodSizeInFrames = requested_seq_frames_per_callback;
   seq_config.periodSizeInMilliseconds = 0;
   seq_config.periods = 3;
   seq_config.noClip = MA_TRUE;
