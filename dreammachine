@@ -1,0 +1,102 @@
+#!/usr/bin/tclsh
+
+package require udp
+set addr 127.0.0.1
+set port 60440
+set sock [udp_open]
+fconfigure $sock -buffering none -translation binary
+proc dest {addr port} { fconfigure $::sock -remote [list $addr $port] }
+dest $addr $port
+proc wire {msg} { puts -nonewline $::sock $msg }
+
+package require Tk
+
+set voice 0
+set pattern 0
+
+# Procedure called when a button is pressed
+proc toggle {num} {
+    set upper "::upper_var$num"
+    set lower "::lower_var$num"
+    set state "::state_var$num"
+    if {[set $state] == "sunken"} {
+      set $state raised
+      set color lightblue
+      set message [set $upper]
+    } {
+      set $state sunken
+      set color orange
+      set message [set $lower]
+    }
+    # puts "Button $num was pressed -> [set $upper] / [set $lower] / [set $state]"
+    .btn$num configure -bg $color -relief [set $state]
+    wire "\[p${::pattern}v${::voice}\{$message\} x$num\]"
+}
+
+# Get command-line arguments
+set argv $::argv
+set argc $::argc
+
+set m 4
+set n 4
+
+if {$argc > 0} { set m [lindex $argv 0] }
+if {$argc > 1} { set n [lindex $argv 1] }
+
+# Calculate expected number of text arguments (2 for each cell: upper and lower)
+set expected_args [expr {2 * $m * $n}]
+set provided_args [expr {$argc - 2}]
+
+# Create main window
+wm title . "$m by $n grid"
+
+# Create and place widgets in an m x n grid
+set num 0
+for {set row 0} {$row < $n} {incr row} {
+    for {set col 0} {$col < $m} {incr col} {
+        # Calculate index for text arguments
+        set text_idx [expr {2 * ($row * $m + $col)}]
+        
+        # Get text for upper and lower fields, use empty strings if not enough arguments
+        if {$text_idx + 1 < $provided_args} {
+            set upper_text [lindex $argv [expr {$text_idx + 2}]]
+            set lower_text [lindex $argv [expr {$text_idx + 3}]]
+        } else {
+            set upper_text "#"
+            set lower_text "T"
+        }
+        
+        # Create button
+        button .btn$num -text $num -command [list toggle $num] -width 10 -height 2 -bd 0 -bg lightblue -activebackground #F54927
+        
+        # Create entry widgets for upper and lower text
+        entry .upper$num -textvariable upper_var$num -bg #FFFF99 -bd 0
+        entry .lower$num -textvariable lower_var$num -bg #FFFF99 -bd 0
+        
+        # Set text variables
+        set upper_var$num $upper_text
+        set lower_var$num $lower_text
+        set state_var$num raised
+        
+        # Place widgets in grid
+        # Button at row 3*$row, upper entry at row 3*$row+1, lower entry at row 3*$row+2
+        grid .btn$num -row [expr {3 * $row}] -column $col       -padx 4 -pady 2 -sticky nsew
+        grid .upper$num -row [expr {3 * $row + 1}] -column $col -padx 4 -pady 2 -sticky nsew
+        grid .lower$num -row [expr {3 * $row + 2}] -column $col -padx 4 -pady 2 -sticky nsew
+        
+        incr num
+    }
+}
+for {set step 0} {$step < $num} {incr step} {
+  set upper "::upper_var$step"
+  set message [set $upper]
+  wire "\[p${::pattern}v${::voice}\{$message\} x$step\]"
+}
+
+# Configure grid weights to make the layout responsive
+for {set row 0} {$row < [expr {3 * $n}]} {incr row} {
+    grid rowconfigure . $row -weight 1
+}
+for {set col 0} {$col < $m} {incr col} {
+    grid columnconfigure . $col -weight 1
+}

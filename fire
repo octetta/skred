@@ -94,12 +94,10 @@ proc toggleButton {num} {
   }
   # Deselect previous button
   if {$voice >= 0} {
-    # .content.buttonGrid.b$voice configure -relief raised
     .content.buttonGrid.b$voice configure -bg lightblue -relief raised
   }
   # Select new button
   set voice $num
-  # .content.buttonGrid.b$num configure -relief sunken
   .content.buttonGrid.b$num configure -bg orange -relief sunken
 }
 

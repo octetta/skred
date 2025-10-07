@@ -1,7 +1,10 @@
 #!/usr/bin/env tclsh
 package require Tk
 
-set window_title "4x4"
+set width 4
+set height 4
+
+set window_title "${width}x${height}"
 
 package require udp
 
@@ -43,7 +46,7 @@ grid rowconfigure . 3 -weight 1
 # Define button texts and parameters (configurable)
 set button_configs {}
 set k 0
-for {set i 0} {$i < 16} {incr i} {
+for {set i 0} {$i < [expr $width * $height]} {incr i} {
   if {$i < $argc} {
     set cmd [lindex $argv $i]
     lappend button_configs [dict create text $cmd param $cmd]
@@ -53,25 +56,29 @@ for {set i 0} {$i < 16} {incr i} {
   }
 }
 
-# Create and place buttons in a 4x4 grid
+# Create and place buttons in a w by h grid
 set index 0
-for {set row 0} {$row < 4} {incr row} {
-    for {set col 0} {$col < 4} {incr col} {
+for {set row 0} {$row < $height} {incr row} {
+    for {set col 0} {$col < $width} {incr col} {
         # Get the current button's configuration
         set config [lindex $button_configs $index]
         set btn_text [dict get $config text]
         set btn_param [dict get $config param]
 
+        # make frame for button and eventually an entry widget
+        # frame .frm_${row}_${col}
+
         # Create square button with configurable text and command
         button .btn_${row}_${col} -text $btn_text -command [list wire $btn_param] -width 10 -height 2
         grid .btn_${row}_${col} -row $row -column $col -sticky nsew -padx 5 -pady 5
+        # grid .frm_${row}_${col} -row $row -column $col -sticky nsew -padx 5 -pady 5
 
         incr index
     }
 }
 
 text .text_area -width 40 -height 3 -state normal -font {Courier 14}
-grid .text_area -row 4 -column 0 -columnspan 4 -sticky nsew -padx 10 -pady 10
+grid .text_area -row 4 -column 0 -columnspan $width -sticky nsew -padx 10 -pady 10
 .text_area insert end "#"
 .text_area configure -state disabled
 
