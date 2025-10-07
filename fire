@@ -59,73 +59,115 @@ if {[lsearch $argv "-daemon"] != -1} {
   
   package require Tk
   wm title . $window_title
-  wm geometry . ;# 400x350
+  wm geometry .
 
-  # Create frame for input fields
-  frame .inputs ;# -relief raised -bd 1
-  pack .inputs -side top -fill x -padx 4 -pady 4
+proc resizeWindow {} {
+    update idletasks
+    set reqWidth [winfo reqwidth .]
+    set reqHeight [winfo reqheight .]
+    wm geometry . "${reqWidth}x${reqHeight}"
+}
 
-  # Create labels and entry fields for A, B, C, and Format
-  label .inputs.labelA -text "min"
-  entry .inputs.entryA -textvariable min_val -width 10
-  font create italicFont -family TkDefaultFont -slant italic
-  entry .inputs.noteA -width 30 -font italicFont -background #FFFF99 -borderwidth 0 -highlightthickness 0
-  grid .inputs.labelA .inputs.entryA .inputs.noteA -sticky w -padx 5 -pady 2
-
-  label .inputs.labelB -text "max"
-  entry .inputs.entryB -textvariable max_val -width 10
-  grid .inputs.labelB .inputs.entryB -sticky w -padx 5 -pady 2
-
-  label .inputs.labelC -text "step"
-  entry .inputs.entryC -textvariable step_val -width 10
-  grid .inputs.labelC .inputs.entryC -sticky w -padx 5 -pady 2
-
-  label .inputs.labelFormat -text "wire"
-  entry .inputs.entryFormat -textvariable wire_string -width 20
-  checkbutton .inputs.entryCheck -variable wire_check -text {}
-  grid .inputs.labelFormat .inputs.entryFormat .inputs.entryCheck -sticky w -padx 5 -pady 2
-
-  # Update button
-  button .inputs.update -text "update" -command updateSlider
-  grid .inputs.update -columnspan 3 -pady 2 -sticky w
-
-  # Bind Enter key to update slider for each entry field
-  bind .inputs.entryA <Return> updateSlider
-  bind .inputs.entryB <Return> updateSlider
-  bind .inputs.entryC <Return> updateSlider
-  bind .inputs.entryFormat <Return> updateSlider
-
-  frame .buttonGrid
-  set voice -1
+set ::configVisible 1
+proc toggleConfig {} {
+    global configVisible
+    if {$configVisible} {
+        # Hide the frame
+        set ::configVisible 0
+        pack forget .config
+    } else {
+        # Show the frame
+        set ::configVisible 1
+        pack .config -fill both -expand 1 -padx 10 -pady 5 -before .content
+    }
+    resizeWindow
+}
 
 proc toggleButton {num} {
   global voice
   if {$voice == $num} {
-    .buttonGrid.b$num configure -relief raised
+    # .content.buttonGrid.b$num configure -relief raised
+    .content.buttonGrid.b$num configure -bg lightblue -relief raised
+
     set voice -1
     return
   }
   # Deselect previous button
   if {$voice >= 0} {
-    .buttonGrid.b$voice configure -relief raised
+    # .content.buttonGrid.b$voice configure -relief raised
+    .content.buttonGrid.b$voice configure -bg lightblue -relief raised
   }
   # Select new button
   set voice $num
-  .buttonGrid.b$num configure -relief sunken
+  # .content.buttonGrid.b$num configure -relief sunken
+  .content.buttonGrid.b$num configure -bg orange -relief sunken
 }
 
+  font create postitFont -family TkDefaultFont -slant italic
+
+  # Create frame for post-it note and config button
+  # #FFFF99 post-it yellow
+  # #37BC7D greenish
+  # #F54927 redish
+
+  # Create toggle button
+  frame .info -bg #FFFF99
+  pack .info -side left -side top -fill x -pady 0
+  entry .info.note -width 64 -font postitFont -background #FFFF99 -borderwidth 0 -highlightthickness 0
+  button .info.toggle -text " config " -command toggleConfig -padx 1 -pady 1 -relief flat -bd 0 -bg #37BC7D -activebackground #F54927
+  pack .info.toggle -side left
+  pack .info.note -side left -fill x;# -padx 5
+  pack .info
+
+  # Create frame for input fields
+  frame .config
+  pack .config -side top -fill x -padx 4 -pady 4
+
+  # Create labels and entry fields for A, B, C, and Format
+  label .config.labelA -text "min"
+  entry .config.entryA -textvariable min_val -width 10
+  grid .config.labelA .config.entryA -sticky w -padx 5 -pady 2
+
+  label .config.labelB -text "max"
+  entry .config.entryB -textvariable max_val -width 10
+  grid .config.labelB .config.entryB -sticky w -padx 5 -pady 2
+
+  label .config.labelC -text "step"
+  entry .config.entryC -textvariable step_val -width 10
+  grid .config.labelC .config.entryC -sticky w -padx 5 -pady 2
+
+  label .config.labelFormat -text "wire"
+  entry .config.entryFormat -textvariable wire_string -width 20
+  checkbutton .config.entryCheck -variable wire_check -text {}
+  grid .config.labelFormat .config.entryFormat .config.entryCheck -sticky w -padx 5 -pady 2
+
+  # Update button
+  button .config.update -text " update " -command updateSlider -padx 1 -pady 1 -relief flat -bd 0 -bg orange -activebackground red
+  grid .config.update -columnspan 3 -pady 2 -sticky w
+
+  # Bind Enter key to update slider for each entry field
+  bind .config.entryA <Return> updateSlider
+  bind .config.entryB <Return> updateSlider
+  bind .config.entryC <Return> updateSlider
+  bind .config.entryFormat <Return> updateSlider
+
+  frame .content
+  frame .content.buttonGrid
+  set voice -1
+
   for {set i 0} {$i < 32} {incr i} {
-    button .buttonGrid.b$i -text v$i -padx 0 -pady 0 -font {Arial 10} -bd 1 \
-      -command "toggleButton $i"
-    grid .buttonGrid.b$i -row [expr {$i / 16}] -column [expr {$i % 16}] \
+    button .content.buttonGrid.b$i -text " v$i " -padx 1 -pady 1 -font {Arial 10} -bd 0 \
+      -command "toggleButton $i" -bg lightblue
+    grid .content.buttonGrid.b$i -row [expr {$i / 16}] -column [expr {$i % 16}] \
       -sticky nsew
   }
 
-  pack .buttonGrid -side left -side top -fill x -pady 1
+  pack .content.buttonGrid -side left -side top -fill x -pady 1
+  pack .content -padx 4 -pady 4
 
   # Create frame for slider
-  frame .sliderFrame ;# -relief raised -bd 1
-  pack .sliderFrame -side top -fill both -expand true -padx 4 -pady 4
+  frame .sliderFrame -bd 0 ;# -relief raised -bd 1
+  pack .sliderFrame -side top -fill both -expand true -padx 4 -pady 1
 
   # Create the slider
   scale .slider -from $min_val -to $max_val -resolution $step_val \
@@ -187,8 +229,6 @@ proc updateSlider {} {
     
     # Restore the command after updating
     .slider configure -command {fire}
-    
-    # puts "Slider updated: Min=$min_val, Max=$max_val, Step=$step_val"
 }
 
 proc main {min_val max_val step_val current_val wire_string wire_check window_title} {

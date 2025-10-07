@@ -1,0 +1,15 @@
+Z0
+S100
+
+M80,.5
+
+v0 w108 f440 h82 a20  # bass
+v1 w105 f440 h58 a20     # snare
+
+y0               # select pattern 0
+{v0T ~.1 T} x0   # store to step 0
+{#} x1           # store to step 1
+
+y1               # select pattern 1
+{#} x0           # store to step 0
+{v1T ~.025 T} x1 # store to step 1

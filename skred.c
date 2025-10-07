@@ -593,10 +593,16 @@ void show_stats(void) {
 #define STEP_MAX (256)
 char seq_pattern[PATTERNS_MAX][SEQ_STEPS_MAX][STEP_MAX];
 
+enum {
+  SEQ_STOPPED = 0,
+  SEQ_RUNNING = 1,
+  SEQ_PAUSED = 2,
+};
+
 int pattern_pointer = 0;
 int seq_pointer[PATTERNS_MAX];
 int seq_counter[PATTERNS_MAX];
-int seq_paused[PATTERNS_MAX];
+int seq_state[PATTERNS_MAX];
 int seq_modulo[PATTERNS_MAX];
 
 void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
@@ -635,7 +641,7 @@ void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_co
       pattern_pointer, seq_pointer[pattern_pointer],
       seq_pattern[pattern_pointer][seq_pointer[pattern_pointer]]);
     for (int p = 0; p < PATTERNS_MAX; p++) {
-      if (seq_paused[p]) continue;
+      if (seq_state[p] != SEQ_RUNNING) continue;
       if (seq_modulo[p] > 1) {
         if ((seq_counter[p] % seq_modulo[p]) != 0) {
           seq_counter[p]++;
@@ -682,8 +688,14 @@ void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_
     float f = 0.0f;
     float whiteish = audio_rng_float(&synth_random);
     for (int n = 0; n < VOICE_MAX; n++) {
-      if (voice_finished[n]) continue;
-      if (voice_amp[n] == 0) continue;
+      if (voice_finished[n]) {
+        voice_sample[n] = 0.0f;
+        continue;
+      }  
+      if (voice_amp[n] == 0) {
+        voice_sample[n] = 0.0f;
+        continue;
+      }
       if (voice_wave_table_index[n] == WAVE_TABLE_NOISE_ALT) {
         // bypass lots of stuff if this voice uses random source...
         // reuse the one white noise source for each sample
@@ -1006,6 +1018,10 @@ char *voice_format(int v, char *out, int verbose) {
     n = sprintf(ptr, " finished:%d one_shot:%d",
       voice_finished[v],
       voice_one_shot[v]);
+    ptr += n;
+  }
+  if (verbose) {
+    n = sprintf(ptr, " sample:%g", voice_sample[v]);
     ptr += n;
   }
   if (verbose) {
@@ -1671,24 +1687,24 @@ int wire(char *line, wire_t *w, int output) {
             switch ((int)v.args[0]) {
               case 0: // stop
                 for (int p = 0; p < PATTERNS_MAX; p++) {
-                  seq_paused[p] = 1;
+                  seq_state[p] = SEQ_STOPPED;
                   seq_pointer[p] = 0;
                 }
                 break;
               case 1: // start
                 for (int p = 0; p < PATTERNS_MAX; p++) {
-                  seq_paused[p] = 0;
+                  seq_state[p] = SEQ_RUNNING;
                   seq_pointer[p] = 0;
                 }
                 break;
               case 2: // pause
                 for (int p = 0; p < PATTERNS_MAX; p++) {
-                  seq_paused[p] = 1;
+                  seq_state[p] = SEQ_PAUSED;
                 }
                 break;
               case 3: // resume
                 for (int p = 0; p < PATTERNS_MAX; p++) {
-                  seq_paused[p] = 0;
+                  seq_state[p] = SEQ_RUNNING;
                 }
                 break;
             }
@@ -1702,18 +1718,18 @@ int wire(char *line, wire_t *w, int output) {
             ptr += v.next;
             switch ((int)v.args[0]) {
               case 0: // stop
-                seq_paused[pattern_pointer] = 1;
+                seq_state[pattern_pointer] = SEQ_STOPPED;
                 seq_pointer[pattern_pointer] = 0;
                 break;
               case 1: // start
-                seq_pointer[pattern_pointer] = 0;
-                seq_paused[pattern_pointer] = 0;
+                seq_pointer[pattern_pointer] = SEQ_RUNNING;
+                seq_state[pattern_pointer] = 0;
                 break;
               case 2: // pause
-                seq_paused[pattern_pointer] = 1;
+                seq_state[pattern_pointer] = SEQ_PAUSED;
                 break;
               case 3: // resume
-                seq_paused[pattern_pointer] = 0;
+                seq_state[pattern_pointer] = SEQ_RUNNING;
                 break;
             }
           } else {
@@ -2206,7 +2222,7 @@ void wave_free(void) {
 
 void pattern_reset(int p) {
   seq_pointer[p] = 0;
-  seq_paused[p] = 1;
+  seq_state[p] = SEQ_STOPPED;
   seq_counter[p] = 0;
   seq_modulo[p] = 1;
   for (int s = 0; s < SEQ_STEPS_MAX; s++) {
@@ -2226,7 +2242,7 @@ void pattern_show(int pattern_pointer) {
     char *line = seq_pattern[pattern_pointer][s];
     if (strlen(line) == 0) break;
     if (first) {
-      int state = seq_paused[pattern_pointer];
+      int state = seq_state[pattern_pointer];
       printf("; y%d z%d %%%d # [%d]\n",
         pattern_pointer, state, seq_modulo[pattern_pointer], seq_pointer[pattern_pointer]);
       first = 0;
@@ -2345,7 +2361,7 @@ float midi2hz(float f) {
 }
 
 int freq_set(int voice, float f) {
-  if (f > 0 && f < (double)MAIN_SAMPLE_RATE) {
+  if (f >= 0 && f < (double)MAIN_SAMPLE_RATE) {
     voice_freq[voice] = f;
     osc_set_freq(voice, f);
     return 0;
