@@ -70,6 +70,132 @@ int console_voice = 0;
 
 int udp_port = UDP_PORT;
 
+enum {
+  FUNC_NULL,
+  FUNC_ERR,
+  FUNC_SYS,
+  FUNC_IMM,
+  //
+  FUNC_VOICE,
+  FUNC_FREQ,
+  FUNC_AMP,
+  FUNC_TRIGGER,
+  FUNC_VELOCITY,
+  FUNC_MUTE,
+  FUNC_AMP_MOD,
+  FUNC_CZ_MOD,
+  FUNC_FREQ_MOD,
+  FUNC_PAN_MOD,
+  FUNC_MIDI,
+  FUNC_WAVE,
+  FUNC_LOOP,
+  FUNC_DIR,
+  FUNC_INTER,
+  FUNC_PAN,
+  FUNC_ENVELOPE,
+  FUNC_QUANT,
+  FUNC_HOLD,
+  FUNC_RESET,
+  FUNC_FILTER_MODE,
+  FUNC_FILTER_FREQ,
+  FUNC_FILTER_RES,
+  FUNC_COPY,
+  FUNC_SMOOTHER,
+  FUNC_GLISSANDO,
+  // subfunctions
+  FUNC_HELP,
+  FUNC_QUIT,
+  FUNC_STATS0,
+  FUNC_STATS1,
+  FUNC_TRACE,
+  FUNC_DEBUG,
+  FUNC_SCOPE,
+  FUNC_LOAD,
+  FUNC_SAVE,
+  FUNC_WAVE_READ,
+  //
+  FUNC_WAVE_SHOW,
+  FUNC_DELAY,
+  FUNC_COMMENT,
+  FUNC_WHITESPACE,
+  FUNC_METRO,
+  FUNC_SEQ,
+  FUNC_MAIN_SEQ,
+  FUNC_STEP,
+  FUNC_PATTERN,
+  FUNC_WAVE_DEFAULT,
+  FUNC_CZ,
+  FUNC_VOLUME_SET,
+  //
+  FUNC_UNKNOWN,
+};
+
+char *display_func_func_str[FUNC_UNKNOWN+1] = {
+  [FUNC_NULL] = "-?-",
+  [FUNC_ERR] = "err",
+  [FUNC_SYS] = "sys",
+  [FUNC_IMM] = "imm",
+  [FUNC_VOICE] = "voice",
+  [FUNC_FREQ] = "freq",
+  [FUNC_AMP] = "amp",
+  [FUNC_TRIGGER] = "trigger",
+  [FUNC_VELOCITY] = "velocity",
+  [FUNC_MUTE] = "mute",
+  [FUNC_AMP_MOD] = "amp-mod",
+  [FUNC_CZ_MOD] = "cz-mod",
+  [FUNC_FREQ_MOD] = "freq-mod",
+  [FUNC_PAN_MOD] = "pan-mod",
+  [FUNC_MIDI] = "midi",
+  [FUNC_WAVE] = "wave",
+  [FUNC_LOOP] = "loop",
+  [FUNC_DIR] = "dir",
+  [FUNC_INTER] = "inter",
+  [FUNC_PAN] = "pan",
+  [FUNC_ENVELOPE] = "envelope",
+  [FUNC_QUANT] = "quant",
+  [FUNC_HOLD] = "hold",
+  [FUNC_RESET] = "reset",
+  [FUNC_FILTER_MODE] = "filter-mode",
+  [FUNC_FILTER_FREQ] = "filter-freq",
+  [FUNC_FILTER_RES] = "filter-q",
+  [FUNC_COPY] = "copy-voice",
+  [FUNC_WAVE_DEFAULT] = "wave-get-default",
+  [FUNC_UNKNOWN] = "unknown",
+  [FUNC_SMOOTHER] = "smoother",
+  [FUNC_GLISSANDO] = "glissando",
+  //
+  [FUNC_HELP] = "help",
+  [FUNC_SEQ] = "seq",
+  [FUNC_MAIN_SEQ] = "main-seq",
+  [FUNC_STEP] = "step",
+  [FUNC_PATTERN] = "pattern",
+  [FUNC_QUIT] = "quit",
+  [FUNC_STATS0] = "stats-0",
+  [FUNC_STATS1] = "stats-1",
+  [FUNC_TRACE] = "trace",
+  [FUNC_DEBUG] = "debug",
+  [FUNC_SCOPE] = "scope",
+  [FUNC_LOAD] = "load",
+  [FUNC_SAVE] = "save",
+  [FUNC_WAVE_SHOW] = "show-wave",
+  [FUNC_DELAY] = "delay",
+  [FUNC_COMMENT] = "comment",
+  [FUNC_WHITESPACE] = "white-space",
+  [FUNC_METRO] = "metro",
+  [FUNC_WAVE_READ] = "wave-read",
+  [FUNC_CZ] = "cz",
+  [FUNC_VOLUME_SET] = "volume",
+};
+
+char *func_func_str(int n) {
+  if (n >= 0 && n <= FUNC_UNKNOWN) {
+    if (display_func_func_str[n]) {
+      return display_func_func_str[n];
+    }
+  }
+  return "no-string";
+}
+
 // inspired by AMY :)
 enum {
   WAVE_TABLE_SINE,     // 0
@@ -567,6 +693,8 @@ typedef struct {
   int scratch_pointer;
   char queued[QUEUED_MAX];
   int queued_pointer;
+  int last_func;
+  int last_sub_func;
 } wire_t;
 
 int wire(char *line, wire_t *w, int output);
@@ -622,7 +750,7 @@ void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_co
   
 
   // run expired (ready) queued things...
-  static wire_t v = { .voice = 0, .state = 0};
+  static wire_t v = {.voice = 0, .state = 0, .last_func = FUNC_NULL};
   for (int q = 0; q < QUEUE_SIZE; q++) {
     if ((work_queue[q].state == Q_READY) && (work_queue[q].when < synth_sample_count)) {
       work_queue[q].state = Q_USING;
@@ -634,7 +762,7 @@ void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_co
 
   static float q;
 
-  static wire_t w = { .voice = 0, .state = 0};
+  static wire_t w = {.voice = 0, .state = 0, .last_func = FUNC_NULL};
   if (i == 0) {
     // next step of patterns TODO revisit the i==0 logic, seems flakey
     sprintf(new_scope->debug_text, "%d/%d %s",
@@ -1106,132 +1234,6 @@ void downsample_block_average(const float *source, int source_len, float *dest, 
   downsample_block_average_min_max(source, source_len, dest, dest_len, NULL, NULL);
 }
 
-enum {
-  FUNC_NULL,
-  FUNC_ERR,
-  FUNC_SYS,
-  FUNC_IMM,
-  //
-  FUNC_VOICE,
-  FUNC_FREQ,
-  FUNC_AMP,
-  FUNC_TRIGGER,
-  FUNC_VELOCITY,
-  FUNC_MUTE,
-  FUNC_AMP_MOD,
-  FUNC_CZ_MOD,
-  FUNC_FREQ_MOD,
-  FUNC_PAN_MOD,
-  FUNC_MIDI,
-  FUNC_WAVE,
-  FUNC_LOOP,
-  FUNC_DIR,
-  FUNC_INTER,
-  FUNC_PAN,
-  FUNC_ENVELOPE,
-  FUNC_QUANT,
-  FUNC_HOLD,
-  FUNC_RESET,
-  FUNC_FILTER_MODE,
-  FUNC_FILTER_FREQ,
-  FUNC_FILTER_RES,
-  FUNC_COPY,
-  FUNC_SMOOTHER,
-  FUNC_GLISSANDO,
-  // subfunctions
-  FUNC_HELP,
-  FUNC_QUIT,
-  FUNC_STATS0,
-  FUNC_STATS1,
-  FUNC_TRACE,
-  FUNC_DEBUG,
-  FUNC_SCOPE,
-  FUNC_LOAD,
-  FUNC_SAVE,
-  FUNC_WAVE_READ,
-  //
-  FUNC_WAVE_SHOW,
-  FUNC_DELAY,
-  FUNC_COMMENT,
-  FUNC_WHITESPACE,
-  FUNC_METRO,
-  FUNC_SEQ,
-  FUNC_MAIN_SEQ,
-  FUNC_STEP,
-  FUNC_PATTERN,
-  FUNC_WAVE_DEFAULT,
-  FUNC_CZ,
-  FUNC_VOLUME_SET,
-  //
-  FUNC_UNKNOWN,
-};
-
-char *display_func_func_str[FUNC_UNKNOWN+1] = {
-  [FUNC_NULL] = "-?-",
-  [FUNC_ERR] = "err",
-  [FUNC_SYS] = "sys",
-  [FUNC_IMM] = "imm",
-  [FUNC_VOICE] = "voice",
-  [FUNC_FREQ] = "freq",
-  [FUNC_AMP] = "amp",
-  [FUNC_TRIGGER] = "trigger",
-  [FUNC_VELOCITY] = "velocity",
-  [FUNC_MUTE] = "mute",
-  [FUNC_AMP_MOD] = "amp-mod",
-  [FUNC_CZ_MOD] = "cz-mod",
-  [FUNC_FREQ_MOD] = "freq-mod",
-  [FUNC_PAN_MOD] = "pan-mod",
-  [FUNC_MIDI] = "midi",
-  [FUNC_WAVE] = "wave",
-  [FUNC_LOOP] = "loop",
-  [FUNC_DIR] = "dir",
-  [FUNC_INTER] = "inter",
-  [FUNC_PAN] = "pan",
-  [FUNC_ENVELOPE] = "envelope",
-  [FUNC_QUANT] = "quant",
-  [FUNC_HOLD] = "hold",
-  [FUNC_RESET] = "reset",
-  [FUNC_FILTER_MODE] = "filter-mode",
-  [FUNC_FILTER_FREQ] = "filter-freq",
-  [FUNC_FILTER_RES] = "filter-q",
-  [FUNC_COPY] = "copy-voice",
-  [FUNC_WAVE_DEFAULT] = "wave-get-default",
-  [FUNC_UNKNOWN] = "unknown",
-  [FUNC_SMOOTHER] = "smoother",
-  [FUNC_GLISSANDO] = "glissando",
-  //
-  [FUNC_HELP] = "help",
-  [FUNC_SEQ] = "seq",
-  [FUNC_MAIN_SEQ] = "main-seq",
-  [FUNC_STEP] = "step",
-  [FUNC_PATTERN] = "pattern",
-  [FUNC_QUIT] = "quit",
-  [FUNC_STATS0] = "stats-0",
-  [FUNC_STATS1] = "stats-1",
-  [FUNC_TRACE] = "trace",
-  [FUNC_DEBUG] = "debug",
-  [FUNC_SCOPE] = "scope",
-  [FUNC_LOAD] = "load",
-  [FUNC_SAVE] = "save",
-  [FUNC_WAVE_SHOW] = "show-wave",
-  [FUNC_DELAY] = "delay",
-  [FUNC_COMMENT] = "comment",
-  [FUNC_WHITESPACE] = "white-space",
-  [FUNC_METRO] = "metro",
-  [FUNC_WAVE_READ] = "wave-read",
-  [FUNC_CZ] = "cz",
-  [FUNC_VOLUME_SET] = "volume",
-};
-
-char *func_func_str(int n) {
-  if (n >= 0 && n <= FUNC_UNKNOWN) {
-    if (display_func_func_str[n]) {
-      return display_func_func_str[n];
-    }
-  }
-  return "no-string";
-}
-
 void scope_wave_update(const float *table, int size) {
   new_scope->wave_len = 0;
   downsample_block_average_min_max(table, size, new_scope->wave_data, SCOPE_WAVE_WIDTH, new_scope->wave_min, new_scope->wave_max);
@@ -1308,7 +1310,7 @@ void ms_to_timespec(int64_t ms, int64_t *sec, int64_t *ns) {
   *ns = (ms % 1000) * 1000000L;
 }
 
-value_t parse_none(int func, int sub_func) {
+value_t parse_none(int func, int sub_func, wire_t *w) {
   value_t v;
   v.func = func;
   v.sub_func = sub_func;
@@ -1318,7 +1320,11 @@ value_t parse_none(int func, int sub_func) {
   return v;
 }
 
-value_t parse(const char *ptr, int func, int sub_func, int argc) {
+value_t parse(const char *ptr, int func, int sub_func, int argc, wire_t *w) {
+  if (w) {
+    w->last_func = func;
+    w->last_sub_func = sub_func;
+  }
   value_t v;
   v.func = func;
   v.sub_func = sub_func;
@@ -1355,7 +1361,7 @@ value_t parse(const char *ptr, int func, int sub_func, int argc) {
 }
 
 int wire(char *line, wire_t *w, int output) {
-  wire_t safe;
+  wire_t safe = {.voice = 0, .state = 0, .last_func = FUNC_NULL};
   if (w == NULL) w = &safe;
   size_t len = strlen(line);
   if (len == 0) return 0;
@@ -1436,7 +1442,7 @@ int wire(char *line, wire_t *w, int output) {
             case '\0': return 100;
             case 'q': return -1;
             case 't':
-              v = parse_none(FUNC_SYS, FUNC_TRACE);
+              v = parse_none(FUNC_SYS, FUNC_TRACE, w);
               c = *ptr;
               if (c == '0' || c == '1') {
                 trace = c - '0';
@@ -1446,11 +1452,11 @@ int wire(char *line, wire_t *w, int output) {
               }
               break;
             case 'S':
-              v = parse_none(FUNC_SYS, FUNC_STATS0);
+              v = parse_none(FUNC_SYS, FUNC_STATS0, w);
               if (output) show_stats();
               break;
             case 's':
-              v = parse_none(FUNC_SYS, FUNC_STATS1);
+              v = parse_none(FUNC_SYS, FUNC_STATS1, w);
               if (output) {
                 system_show();
                 show_threads();
@@ -1458,7 +1464,7 @@ int wire(char *line, wire_t *w, int output) {
               }
               break;
             case 'd':
-              v = parse_none(FUNC_SYS, FUNC_DEBUG);
+              v = parse_none(FUNC_SYS, FUNC_DEBUG, w);
               c = *ptr;
               if (c == '0' || c == '1') {
                 debug = c - '0';
@@ -1468,7 +1474,7 @@ int wire(char *line, wire_t *w, int output) {
               }
               break;
             case 'o':
-              v = parse_none(FUNC_SYS, FUNC_SCOPE);
+              v = parse_none(FUNC_SYS, FUNC_SCOPE, w);
               scope_enable = 1;
               // sub x for scope_cross = 1
               // sub q for scope_quit = 0
@@ -1477,7 +1483,7 @@ int wire(char *line, wire_t *w, int output) {
               break;
             case 'l':
               // :l# load exp#.patch
-              v = parse(ptr, FUNC_SYS, FUNC_LOAD, 1);
+              v = parse(ptr, FUNC_SYS, FUNC_LOAD, 1, w);
               {
                 int which;
                 if (v.argc == 1) {
@@ -1489,7 +1495,7 @@ int wire(char *line, wire_t *w, int output) {
               break;
             case 'w':
               // :w#,# load wave#.wav into wave slot #
-              v = parse(ptr, FUNC_SYS, FUNC_WAVE_READ, 2);
+              v = parse(ptr, FUNC_SYS, FUNC_WAVE_READ, 2, w);
               {
                 int which;
                 int where;
@@ -1509,7 +1515,7 @@ int wire(char *line, wire_t *w, int output) {
           }
           break;
         case '~':
-          v = parse(ptr, FUNC_DELAY, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_DELAY, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
             float t = v.args[0];
@@ -1541,14 +1547,14 @@ int wire(char *line, wire_t *w, int output) {
           }
           break;
         case 'c':
-          v = parse(ptr, FUNC_CZ, FUNC_NULL, 2);
+          v = parse(ptr, FUNC_CZ, FUNC_NULL, 2, w);
           if (v.argc == 2) {
             ptr += v.next;
             r = cz_set(voice, (int)v.args[0], v.args[1]);
           }
           break;
         case 'C':
-          v = parse(ptr, FUNC_CZ, FUNC_NULL, 2);
+          v = parse(ptr, FUNC_CZ, FUNC_NULL, 2, w);
           if (v.argc == 2) {
             ptr += v.next;
             r = cmod_set(voice, (int)v.args[0], v.args[1]);
@@ -1557,7 +1563,7 @@ int wire(char *line, wire_t *w, int output) {
         case '\\':
           verbose = 1;
         case '?':
-          v = parse_none(FUNC_HELP, FUNC_NULL);
+          v = parse_none(FUNC_HELP, FUNC_NULL, w);
           if (*ptr == '?') {
             voice_show_all(voice);
             ptr++;
@@ -1566,21 +1572,21 @@ int wire(char *line, wire_t *w, int output) {
           }
           break;
         case 'a':
-          v = parse(ptr, FUNC_AMP, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_AMP, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
           } else return ERR_PARSING;
           r = amp_set(voice, v.args[0]);
           break;
         case 'p':
-          v = parse(ptr, FUNC_PAN, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_PAN, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
           } else return ERR_PARSING;
           r = pan_set(voice, v.args[0]);
           break;
         case 'h':
-          v = parse(ptr, FUNC_HOLD, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_HOLD, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
             voice_sample_hold_max[voice] = (int)v.args[0];
@@ -1588,21 +1594,21 @@ int wire(char *line, wire_t *w, int output) {
           }
           break;
         case 'q':
-          v = parse(ptr, FUNC_QUANT, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_QUANT, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
           } else return ERR_PARSING;
           r = wave_quant(voice, (int)v.args[0]);
           break;
         case 'f':
-          v = parse(ptr, FUNC_FREQ, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_FREQ, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
           } else return ERR_PARSING;
           r = freq_set(voice, v.args[0]);
           break;
         case 'v':
-          v = parse(ptr, FUNC_VOICE, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_VOICE, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
           } else return ERR_PARSING;
@@ -1610,21 +1616,21 @@ int wire(char *line, wire_t *w, int output) {
           if (output) console_voice = voice;
           break;
         case 'V':
-          v = parse(ptr, FUNC_VOLUME_SET, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_VOLUME_SET, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
           } else return ERR_PARSING;
           r = volume_set((int)v.args[0]);
           break;
         case '>':
-          v = parse(ptr, FUNC_COPY, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_COPY, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
           } else return ERR_PARSING;
           r = voice_copy(voice, (int)v.args[0]);
           break;
         case 'w':
-          v = parse(ptr, FUNC_WAVE, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_WAVE, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
           } else return ERR_PARSING;
@@ -1632,15 +1638,21 @@ int wire(char *line, wire_t *w, int output) {
           sprintf(new_scope->wave_text, "w%d", (int)v.args[0]);
           break;
         case 'T':
-          v = parse_none(FUNC_TRIGGER, FUNC_NULL);
+          v = parse_none(FUNC_TRIGGER, FUNC_NULL, w);
           voice_trigger(voice);
           break;
-        case '/':
-          v = parse_none(FUNC_WAVE_DEFAULT, FUNC_NULL);
-          wave_default(voice);
+        case '/': // function-specific "set last thing to default" modifier
+          switch (w->last_func) {
+            case FUNC_WAVE:
+              v = parse_none(FUNC_WAVE_DEFAULT, FUNC_NULL, w);
+              wave_default(voice);
+              break;
+            default:
+              break;
+          }
           break;
         case 'B':
-          v = parse_none(FUNC_LOOP, FUNC_NULL);
+          v = parse_none(FUNC_LOOP, FUNC_NULL, w);
           c = *ptr;
           if (c == '0' || c == '1') {
             wave_loop(voice, c == '1');
@@ -1648,7 +1660,7 @@ int wire(char *line, wire_t *w, int output) {
           } else wave_loop(voice, -1);
           break;
         case 'W':
-          v = parse(ptr, FUNC_WAVE_SHOW, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_WAVE_SHOW, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
           } else return ERR_PARSING;
@@ -1656,7 +1668,7 @@ int wire(char *line, wire_t *w, int output) {
           sprintf(new_scope->wave_text, "w%d", (int)v.args[0]);
           break;
         case 'y':
-          v = parse(ptr, FUNC_PATTERN, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_PATTERN, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
             int p = (int)v.args[0];
@@ -1664,7 +1676,7 @@ int wire(char *line, wire_t *w, int output) {
           }
           break;
         case '%':
-          v = parse(ptr, FUNC_STEP, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_STEP, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
             int m = (int)v.args[0];
@@ -1672,7 +1684,7 @@ int wire(char *line, wire_t *w, int output) {
           }
           break;
         case 'x':
-          v = parse(ptr, FUNC_STEP, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_STEP, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
             int p = (int)v.args[0];
@@ -1681,7 +1693,7 @@ int wire(char *line, wire_t *w, int output) {
           }
           break;
         case 'Z':
-          v = parse(ptr, FUNC_MAIN_SEQ, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_MAIN_SEQ, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
             switch ((int)v.args[0]) {
@@ -1713,7 +1725,7 @@ int wire(char *line, wire_t *w, int output) {
           }
           break;
         case 'z':
-          v = parse(ptr, FUNC_SEQ, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_SEQ, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
             switch ((int)v.args[0]) {
@@ -1737,7 +1749,7 @@ int wire(char *line, wire_t *w, int output) {
           }
           break;
         case 'M':
-          v = parse(ptr, FUNC_METRO, FUNC_NULL, 2);
+          v = parse(ptr, FUNC_METRO, FUNC_NULL, 2, w);
           if (v.argc == 2) {
             ptr += v.next;
           } else return ERR_PARSING;
@@ -1745,7 +1757,7 @@ int wire(char *line, wire_t *w, int output) {
           if (scope_enable) sprintf(new_scope->status_text, "M%g,%g", tick_max, tick_inc);
           break;
         case 'm':
-          v = parse_none(FUNC_MUTE, FUNC_NULL);
+          v = parse_none(FUNC_MUTE, FUNC_NULL, w);
           c = *ptr;
           if (c == '0' || c == '1') {
             wave_mute(voice, c == '1');
@@ -1753,7 +1765,7 @@ int wire(char *line, wire_t *w, int output) {
           } else wave_mute(voice, -1);
           break;
         case 'b':
-          v = parse_none(FUNC_DIR, FUNC_NULL);
+          v = parse_none(FUNC_DIR, FUNC_NULL, w);
           c = *ptr;
           if (c == '0' || c == '1') {
             wave_dir(voice, c == '1');
@@ -1761,14 +1773,14 @@ int wire(char *line, wire_t *w, int output) {
           } else wave_dir(voice, -1);
           break;
         case 'n':
-          v = parse(ptr, FUNC_MIDI, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_MIDI, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
           } else return ERR_PARSING;
           r = freq_midi(voice, v.args[0]);
           break;
         case 'A':
-          v = parse(ptr, FUNC_AMP_MOD, FUNC_NULL, 2);
+          v = parse(ptr, FUNC_AMP_MOD, FUNC_NULL, 2, w);
           if (v.argc == 2) {
             ptr += v.next;
             r = amp_mod_set(voice, (int)v.args[0], v.args[1]);
@@ -1778,7 +1790,7 @@ int wire(char *line, wire_t *w, int output) {
           } else return ERR_PARSING;
           break;
         case 'J':
-          v = parse(ptr, FUNC_FILTER_MODE, FUNC_NULL, 2);
+          v = parse(ptr, FUNC_FILTER_MODE, FUNC_NULL, 2, w);
           if (v.argc == 1) {
             ptr += v.next;
             voice_filter_mode[voice] = (int)v.args[0];
@@ -1788,7 +1800,7 @@ int wire(char *line, wire_t *w, int output) {
           } else return ERR_PARSING;
           break;
         case 'K':
-          v = parse(ptr, FUNC_FILTER_FREQ, FUNC_NULL, 2);
+          v = parse(ptr, FUNC_FILTER_FREQ, FUNC_NULL, 2, w);
           if (v.argc == 1) {
             ptr += v.next;
             if (v.args[0] > 0) {
@@ -1798,7 +1810,7 @@ int wire(char *line, wire_t *w, int output) {
           } else return ERR_PARSING;
           break;
         case 'Q':
-          v = parse(ptr, FUNC_FILTER_RES, FUNC_NULL, 2);
+          v = parse(ptr, FUNC_FILTER_RES, FUNC_NULL, 2, w);
           if (v.argc == 1) {
             ptr += v.next;
             if (v.args[0] > 0) {
@@ -1808,21 +1820,21 @@ int wire(char *line, wire_t *w, int output) {
           } else return ERR_PARSING;
           break;
         case 'l':
-          v = parse(ptr, FUNC_VELOCITY, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_VELOCITY, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
           } else return ERR_PARSING;
           r = envelope_velocity(voice, v.args[0]);
           break;
         case 'E':
-          v = parse(ptr, FUNC_ENVELOPE, FUNC_NULL, 4);
+          v = parse(ptr, FUNC_ENVELOPE, FUNC_NULL, 4, w);
           if (v.argc == 4) {
             ptr += v.next;
           } else return ERR_PARSING;
           r = envelope_set(voice, v.args[0], v.args[1], v.args[2], v.args[3]);
           break;
         case 's':
-          v = parse(ptr, FUNC_SMOOTHER, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_SMOOTHER, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             if (v.args[0] <= 0.0f) {
               voice_smoother_enable[voice] = 0;
@@ -1834,7 +1846,7 @@ int wire(char *line, wire_t *w, int output) {
           } else return ERR_PARSING;
           break;
         case 'g':
-          v = parse(ptr, FUNC_GLISSANDO, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_GLISSANDO, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             if (v.args[0] <= 0.0f) {
               voice_glissando_enable[voice] = 0;
@@ -1846,14 +1858,14 @@ int wire(char *line, wire_t *w, int output) {
           } else return ERR_PARSING;
           break;
         case 'S':
-          v = parse(ptr, FUNC_RESET, FUNC_NULL, 1);
+          v = parse(ptr, FUNC_RESET, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
           } else return ERR_PARSING;
           r = wave_reset(voice, (int)v.args[0]);
           break;
         case 'F':
-          v = parse(ptr, FUNC_FREQ_MOD, FUNC_NULL, 2);
+          v = parse(ptr, FUNC_FREQ_MOD, FUNC_NULL, 2, w);
           if (v.argc == 2) {
             ptr += v.next;
             r = freq_mod_set(voice, (int)v.args[0], v.args[1]);
@@ -1863,7 +1875,7 @@ int wire(char *line, wire_t *w, int output) {
           } else return ERR_PARSING;
           break;
         case 'P':
-          v = parse(ptr, FUNC_PAN_MOD, FUNC_NULL, 2);
+          v = parse(ptr, FUNC_PAN_MOD, FUNC_NULL, 2, w);
           if (v.argc == 2) {
             ptr += v.next;
             r = pan_mod_set(voice, (int)v.args[0], v.args[1]);
@@ -1974,7 +1986,7 @@ int main(int argc, char *argv[]) {
   sprintf(new_scope->status_text, "n/a");
 
   int state = 0;
-  wire_t w = {.voice = 0, .state = 0};
+  wire_t w = {.voice = 0, .state = 0, .last_func = FUNC_NULL};
 
   while (main_running) {
     voice_format(current_voice, new_scope->voice_text, 0);
@@ -1985,7 +1997,6 @@ int main(int argc, char *argv[]) {
     }
     if (strlen(line) == 0) continue;
     linenoiseHistoryAdd(line);
-    //int n = wire(line, &current_voice, &vs, &state, 1);
     int n = wire(line, &w, 1);
     if (n < 0) break; // request to stop or error
     if (n > 0) {
@@ -2514,7 +2525,7 @@ int patch_load(int voice, int n, int output) {
   vs.ptr = 0;
   int state = 0;
   if (in) {
-    wire_t w = { .voice = 0, .state = 0 };
+    wire_t w = {.voice = 0, .state = 0, .last_func = FUNC_NULL};
     char line[1024];
     while (fgets(line, sizeof(line), in) != NULL) {
       size_t len = strlen(line);
