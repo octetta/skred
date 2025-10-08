@@ -122,6 +122,8 @@ enum {
   FUNC_SEQ,
   FUNC_MAIN_SEQ,
   FUNC_STEP,
+  FUNC_STEP_MUTE,
+  FUNC_STEP_UNMUTE,
   FUNC_PATTERN,
   FUNC_WAVE_DEFAULT,
   FUNC_CZ,
@@ -720,6 +722,7 @@ void show_stats(void) {
 #define SEQ_STEPS_MAX (256)
 #define STEP_MAX (256)
 char seq_pattern[PATTERNS_MAX][SEQ_STEPS_MAX][STEP_MAX];
+int seq_pattern_mute[PATTERNS_MAX][SEQ_STEPS_MAX];
 
 enum {
   SEQ_STOPPED = 0,
@@ -777,7 +780,7 @@ void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_co
         }
       }
       seq_counter[p]++;
-      wire(seq_pattern[p][seq_pointer[p]], &w, 0);
+      if (seq_pattern_mute[p][seq_pointer[p]] == 0) wire(seq_pattern[p][seq_pointer[p]], &w, 0);
       seq_pointer[p]++;
       switch (seq_pattern[p][seq_pointer[p]][0]) {
         case '\0':
@@ -1683,6 +1686,22 @@ int wire(char *line, wire_t *w, int output) {
             seq_modulo[pattern_pointer] = m;
           }
           break;
+        case '!':
+          v = parse(ptr, FUNC_STEP_UNMUTE, FUNC_NULL, 1, w);
+          if (v.argc == 1) {
+            ptr += v.next;
+            int step = (int)v.args[0];
+            seq_pattern_mute[pattern_pointer][step] = 0;
+          }
+          break;
+        case '.':
+          v = parse(ptr, FUNC_STEP_MUTE, FUNC_NULL, 1, w);
+          if (v.argc == 1) {
+            ptr += v.next;
+            int step = (int)v.args[0];
+            seq_pattern_mute[pattern_pointer][step] = 1;
+          }
+          break;
         case 'x':
           v = parse(ptr, FUNC_STEP, FUNC_NULL, 1, w);
           if (v.argc == 1) {
@@ -2238,6 +2257,7 @@ void pattern_reset(int p) {
   seq_modulo[p] = 1;
   for (int s = 0; s < SEQ_STEPS_MAX; s++) {
     seq_pattern[p][s][0] = '\0';
+    seq_pattern_mute[p][s] = 0;
   }
 }
 
@@ -2258,7 +2278,9 @@ void pattern_show(int pattern_pointer) {
         pattern_pointer, state, seq_modulo[pattern_pointer], seq_pointer[pattern_pointer]);
       first = 0;
     }
-    printf("; {%s} x%d\n", line, s);
+    printf("; {%s} x%d", line, s);
+    if (seq_pattern_mute[pattern_pointer][s]) printf(" .%d", pattern_pointer);
+    puts("");
   }
 }
 
