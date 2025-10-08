@@ -23,14 +23,17 @@ proc toggle {num} {
       set $state raised
       set color lightblue
       set message [set $upper]
+      puts "$num raised -> .${num}"
+      wire "\[p${::pattern} .$num\]"
     } {
       set $state sunken
       set color orange
       set message [set $lower]
+      puts "$num sunken -> {$message} x${num} !${num}"
+      wire "\[p${::pattern}v${::voice}\{$message\} x$num !$num\]"
     }
     # puts "Button $num was pressed -> [set $upper] / [set $lower] / [set $state]"
     .btn$num configure -bg $color -relief [set $state]
-    wire "\[p${::pattern}v${::voice}\{$message\} x$num\]"
 }
 
 # Get command-line arguments
