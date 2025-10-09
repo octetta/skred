@@ -16,23 +16,21 @@ set pattern 0
 
 # Procedure called when a button is pressed
 proc toggle {num} {
-    set upper "::upper_var$num"
-    set lower "::lower_var$num"
+    set which "::wire_text_var$num"
     set state "::state_var$num"
     if {[set $state] == "sunken"} {
       set $state raised
       set color lightblue
-      set message [set $upper]
       puts "$num raised -> .${num}"
       wire "\[p${::pattern} .$num\]"
     } {
       set $state sunken
       set color orange
-      set message [set $lower]
+      set message [set $which]
       puts "$num sunken -> {$message} x${num} !${num}"
       wire "\[p${::pattern}v${::voice}\{$message\} x$num !$num\]"
     }
-    # puts "Button $num was pressed -> [set $upper] / [set $lower] / [set $state]"
+    # puts "Button $num was pressed -> [set $which] / [set $state]"
     .btn$num configure -bg $color -relief [set $state]
 }
 
@@ -46,8 +44,7 @@ set n 4
 if {$argc > 0} { set m [lindex $argv 0] }
 if {$argc > 1} { set n [lindex $argv 1] }
 
-# Calculate expected number of text arguments (2 for each cell: upper and lower)
-set expected_args [expr {2 * $m * $n}]
+# Calculate expected number of text arguments (1 for each cell: wire_text)
 set provided_args [expr {$argc - 2}]
 
 # Create main window
@@ -58,41 +55,37 @@ set num 0
 for {set row 0} {$row < $n} {incr row} {
     for {set col 0} {$col < $m} {incr col} {
         # Calculate index for text arguments
-        set text_idx [expr {2 * ($row * $m + $col)}]
-        
-        # Get text for upper and lower fields, use empty strings if not enough arguments
-        if {$text_idx + 1 < $provided_args} {
-            set upper_text [lindex $argv [expr {$text_idx + 2}]]
-            set lower_text [lindex $argv [expr {$text_idx + 3}]]
+        set text_idx [expr {($row * $m + $col)}]
+
+        # Get text for upper and wire_text fields, use empty strings if not enough arguments
+        if {$text_idx < $provided_args} {
+            set wire_text_text [lindex $argv [expr {$text_idx + 2}]]
         } else {
-            set upper_text "#"
-            set lower_text "T"
+            set wire_text_text "T"
         }
+        puts "text_idx -> $text_idx :: $wire_text_text"
         
         # Create button
         button .btn$num -text $num -command [list toggle $num] -width 10 -height 2 -bd 0 -bg lightblue -activebackground #F54927
         
-        # Create entry widgets for upper and lower text
-        entry .upper$num -textvariable upper_var$num -bg #FFFF99 -bd 0
-        entry .lower$num -textvariable lower_var$num -bg #FFFF99 -bd 0
+        # Create entry widgets for upper and wire_text text
+        entry .wire_text$num -textvariable wire_text_var$num -bg #FFFF99 -bd 0
         
         # Set text variables
-        set upper_var$num $upper_text
-        set lower_var$num $lower_text
+        set wire_text_var$num $wire_text_text
         set state_var$num raised
         
         # Place widgets in grid
-        # Button at row 3*$row, upper entry at row 3*$row+1, lower entry at row 3*$row+2
+        # Button at row 3*$row, wire_text entry at row 3*$row+1
         grid .btn$num -row [expr {3 * $row}] -column $col       -padx 4 -pady 2 -sticky nsew
-        grid .upper$num -row [expr {3 * $row + 1}] -column $col -padx 4 -pady 2 -sticky nsew
-        grid .lower$num -row [expr {3 * $row + 2}] -column $col -padx 4 -pady 2 -sticky nsew
+        grid .wire_text$num -row [expr {3 * $row + 2}] -column $col -padx 4 -pady 2 -sticky nsew
         
         incr num
     }
 }
 for {set step 0} {$step < $num} {incr step} {
-  set upper "::upper_var$step"
-  set message [set $upper]
+  set which "::wire_text_var$step"
+  set message [set $which]
   wire "\[p${::pattern}v${::voice}\{$message\} x$step\]"
 }
 
