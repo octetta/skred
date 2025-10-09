@@ -50,6 +50,21 @@ set provided_args [expr {$argc - 2}]
 # Create main window
 wm title . "$m by $n grid"
 
+proc fancyHilite {reason num btn color_raised color_sunken} {
+  if {$reason == "Enter"} {
+    set state "::state_var$num"
+    if {[set $state] == "raised"} {
+      $btn configure -activebackground $color_raised
+    } {
+      $btn configure -activebackground $color_sunken
+    }
+  } {
+    # puts "leave"
+    # this is pointless, b/c the widget over-rides any color change
+    # $btn configure -activebackground lightgreen
+  }
+}
+
 # Create and place widgets in an m x n grid
 set num 0
 for {set row 0} {$row < $n} {incr row} {
@@ -66,7 +81,13 @@ for {set row 0} {$row < $n} {incr row} {
         puts "text_idx -> $text_idx :: $wire_text_text"
         
         # Create button
-        button .btn$num -text $num -command [list toggle $num] -width 10 -height 2 -bd 0 -bg lightblue -activebackground #F54927
+        button .btn$num -text $num -command [list toggle $num] \
+          -width 10 -height 2 -bd 0 \
+          -bg lightblue -activebackground blue
+          # -bg lightblue -activebackground #F54927
+        bind .btn$num <Enter> [list fancyHilite Enter $num %W #ecfaff #ffd27f]
+        # the leave binding isn't very useful i think
+        # bind .btn$num <Leave> [list fancyHilite Leave $num %W green purple]
         
         # Create entry widgets for upper and wire_text text
         entry .wire_text$num -textvariable wire_text_var$num -bg #FFFF99 -bd 0

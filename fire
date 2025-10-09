@@ -116,6 +116,7 @@ proc toggleButton {num} {
   pack .info.toggle -side left
   pack .info.note -side left -fill x;# -padx 5
   pack .info
+  bind .info.note <Return> {wm title . [.info.note get]}
 
   # Create frame for input fields
   frame .config
