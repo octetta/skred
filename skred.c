@@ -61,7 +61,7 @@ float tick_inc = 1.0f;
 int tick_frames = 0;
 static volatile uint64_t synth_sample_count = 0;
 
-void tick_max_set(float, float);
+void tempo_set(float, float);
 
 int debug = 0;
 int trace = 0;
@@ -745,13 +745,10 @@ void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_co
     first = 0;
   }
   
-  static uint64_t frame_total = 0;
-  static float i = 0;
   static int voice = 0;
   static voice_stack_t vs;
   static int state = 0;
   
-
   // run expired (ready) queued things...
   static wire_t v = {.voice = 0, .state = 0, .last_func = FUNC_NULL};
   for (int q = 0; q < QUEUE_SIZE; q++) {
@@ -766,6 +763,18 @@ void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_co
   static float q;
 
   static wire_t w = {.voice = 0, .state = 0, .last_func = FUNC_NULL};
+
+  static float i = 0;
+  static float clock_sec = 0.0f;
+  float frame_time_sec = (float)frame_count / (float)MAIN_SAMPLE_RATE;
+  clock_sec += frame_time_sec;
+  if (clock_sec > tick_max) {
+    i = 0; // trigger next step
+    clock_sec -= tick_max;
+  } else {
+    i = 1;
+  }
+
   if (i == 0) {
     // next step of patterns TODO revisit the i==0 logic, seems flakey
     sprintf(new_scope->debug_text, "%d/%d %s",
@@ -789,8 +798,10 @@ void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_co
       }
     }
   }
+#if 0
   i += tick_inc;
   if (i >= tick_max) i = 0;
+#endif
 }
 
 typedef struct {
@@ -1772,7 +1783,7 @@ int wire(char *line, wire_t *w, int output) {
           if (v.argc == 2) {
             ptr += v.next;
           } else return ERR_PARSING;
-          tick_max_set(v.args[0], v.args[1]);
+          tempo_set(v.args[0], v.args[1]);
           if (scope_enable) sprintf(new_scope->status_text, "M%g,%g", tick_max, tick_inc);
           break;
         case 'm':
@@ -1927,8 +1938,12 @@ int wire(char *line, wire_t *w, int output) {
 
 char my_data[] = "hello";
 
-void tick_max_set(float m, float n) {
-  tick_max = m;
+void tempo_set(float m, float n) {
+  float bps = m / 60.f;
+  float time_per_step = 1.0f / bps;
+  //printf("# BPM %g -> BPS %g -> time_per_step %g\n", m, bps, time_per_step);
+  tick_max = time_per_step;
+  //tick_max = m;
   tick_inc = n;
 }
 
