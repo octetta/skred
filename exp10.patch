@@ -7,10 +7,5 @@ v3 :w21,203 w203 a0 B1 F20,1
 
 v20 w0 m1 f1 a.1
 
-~1
-
-v0a8T
-v1a8T
-v2a8T
-v3a8T
+v0a8T ~1 v1a8T ~1 v2a8T ~1 v3a8T
 v10 w100/   W100 w100 a8 B1T

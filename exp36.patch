@@ -1,25 +1,21 @@
 Z0
 S100
 
-M80,.5
+M360,1
 
 v0 w108 f440 a20  # bass
 v1 w105 f440 a20  # snare
 
-y0               # select pattern 0
-{#} x0
-{#} x1
-{#} x2
-{#} x3
-{#} x4
-{#} x5
-{#} x6
-{#} x7
-{#} x8
-{#} x9
-{#} x10
-{#} x11
-{#} x12
-{#} x13
-{#} x14
-{#} x15
+:w3,200
+v2 w200 a20 # cymbal or hi-hat?
+
+y0 # select pattern 0
+%2 # every other beat
+
+{v0T} x0
+{v1T} x1
+
+y1
+{v2T} x0
+
+Z1

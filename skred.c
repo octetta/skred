@@ -1436,7 +1436,8 @@ int wire(char *line, wire_t *w, int output) {
       }
       r = 0;
       int verbose = 0;
-      switch (*ptr++) {
+      char token = *ptr++;
+      switch (token) {
         case '{':
           local_state = 1;
           w->scratch_pointer = 0;
@@ -1528,38 +1529,47 @@ int wire(char *line, wire_t *w, int output) {
             default: return 999;
           }
           break;
-        case '~':
-          v = parse(ptr, FUNC_DELAY, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            float t = v.args[0];
-            if (t == 0) {
-              // queue any previous items
-              if (w->queued_pointer) {
-                queue_item(queue_now, w->queued, voice);
-                w->queued_pointer = 0;
-              }
-              // switch back to "real-time"
-              queue_float_acc = 0.0f; // not sure this is what I want... revisit
-              queue_now = 0;
-            } else if (t > 0) {
-              queue_float_acc += t;
-              uint64_t queue_new = (uint64_t)(queue_float_acc * (float)MAIN_SAMPLE_RATE);
-              queue_new += synth_sample_count;
-              if (queue_new != queue_now) {
+        case '+': case '~':
+          // delay by absolute time versus delay by fraction of BPS
+          {
+            if (token == '+') {
+            }
+            int func = FUNC_DELAY;
+            v = parse(ptr, func, FUNC_NULL, 1, w);
+            if (v.argc == 1) {
+              ptr += v.next;
+              float t = v.args[0];
+              if (t == 0) {
                 // queue any previous items
                 if (w->queued_pointer) {
                   queue_item(queue_now, w->queued, voice);
                   w->queued_pointer = 0;
                 }
-                // start new queue-ing
-                queue_now = queue_new;
+                // switch back to "real-time"
+                queue_float_acc = 0.0f; // not sure this is what I want... revisit
+                queue_now = 0;
+              } else if (t > 0) {
+                if (token == '+') {
+                  // use t as a fraction multiplied by BPS time
+                  t *= tick_max;
+                }
+                queue_float_acc += t;
+                uint64_t queue_new = (uint64_t)(queue_float_acc * (float)MAIN_SAMPLE_RATE);
+                queue_new += synth_sample_count;
+                if (queue_new != queue_now) {
+                  // queue any previous items
+                  if (w->queued_pointer) {
+                    queue_item(queue_now, w->queued, voice);
+                    w->queued_pointer = 0;
+                  }
+                  // start new queue-ing
+                  queue_now = queue_new;
+                }
+                // mark synth sample count (now) + argument converted from seconds -> samples
+                // and start queueing...
               }
-              // mark synth sample count (now) + argument converted from seconds -> samples
-              // and start queueing...
             }
-          }
-          break;
+          } break;
         case 'c':
           v = parse(ptr, FUNC_CZ, FUNC_NULL, 2, w);
           if (v.argc == 2) {
@@ -1949,6 +1959,7 @@ void tempo_set(float m, float n) {
 
 int main(int argc, char *argv[]) {
   int load_patch_number = -1;
+  char execute_from_start[1024] = "";
   if (argc > 1) {
     for (int i=1; i<argc; i++) {
       if (argv[i][0] == '-') {
@@ -1959,6 +1970,10 @@ int main(int argc, char *argv[]) {
           case 'l': load_patch_number = (int)strtol(&argv[i][2], NULL, 0); break;
           case '1': requested_synth_frames_per_callback = (int)strtol(&argv[i][2], NULL, 0); break;
           case '2': requested_seq_frames_per_callback = (int)strtol(&argv[i][2], NULL, 0); break;
+          case 'e': {
+            printf("# %s\n", argv[i]);
+            strcpy(execute_from_start, &argv[i][2]);
+          } break;
           default:
             printf("# unknown switch '%s'\n", argv[i]);
             exit(1);
@@ -2021,6 +2036,11 @@ int main(int argc, char *argv[]) {
 
   int state = 0;
   wire_t w = {.voice = 0, .state = 0, .last_func = FUNC_NULL};
+
+  if (execute_from_start[0] != '\0') {
+    int n = wire(execute_from_start, &w, 1);
+    if (n < 0) main_running = 0;
+  }
 
   while (main_running) {
     voice_format(current_voice, new_scope->voice_text, 0);
