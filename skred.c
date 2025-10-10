@@ -697,7 +697,15 @@ typedef struct {
   int queued_pointer;
   int last_func;
   int last_sub_func;
+  int pattern;
 } wire_t;
+
+void wire_show(wire_t *w) {
+  if (w == NULL) return;
+  printf("# voice %d\n", w->voice);
+  printf("# state %d\n", w->state);
+  printf("# pattern %d\n", w->pattern);
+}
 
 int wire(char *line, wire_t *w, int output);
 
@@ -730,7 +738,7 @@ enum {
   SEQ_PAUSED = 2,
 };
 
-int pattern_pointer = 0;
+int scope_pattern_pointer = 0;
 int seq_pointer[PATTERNS_MAX];
 int seq_counter[PATTERNS_MAX];
 int seq_state[PATTERNS_MAX];
@@ -749,7 +757,7 @@ void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_co
   static int state = 0;
   
   // run expired (ready) queued things...
-  static wire_t v = {.voice = 0, .state = 0, .last_func = FUNC_NULL};
+  static wire_t v = {.voice = 0, .state = 0, .last_func = FUNC_NULL, .pattern = 0, };
   for (int q = 0; q < QUEUE_SIZE; q++) {
     if ((work_queue[q].state == Q_READY) && (work_queue[q].when < synth_sample_count)) {
       work_queue[q].state = Q_USING;
@@ -761,7 +769,7 @@ void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_co
 
   static float q;
 
-  static wire_t w = {.voice = 0, .state = 0, .last_func = FUNC_NULL};
+  static wire_t w = {.voice = 0, .state = 0, .last_func = FUNC_NULL, .pattern = 0, };
 
   static float i = 0;
   static float clock_sec = 0.0f;
@@ -775,10 +783,9 @@ void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_co
   }
 
   if (i == 0) {
-    // next step of patterns TODO revisit the i==0 logic, seems flakey
-    sprintf(new_scope->debug_text, "%d/%d %s",
-      pattern_pointer, seq_pointer[pattern_pointer],
-      seq_pattern[pattern_pointer][seq_pointer[pattern_pointer]]);
+    sprintf(new_scope->debug_text, "%d:%d %s",
+      scope_pattern_pointer, seq_pointer[scope_pattern_pointer],
+      seq_pattern[scope_pattern_pointer][seq_pointer[scope_pattern_pointer]]);
     for (int p = 0; p < PATTERNS_MAX; p++) {
       if (seq_state[p] != SEQ_RUNNING) continue;
       if (seq_modulo[p] > 1) {
@@ -1370,7 +1377,7 @@ value_t parse(const char *ptr, int func, int sub_func, int argc, wire_t *w) {
 }
 
 int wire(char *line, wire_t *w, int output) {
-  wire_t safe = {.voice = 0, .state = 0, .last_func = FUNC_NULL};
+  wire_t safe = {.voice = 0, .state = 0, .last_func = FUNC_NULL, .pattern = 0, };
   if (w == NULL) w = &safe;
   size_t len = strlen(line);
   if (len == 0) return 0;
@@ -1464,6 +1471,7 @@ int wire(char *line, wire_t *w, int output) {
             case 'S':
               v = parse_none(FUNC_SYS, FUNC_STATS0, w);
               if (output) show_stats();
+              if (output) wire_show(w);
               break;
             case 's':
               v = parse_none(FUNC_SYS, FUNC_STATS1, w);
@@ -1691,7 +1699,8 @@ int wire(char *line, wire_t *w, int output) {
           if (v.argc == 1) {
             ptr += v.next;
             int p = (int)v.args[0];
-            pattern_pointer = p;
+            scope_pattern_pointer = p;
+            w->pattern = p;
           }
           break;
         case '%':
@@ -1699,7 +1708,7 @@ int wire(char *line, wire_t *w, int output) {
           if (v.argc == 1) {
             ptr += v.next;
             int m = (int)v.args[0];
-            seq_modulo[pattern_pointer] = m;
+            seq_modulo[w->pattern] = m;
           }
           break;
         case '!':
@@ -1707,7 +1716,7 @@ int wire(char *line, wire_t *w, int output) {
           if (v.argc == 1) {
             ptr += v.next;
             int step = (int)v.args[0];
-            seq_pattern_mute[pattern_pointer][step] = 0;
+            seq_pattern_mute[w->pattern][step] = 0;
           }
           break;
         case '.':
@@ -1715,7 +1724,7 @@ int wire(char *line, wire_t *w, int output) {
           if (v.argc == 1) {
             ptr += v.next;
             int step = (int)v.args[0];
-            seq_pattern_mute[pattern_pointer][step] = 1;
+            seq_pattern_mute[w->pattern][step] = 1;
           }
           break;
         case 'x':
@@ -1723,8 +1732,8 @@ int wire(char *line, wire_t *w, int output) {
           if (v.argc == 1) {
             ptr += v.next;
             int p = (int)v.args[0];
-            if (strlen(w->scratch) == 0) seq_pattern[pattern_pointer][p][0] = '\0';
-            strcpy(seq_pattern[pattern_pointer][p], w->scratch);
+            if (strlen(w->scratch) == 0) seq_pattern[w->pattern][p][0] = '\0';
+            strcpy(seq_pattern[w->pattern][p], w->scratch);
           }
           break;
         case 'Z':
@@ -1765,22 +1774,22 @@ int wire(char *line, wire_t *w, int output) {
             ptr += v.next;
             switch ((int)v.args[0]) {
               case 0: // stop
-                seq_state[pattern_pointer] = SEQ_STOPPED;
-                seq_pointer[pattern_pointer] = 0;
+                seq_state[w->pattern] = SEQ_STOPPED;
+                seq_pointer[w->pattern] = 0;
                 break;
               case 1: // start
-                seq_pointer[pattern_pointer] = SEQ_RUNNING;
-                seq_state[pattern_pointer] = 0;
+                seq_state[w->pattern] = SEQ_RUNNING;
+                seq_pointer[w->pattern] = 0;
                 break;
               case 2: // pause
-                seq_state[pattern_pointer] = SEQ_PAUSED;
+                seq_state[w->pattern] = SEQ_PAUSED;
                 break;
               case 3: // resume
-                seq_state[pattern_pointer] = SEQ_RUNNING;
+                seq_state[w->pattern] = SEQ_RUNNING;
                 break;
             }
           } else {
-            if (output) pattern_show(pattern_pointer);
+            if (output) pattern_show(w->pattern);
           }
           break;
         case 'M':
@@ -2029,7 +2038,7 @@ int main(int argc, char *argv[]) {
   sprintf(new_scope->status_text, "n/a");
 
   int state = 0;
-  wire_t w = {.voice = 0, .state = 0, .last_func = FUNC_NULL};
+  wire_t w = {.voice = 0, .state = 0, .last_func = FUNC_NULL, .pattern = 0, };
 
   if (execute_from_start[0] != '\0') {
     int n = wire(execute_from_start, &w, 1);
@@ -2390,7 +2399,7 @@ void *udp_main(void *arg) {
   fd_set readfds;
   struct timeval timeout;
   int state = 0;
-  wire_t w = { .voice = 0, .state = 0 };
+  wire_t w = { .voice = 0, .state = 0, .pattern = 0, .pattern = 0, };
   while (udp_running) {
     FD_ZERO(&readfds);
     FD_SET(sock, &readfds);
@@ -2577,7 +2586,7 @@ int patch_load(int voice, int n, int output) {
   vs.ptr = 0;
   int state = 0;
   if (in) {
-    wire_t w = {.voice = 0, .state = 0, .last_func = FUNC_NULL};
+    wire_t w = {.voice = 0, .state = 0, .last_func = FUNC_NULL, .pattern = 0, };
     char line[1024];
     while (fgets(line, sizeof(line), in) != NULL) {
       size_t len = strlen(line);
