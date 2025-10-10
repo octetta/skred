@@ -57,11 +57,11 @@ int synth_frames_per_callback = 0;
 int seq_frames_per_callback = 0;
 
 float tick_max = 10.0f;
-float tick_inc = 1.0f;
+float tick_user = 0.0f;
 int tick_frames = 0;
 static volatile uint64_t synth_sample_count = 0;
 
-void tempo_set(float, float);
+void tempo_set(float);
 
 int debug = 0;
 int trace = 0;
@@ -737,7 +737,6 @@ int seq_state[PATTERNS_MAX];
 int seq_modulo[PATTERNS_MAX];
 
 void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
-  // global floats : tick_max / tick_inc (M30,1 in wire would do tick_max = 30.0f tick_inc = 1.0f
   static int first = 1;
   if (first) {
     pthread_setname_np(pthread_self(), "seq");
@@ -798,10 +797,6 @@ void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_co
       }
     }
   }
-#if 0
-  i += tick_inc;
-  if (i >= tick_max) i = 0;
-#endif
 }
 
 typedef struct {
@@ -1789,12 +1784,12 @@ int wire(char *line, wire_t *w, int output) {
           }
           break;
         case 'M':
-          v = parse(ptr, FUNC_METRO, FUNC_NULL, 2, w);
-          if (v.argc == 2) {
+          v = parse(ptr, FUNC_METRO, FUNC_NULL, 1, w);
+          if (v.argc == 1) {
             ptr += v.next;
           } else return ERR_PARSING;
-          tempo_set(v.args[0], v.args[1]);
-          if (scope_enable) sprintf(new_scope->status_text, "M%g,%g", tick_max, tick_inc);
+          tempo_set(v.args[0]);
+          if (scope_enable) sprintf(new_scope->status_text, "M%g", tick_user);
           break;
         case 'm':
           v = parse_none(FUNC_MUTE, FUNC_NULL, w);
@@ -1948,13 +1943,12 @@ int wire(char *line, wire_t *w, int output) {
 
 char my_data[] = "hello";
 
-void tempo_set(float m, float n) {
+void tempo_set(float m) {
+  tick_user = m;
   float bps = m / 60.f;
   float time_per_step = 1.0f / bps;
   //printf("# BPM %g -> BPS %g -> time_per_step %g\n", m, bps, time_per_step);
   tick_max = time_per_step;
-  //tick_max = m;
-  tick_inc = n;
 }
 
 int main(int argc, char *argv[]) {
@@ -2309,6 +2303,7 @@ void pattern_show(int pattern_pointer) {
     if (strlen(line) == 0) break;
     if (first) {
       int state = seq_state[pattern_pointer];
+      printf("; M%g\n", tick_user);
       printf("; y%d z%d %%%d # [%d]\n",
         pattern_pointer, state, seq_modulo[pattern_pointer], seq_pointer[pattern_pointer]);
       first = 0;

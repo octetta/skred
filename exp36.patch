@@ -1,7 +1,7 @@
 Z0
 S100
 
-M360,1
+M360
 
 v0 w108 f440 a20  # bass
 v1 w105 f440 a20  # snare
