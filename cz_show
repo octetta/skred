@@ -1,0 +1,364 @@
+#!/usr/bin/env wish
+
+package require Tk
+
+set tableSize 1024
+
+# Initialize distortion amounts
+array set amounts {
+    resonance1 0.5
+    resonance2 0.5
+    resonance3 0.5
+    sawNeg 0.5
+    sawPos 0.5
+    trapezoid 0.5
+    square 0.5
+}
+
+# Distortion function implementations
+proc czResonance1 {phase amt tableSize} {
+    set halfTable [expr {$tableSize * 0.5}]
+    
+    if {$amt <= 0.5} {
+        # Amount 0.0-0.5: Compress first half
+        set squeeze [expr {$amt * 2.0}]  ; # 0.0 to 1.0
+        set breakpoint [expr {(0.5 - $squeeze * 0.45) * $tableSize}]
+        
+        if {$phase < $breakpoint} {
+            return [expr {($phase / $breakpoint) * $halfTable}]
+        } elseif {$phase < $halfTable} {
+            return [expr {$halfTable + (($phase - $breakpoint) / ($halfTable - $breakpoint)) * $halfTable}]
+        } else {
+            return $phase
+        }
+    } else {
+        # Amount 0.5-1.0: Compress second half
+        set squeeze [expr {($amt - 0.5) * 2.0}]  ; # 0.0 to 1.0
+        set breakpoint [expr {($halfTable + (0.5 - $squeeze * 0.45) * $tableSize)}]
+        
+        if {$phase < $halfTable} {
+            return $phase
+        } elseif {$phase < $breakpoint} {
+            return [expr {$halfTable + (($phase - $halfTable) / ($breakpoint - $halfTable)) * $halfTable}]
+        } else {
+            return [expr {$tableSize + (($phase - $breakpoint) / ($tableSize - $breakpoint)) * $halfTable}]
+        }
+    }
+}
+
+proc czResonance2 {phase amt tableSize} {
+    set halfTable [expr {$tableSize * 0.5}]
+    
+    if {$amt <= 0.5} {
+        # Amount 0.0-0.5: Compress first half (more extreme)
+        set squeeze [expr {$amt * 2.0}]  ; # 0.0 to 1.0
+        set breakpoint [expr {(0.3 - $squeeze * 0.25) * $tableSize}]
+        
+        if {$phase < $breakpoint} {
+            return [expr {($phase / $breakpoint) * $halfTable}]
+        } elseif {$phase < $halfTable} {
+            return [expr {$halfTable + (($phase - $breakpoint) / ($halfTable - $breakpoint)) * $halfTable}]
+        } else {
+            return $phase
+        }
+    } else {
+        # Amount 0.5-1.0: Compress second half (more extreme)
+        set squeeze [expr {($amt - 0.5) * 2.0}]  ; # 0.0 to 1.0
+        set breakpoint [expr {($halfTable + (0.3 - $squeeze * 0.25) * $tableSize)}]
+        
+        if {$phase < $halfTable} {
+            return $phase
+        } elseif {$phase < $breakpoint} {
+            return [expr {$halfTable + (($phase - $halfTable) / ($breakpoint - $halfTable)) * $halfTable}]
+        } else {
+            return [expr {$tableSize + (($phase - $breakpoint) / ($tableSize - $breakpoint)) * $halfTable}]
+        }
+    }
+}
+
+proc czResonance3 {phase amt tableSize} {
+    set halfTable [expr {$tableSize * 0.5}]
+    set quarterTable [expr {$tableSize * 0.25}]
+    set halfCycle [expr {fmod($phase * 2.0, $tableSize)}]
+    set breakpoint [expr {(0.3 - ($amt * 0.2)) * $tableSize}]
+    
+    if {$halfCycle < $breakpoint} {
+        set result [expr {($phase * 2.0 / $breakpoint) * $quarterTable}]
+    } else {
+        set result [expr {$quarterTable + (($halfCycle - $breakpoint) / ($tableSize - $breakpoint)) * $quarterTable}]
+    }
+    if {$phase >= $halfTable} {
+        set result [expr {$result + $halfTable}]
+    }
+    return $result
+}
+
+proc czSawNegative {phase amt tableSize} {
+    set curve [expr {1.0 + ($amt * 3.0)}]
+    set norm [expr {$phase / double($tableSize)}]
+    return [expr {(1.0 - pow(1.0 - $norm, $curve)) * $tableSize}]
+}
+
+proc czSawPositive {phase amt tableSize} {
+    set curve [expr {1.0 + ($amt * 3.0)}]
+    set norm [expr {$phase / double($tableSize)}]
+    return [expr {pow($norm, $curve) * $tableSize}]
+}
+
+proc czTrapezoid {phase amt tableSize} {
+    set slope [expr {0.25 * (1.0 - $amt)}]
+    set slopeSamples [expr {$slope * $tableSize}]
+    set halfTable [expr {$tableSize * 0.5}]
+    
+    if {$phase < $slopeSamples} {
+        return [expr {($phase / $slopeSamples) * $halfTable}]
+    } elseif {$phase < $halfTable - $slopeSamples} {
+        return $halfTable
+    } elseif {$phase < $halfTable + $slopeSamples} {
+        return [expr {$halfTable + (($phase - ($halfTable - $slopeSamples)) / (2.0 * $slopeSamples)) * $halfTable}]
+    } elseif {$phase < $tableSize - $slopeSamples} {
+        return $tableSize
+    } else {
+        return [expr {(($phase - ($tableSize - $slopeSamples)) / $slopeSamples) * $halfTable}]
+    }
+}
+
+proc czSquare {phase amt tableSize} {
+    set pw [expr {0.5 - ($amt * 0.4)}]
+    set pwSamples [expr {$pw * $tableSize}]
+    set halfTable [expr {$tableSize * 0.5}]
+    
+    if {$phase < $pwSamples} {
+        return [expr {($phase / $pwSamples) * $halfTable}]
+    } else {
+        return [expr {$halfTable + (($phase - $pwSamples) / ($tableSize - $pwSamples)) * $halfTable}]
+    }
+}
+
+# Draw a graph on a canvas
+proc drawGraph {c distType color} {
+    global amounts tableSize
+    
+    $c delete all
+    
+    set w [winfo width $c]
+    set h [winfo height $c]
+    set margin 40
+    set graphW [expr {$w - 2 * $margin}]
+    set graphH [expr {$h - 2 * $margin}]
+    
+    # Split canvas into two halves
+    set halfH [expr {$h / 2}]
+    set topGraphH [expr {($halfH - $margin - 20) / 2}]
+    set bottomGraphH [expr {($halfH - $margin - 20)}]
+    
+    # === TOP: Phase mapping graph ===
+    set topY [expr {$margin + $topGraphH}]
+    
+    # Draw axes
+    $c create line $margin $topY [expr {$w - $margin}] $topY -fill gray60 -width 1
+    $c create line $margin [expr {$margin + 5}] $margin $topY -fill gray60 -width 1
+    
+    # Draw grid
+    for {set i 0} {$i <= 4} {incr i} {
+        set x [expr {$margin + $i * $graphW / 4}]
+        set y [expr {$topY - $i * $topGraphH / 4}]
+        $c create line $x $topY $x [expr {$margin + 5}] -fill gray30 -dash {2 2}
+        $c create line $margin $y [expr {$w - $margin}] $y -fill gray30 -dash {2 2}
+    }
+    
+    # Draw linear reference line
+    set x1 $margin
+    set y1 $topY
+    set x2 [expr {$w - $margin}]
+    set y2 [expr {$margin + 5}]
+    $c create line $x1 $y1 $x2 $y2 -fill gray50 -dash {5 5} -width 1
+    
+    # Draw distorted curve
+    set steps 200
+    set points {}
+    
+    for {set i 0} {$i <= $steps} {incr i} {
+        set phase [expr {($i / double($steps)) * ($tableSize - 1)}]
+        
+        # Call the appropriate distortion function
+        switch $distType {
+            resonance1 { set output [czResonance1 $phase $amounts($distType) $tableSize] }
+            resonance2 { set output [czResonance2 $phase $amounts($distType) $tableSize] }
+            resonance3 { set output [czResonance3 $phase $amounts($distType) $tableSize] }
+            sawNeg { set output [czSawNegative $phase $amounts($distType) $tableSize] }
+            sawPos { set output [czSawPositive $phase $amounts($distType) $tableSize] }
+            trapezoid { set output [czTrapezoid $phase $amounts($distType) $tableSize] }
+            square { set output [czSquare $phase $amounts($distType) $tableSize] }
+        }
+        
+        set x [expr {$margin + ($phase / double($tableSize)) * $graphW}]
+        set y [expr {$topY - ($output / double($tableSize)) * $topGraphH}]
+        
+        lappend points $x $y
+    }
+    
+    $c create line $points -fill $color -width 2 -smooth true
+    
+    # Labels for top graph
+    $c create text [expr {$w / 2}] [expr {$topY + 15}] -text "Phase Mapping" -fill white -font {Arial 10 bold}
+    
+    # === BOTTOM: Waveform comparison ===
+    set bottomY [expr {$halfH + $margin}]
+    set bottomMidY [expr {$bottomY + $bottomGraphH / 2}]
+    
+    # Draw axes
+    $c create line $margin $bottomMidY [expr {$w - $margin}] $bottomMidY -fill gray60 -width 1
+    
+    # Draw grid
+    for {set i 0} {$i <= 4} {incr i} {
+        set x [expr {$margin + $i * $graphW / 4}]
+        $c create line $x $bottomY $x [expr {$bottomY + $bottomGraphH}] -fill gray30 -dash {2 2}
+    }
+    
+    # Draw pure sine wave (reference)
+    set sinePoints {}
+    for {set i 0} {$i <= $steps} {incr i} {
+        set phase [expr {($i / double($steps)) * ($tableSize - 1)}]
+        set sineValue [expr {sin(($phase / double($tableSize)) * 2 * 3.14159265359)}]
+        
+        set x [expr {$margin + ($i / double($steps)) * $graphW}]
+        set y [expr {$bottomMidY - $sineValue * ($bottomGraphH / 2.5)}]
+        
+        lappend sinePoints $x $y
+    }
+    $c create line $sinePoints -fill gray50 -width 1 -dash {5 5}
+    
+    # Draw distorted sine wave
+    set distortedPoints {}
+    for {set i 0} {$i <= $steps} {incr i} {
+        set phase [expr {($i / double($steps)) * ($tableSize - 1)}]
+        
+        # Apply distortion
+        switch $distType {
+            resonance1 { set distortedPhase [czResonance1 $phase $amounts($distType) $tableSize] }
+            resonance2 { set distortedPhase [czResonance2 $phase $amounts($distType) $tableSize] }
+            resonance3 { set distortedPhase [czResonance3 $phase $amounts($distType) $tableSize] }
+            sawNeg { set distortedPhase [czSawNegative $phase $amounts($distType) $tableSize] }
+            sawPos { set distortedPhase [czSawPositive $phase $amounts($distType) $tableSize] }
+            trapezoid { set distortedPhase [czTrapezoid $phase $amounts($distType) $tableSize] }
+            square { set distortedPhase [czSquare $phase $amounts($distType) $tableSize] }
+        }
+        
+        # Read from sine table with distorted phase
+        set sineValue [expr {sin(($distortedPhase / double($tableSize)) * 2 * 3.14159265359)}]
+        
+        set x [expr {$margin + ($i / double($steps)) * $graphW}]
+        set y [expr {$bottomMidY - $sineValue * ($bottomGraphH / 2.5)}]
+        
+        lappend distortedPoints $x $y
+    }
+    $c create line $distortedPoints -fill $color -width 2
+    
+    # Labels for bottom graph
+    $c create text [expr {$w / 2}] [expr {$bottomY + $bottomGraphH + 15}] -text "Waveform Output" -fill white -font {Arial 10 bold}
+    $c create text [expr {$w - 80}] [expr {$bottomY + 15}] -text "— Pure Sine" -fill gray50 -font {Arial 8}
+    $c create text [expr {$w - 80}] [expr {$bottomY + 30}] -text "— Distorted" -fill $color -font {Arial 8}
+}
+
+# Update graph when slider changes
+proc updateGraph {distType args} {
+    global canvases colors
+    after idle [list drawGraph $canvases($distType) $distType $colors($distType)]
+}
+
+# Create main window
+wm title . "Casio CZ Phase Distortion"
+. configure -bg #1a1a1a
+
+# Create header
+frame .header -bg #1a1a1a
+label .header.title -text "Casio CZ Phase Distortion Visualizer" -font {Arial 18 bold} -bg #1a1a1a -fg white
+label .header.subtitle -text "Adjust sliders to see how each distortion type remaps phase" -font {Arial 10} -bg #1a1a1a -fg gray70
+pack .header.title -pady {10 0}
+pack .header.subtitle -pady {0 10}
+pack .header -fill x
+
+# Create scrollable frame for graphs
+canvas .scrollCanvas -bg #1a1a1a -highlightthickness 0
+scrollbar .scrollbar -command ".scrollCanvas yview"
+.scrollCanvas configure -yscrollcommand ".scrollbar set"
+
+frame .scrollCanvas.container -bg #1a1a1a
+.scrollCanvas create window 0 0 -anchor nw -window .scrollCanvas.container
+
+pack .scrollbar -side right -fill y
+pack .scrollCanvas -side left -fill both -expand true
+
+# Distortion types configuration
+array set distTypes {
+    resonance1 "Resonance 1"
+    resonance2 "Resonance 2"
+    resonance3 "Resonance 3"
+    sawNeg "Saw Negative"
+    sawPos "Saw Positive"
+    trapezoid "Trapezoid"
+    square "Square"
+}
+
+array set colors {
+    resonance1 "#ef4444"
+    resonance2 "#f97316"
+    resonance3 "#eab308"
+    sawNeg "#22c55e"
+    sawPos "#06b6d4"
+    trapezoid "#3b82f6"
+    square "#a855f7"
+}
+
+array set canvases {}
+
+# Create graph frames
+set row 0
+foreach distType {resonance1 resonance2 resonance3 sawNeg sawPos trapezoid square} {
+    frame .scrollCanvas.container.f$distType -bg #2a2a2a -relief raised -borderwidth 2
+    
+    label .scrollCanvas.container.f$distType.title -text $distTypes($distType) -font {Arial 12 bold} -bg #2a2a2a -fg white
+    pack .scrollCanvas.container.f$distType.title -pady 5
+    
+    canvas .scrollCanvas.container.f$distType.canvas -width 500 -height 400 -bg #1a1a1a -highlightthickness 0
+    pack .scrollCanvas.container.f$distType.canvas -padx 10 -pady 5
+    
+    set canvases($distType) .scrollCanvas.container.f$distType.canvas
+    
+    frame .scrollCanvas.container.f$distType.controls -bg #2a2a2a
+    label .scrollCanvas.container.f$distType.controls.label -text "Amount:" -bg #2a2a2a -fg white
+    label .scrollCanvas.container.f$distType.controls.value -textvariable amounts($distType) -width 5 -bg #2a2a2a -fg gray70 -font {Courier 10}
+    scale .scrollCanvas.container.f$distType.controls.slider -from 0 -to 1 -resolution 0.01 \
+        -orient horizontal -length 400 -variable amounts($distType) \
+        -bg #2a2a2a -fg $colors($distType) -troughcolor #1a1a1a -highlightthickness 0 \
+        -command [list updateGraph $distType]
+    
+    pack .scrollCanvas.container.f$distType.controls.label -side left -padx 5
+    pack .scrollCanvas.container.f$distType.controls.value -side left -padx 5
+    pack .scrollCanvas.container.f$distType.controls.slider -side left -padx 5
+    pack .scrollCanvas.container.f$distType.controls -pady 5
+    
+    grid .scrollCanvas.container.f$distType -row [expr {$row / 2}] -column [expr {$row % 2}] -padx 10 -pady 10 -sticky news
+    
+    # Bind canvas configure to redraw
+    bind .scrollCanvas.container.f$distType.canvas <Configure> [list drawGraph .scrollCanvas.container.f$distType.canvas $distType $colors($distType)]
+    
+    incr row
+}
+
+# Configure grid weights
+grid columnconfigure .scrollCanvas.container 0 -weight 1
+grid columnconfigure .scrollCanvas.container 1 -weight 1
+
+# Update scroll region
+update idletasks
+.scrollCanvas configure -scrollregion [.scrollCanvas bbox all]
+
+# Initial draw (after window is visible)
+after 100 {
+    foreach distType {resonance1 resonance2 resonance3 sawNeg sawPos trapezoid square} {
+        global canvases colors
+        drawGraph $canvases($distType) $distType $colors($distType)
+    }
+}
