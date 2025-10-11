@@ -43,10 +43,13 @@ amysamples.o : amysamples.c amysamples.h
 raylib-quickstart-main/Makefile :
 	sh make-raylib
   
+synth.o: synth.c synth.h synth-types.h
+	gcc $(COPTS) -c $<
+
 skred.o: skred.c raylib-quickstart-main/Makefile
 	gcc $(COPTS) -c $<
 
-skred : skred.o miniwav.o amysamples.o $(ELIB) scope-shared.o miniaudio.o
+skred : skred.o miniwav.o amysamples.o synth.o $(ELIB) scope-shared.o miniaudio.o
 	gcc $(COPTS) $^ -o $@ $(LIB)
 
 linenoise.o: linenoise.c linenoise.h

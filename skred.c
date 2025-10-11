@@ -43,23 +43,11 @@ static scope_buffer_t *new_scope = &safety;
 
 #include "miniaudio.h"
 
-#define HISTORY_FILE ".sok1_history"
-#define VOICE_MAX (32)
-#define AUDIO_CHANNELS (2)
-#define AMY_FACTOR (0.025f)
-#define UDP_PORT (60440)
-#define SYNTH_FRAMES_PER_CALLBACK (512)
-#define SEQ_FRAMES_PER_CALLBACK (128)
+#include "synth-types.h"
+#include "synth.h"
 
-int requested_synth_frames_per_callback = SYNTH_FRAMES_PER_CALLBACK;
-int requested_seq_frames_per_callback = SEQ_FRAMES_PER_CALLBACK;
-int synth_frames_per_callback = 0;
-int seq_frames_per_callback = 0;
-
-float tick_max = 10.0f;
-float tick_user = 0.0f;
-int tick_frames = 0;
-static volatile uint64_t synth_sample_count = 0;
+float tempo_time_per_step = 10.0f;
+float tempo_bpm = 0.0f;
 
 void tempo_set(float);
 
@@ -198,160 +186,11 @@ char *func_func_str(int n) {
   return "no-string";
 }
 
-// inspired by AMY :)
-enum {
-  WAVE_TABLE_SINE,     // 0
-  WAVE_TABLE_SQR,      // 1
-  WAVE_TABLE_SAW_DOWN, // 2
-  WAVE_TABLE_SAW_UP,   // 3
-  WAVE_TABLE_TRI,      // 4
-  WAVE_TABLE_NOISE,    // 5
-  WAVE_TABLE_NOISE_ALT,// 6
-
-  WAVE_TABLE_KRG1 = 32,
-  WAVE_TABLE_KRG2,
-  WAVE_TABLE_KRG3,
-  WAVE_TABLE_KRG4,
-  WAVE_TABLE_KRG5,
-  WAVE_TABLE_KRG6,
-  WAVE_TABLE_KRG7,
-  WAVE_TABLE_KRG8,
-  WAVE_TABLE_KRG9,
-  WAVE_TABLE_KRG10,
-  WAVE_TABLE_KRG11,
-  WAVE_TABLE_KRG12,
-  WAVE_TABLE_KRG13,
-  WAVE_TABLE_KRG14,
-  WAVE_TABLE_KRG15,
-  WAVE_TABLE_KRG16, // 47
-
-  WAVE_TABLE_KRG17, // 48
-  WAVE_TABLE_KRG18,
-  WAVE_TABLE_KRG19,
-  WAVE_TABLE_KRG20,
-  WAVE_TABLE_KRG21,
-  WAVE_TABLE_KRG22,
-  WAVE_TABLE_KRG23,
-  WAVE_TABLE_KRG24,
-  WAVE_TABLE_KRG25,
-  WAVE_TABLE_KRG26,
-  WAVE_TABLE_KRG27,
-  WAVE_TABLE_KRG28,
-  WAVE_TABLE_KRG29,
-  WAVE_TABLE_KRG30,
-  WAVE_TABLE_KRG31,
-  WAVE_TABLE_KRG32, // 63
-
-  AMY_SAMPLE_00 = 100,
-  AMY_SAMPLE_99 = 100+99,
-
-  EXT_SAMPLE_00 = 200,
-  EXT_SAMPLE_99 = 200 + 99,
-  WAVE_TABLE_MAX
-};
-
 #define SAVE_WAVE_LEN (8)
 static float *save_wave_list[SAVE_WAVE_LEN]; // to keep from crashing the synth, have a place to store free-ed waves
 static int save_wave_ptr = 0;
 
-float *wave_table_data[WAVE_TABLE_MAX];
-int wave_size[WAVE_TABLE_MAX];
-float wave_rate[WAVE_TABLE_MAX];
-int wave_one_shot[WAVE_TABLE_MAX];
-int wave_loop_enabled[WAVE_TABLE_MAX];
-int wave_loop_start[WAVE_TABLE_MAX];
-int wave_loop_end[WAVE_TABLE_MAX];
-int wave_midi_note[WAVE_TABLE_MAX];
-float wave_offset_hz[WAVE_TABLE_MAX];
-
 void wave_free(void);
-
-//
-float volume_user = 1.0f;
-float volume_final = AMY_FACTOR;
-float volume_smoother_gain = 0.0f;
-float volume_smoother_smoothing = 0.002f;
-float volume_threshold = 0.05f;
-float volume_smoother_higher_smoothing = 0.3f;
-
-int volume_set(float v) {
-  volume_user = v;
-  volume_final = v * AMY_FACTOR;
-  return 0;
-}
-//
-float voice_phase[VOICE_MAX];
-float voice_phase_inc[VOICE_MAX];
-float *voice_table[VOICE_MAX];
-int voice_table_size[VOICE_MAX];
-int voice_one_shot[VOICE_MAX];
-int voice_finished[VOICE_MAX];
-int voice_loop_enabled[VOICE_MAX];
-float voice_table_rate[VOICE_MAX];
-int voice_loop_start[VOICE_MAX];
-int voice_loop_end[VOICE_MAX];
-int voice_midi_note[VOICE_MAX];
-float voice_offset_hz[VOICE_MAX];
-//
-
-float voice_freq[VOICE_MAX];
-float voice_note[VOICE_MAX];
-float voice_sample[VOICE_MAX];
-float voice_sample_hold[VOICE_MAX];
-int voice_sample_hold_count[VOICE_MAX];
-int voice_sample_hold_max[VOICE_MAX];
-float voice_amp[VOICE_MAX];
-float voice_user_amp[VOICE_MAX];
-float voice_pan_left[VOICE_MAX];
-float voice_pan_right[VOICE_MAX];
-float voice_pan[VOICE_MAX];
-int voice_use_amp_envelope[VOICE_MAX];
-
-int voice_freq_mod_osc[VOICE_MAX];
-float voice_freq_mod_depth[VOICE_MAX];
-float voice_freq_scale[VOICE_MAX];
-
-int voice_pan_mod_osc[VOICE_MAX];
-int voice_amp_mod_osc[VOICE_MAX];
-int voice_cz_mod_osc[VOICE_MAX];
-float voice_pan_mod_depth[VOICE_MAX];
-float voice_amp_mod_depth[VOICE_MAX];
-float voice_cz_mod_depth[VOICE_MAX];
-int voice_disconnect[VOICE_MAX];
-int voice_quantize[VOICE_MAX];
-int voice_direction[VOICE_MAX];
-int voice_phase_reset[VOICE_MAX];
-
-int voice_wave_table_index[VOICE_MAX];
-
-int voice_cz_mode[VOICE_MAX];
-float voice_cz_distortion[VOICE_MAX];
-
-int voice_smoother_enable[VOICE_MAX];
-float voice_smoother_gain[VOICE_MAX];
-float voice_smoother_smoothing[VOICE_MAX];
-
-int voice_glissando_enable[VOICE_MAX];
-float voice_glissando_speed[VOICE_MAX];
-float voice_glissando_target[VOICE_MAX];
-
-// Low-pass filter state structure
-typedef struct {
-  float x1, x2;  // Input delay line
-  float y1, y2;  // Output delay line
-  float b0, b1, b2;  // Feedforward coefficients
-  float a1, a2;      // Feedback coefficients
-    
-  // Parameter tracking for coefficient updates
-  float last_freq;
-  float last_resonance;
-  int last_mode;
-} mmf_t;
-
-float voice_filter_freq[VOICE_MAX];
-float voice_filter_res[VOICE_MAX];
-int voice_filter_mode[VOICE_MAX];
-mmf_t voice_filter[VOICE_MAX];
 
 int audio_show(void) {
   printf("# synth backend is running\n");
@@ -363,284 +202,11 @@ int audio_show(void) {
   return 0;
 }
 
-void mmf_init(int, float, float);
-void mmf_set_params(int, float, float);
-float mmf_process(int, float);
-int mmf_set_freq(int, float);
-int mmf_set_res(int, float);
-
 void voice_reset(int i);
 void voice_init(void);
 void pattern_reset(int p);
 void seq_init(void);
 void pattern_show(int pattern_pointer);
-
-float osc_get_phase_inc(int v, float f) {
-  float g = f;
-  if (voice_one_shot[v]) g /= voice_offset_hz[v];
-  float phase_inc = (g * (float)voice_table_size[v]) / voice_table_rate[v] * (voice_table_rate[v] / MAIN_SAMPLE_RATE);
-  return phase_inc;
-}
-
-void osc_set_freq(int v, float f) {
-  // Compute the frequency in "table samples per system sample"
-  // This works even if table_rate ≠ system rate
-  float g = f;
-  if (voice_one_shot[v]) g /= voice_offset_hz[v];
-  voice_phase_inc[v] = (g * (float)voice_table_size[v]) / voice_table_rate[v] * (voice_table_rate[v] / MAIN_SAMPLE_RATE);
-}
-
-float cz_phasor(int n, float p, float d, int table_size) {
-  float phase = p / (float)table_size;
-  switch (n) {
-    case 1: // 2 :: saw -> pulse
-      if (phase < d) phase *= (0.5f / d);
-      else phase = 0.5f + (phase - d) * (0.5f / (1.0f - d));
-      break;
-    case 2: // 3 :: square (folded sine)
-      if (phase < 0.5) phase *= 0.5f / (0.5f - d * 0.5f);
-      else phase = 1.0f - (1.0f - phase) * (0.5f / (0.5f - d * 0.5f));
-      break;
-    case 3: // 4 :: triangle
-      if (phase < 0.5f) phase *= (0.5f / (0.5f - d * 0.5f));
-      else phase = 0.5f + (phase - 0.5f) * (0.5f / (0.5f - d * 0.5f));
-      break;
-    case 4: // 5 :: double sine
-      phase = fmodf(phase * 2.0f, 1.0f);
-      break;
-    case 5: // 6 :: saw -> triangle
-      if (phase < 0.5f) phase *= (0.5f / (0.5f - d * 0.5f));
-      else phase = 0.5f + (phase - 0.5f) * (0.5f / (0.5f + d * 0.5f));
-      break;
-    case 6: // 7 :: resonant 1
-      phase = powf(phase, 1.0f + 4.0f * d);
-      break;
-    case 7: // 8 :: resonant 2
-      phase = powf(phase, 1.0f + 8.0f * d);
-      break;
-    default:
-      return p;
-  }
-  return fmodf(phase * (float)table_size, (float)table_size);
-  return phase * (float)table_size;
-}
-
-
-float osc_next(int voice, float phase_inc) {
-    if (voice_finished[voice]) return 0.0f;
-    if (voice_direction[voice]) phase_inc *= -1.0f;
-
-    // Step phase
-    voice_phase[voice] += phase_inc;
-
-    // NaN check
-    if (!isfinite(voice_phase[voice])) {
-      puts("##1");
-        voice_phase[voice] = 0.0f;
-        voice_finished[voice] = voice_one_shot[voice];
-        return 0.0f;
-    }
-
-    int table_size = voice_table_size[voice];
-
-    // Clamp loop boundaries to valid range
-    float loop_start = voice_loop_enabled[voice] ? (float)voice_loop_start[voice] : 0.0f;
-    float loop_end   = voice_loop_enabled[voice] ? (float)voice_loop_end[voice]   : (float)table_size;
-    if (loop_end <= loop_start) {
-      loop_start = 0.0f;
-      loop_end = (float)table_size;
-    }
-
-    // Handle forward playback
-    if (phase_inc >= 0.0f) {
-        // One-shot forward
-        if (voice_one_shot[voice] && voice_phase[voice] >= loop_end) {
-          if (voice_loop_enabled[voice]) {
-            voice_phase[voice] = voice_loop_start[voice];
-            // puts("##3a");
-          } else {
-            voice_phase[voice] = loop_end - 1e-6f;
-            voice_finished[voice] = 1;
-            // puts("##3b"); // make work for loop points
-          }
-        }
-        // Loop forward
-        else if (voice_loop_enabled[voice] && voice_phase[voice] >= loop_end) {
-            voice_phase[voice] = loop_start + fmodf(voice_phase[voice] - loop_start, loop_end - loop_start);
-            //puts("##4");
-        }
-        // Wrap full table
-        else if (!voice_loop_enabled[voice] && voice_phase[voice] >= (float)table_size) {
-            voice_phase[voice] -= (float)table_size;
-        }
-    }
-    // Handle backward playback
-    else {
-        // One-shot backward
-        if (voice_one_shot[voice] && voice_phase[voice] < loop_start) {
-          if (voice_loop_enabled[voice]) {
-            voice_phase[voice] = loop_end;
-            //puts("##5a");
-          } else {
-            voice_phase[voice] = loop_start;
-            voice_finished[voice] = 1;
-            //puts("##5b"); // make work for loop points
-          }
-        }
-        // Loop backward
-        else if (voice_loop_enabled[voice] && voice_phase[voice] < loop_start) {
-            voice_phase[voice] = loop_end - fmodf(loop_start - voice_phase[voice], loop_end - loop_start);
-            //puts("##6");
-        }
-        // Wrap full table
-        else if (!voice_loop_enabled[voice] && voice_phase[voice] < 0.0f) {
-            voice_phase[voice] += (float)voice_table_size[voice];
-        }
-    }
-
-    int idx;
-    if (voice_cz_mode[voice]) {
-      int dv = voice_cz_mod_osc[voice];
-      float dm = 1.0f;
-      if (dv >= 0) dm = voice_sample[dv] * voice_cz_mod_depth[voice];
-      idx = (int)cz_phasor(voice_cz_mode[voice], voice_phase[voice], voice_cz_distortion[voice] + dm, table_size);
-      //idx = (int)cz_phasor(cz[voice], voice_phase[voice], czd[voice], table_size);
-    } else {
-      idx = (int)voice_phase[voice];
-    }
-    if (idx >= table_size) idx = table_size - 1;
-    if (idx < 0) idx = 0;
-    return voice_table[voice][idx];
-}
-
-void osc_set_wave_table_index(int voice, int wave) {
-  if (wave_table_data[wave] && wave_size[wave] && wave_rate[wave] > 0.0) {
-    voice_wave_table_index[voice] = wave;
-    int update_freq = 0;
-    if (wave_one_shot[wave]) voice_finished[voice] = 1;
-    else voice_finished[voice] = 0;
-    if (
-      voice_table_rate[voice] != wave_rate[wave] ||
-      voice_table_size[voice] != wave_size[wave]
-      ) update_freq = 1;
-    voice_table_rate[voice] = wave_rate[wave];
-    voice_table_size[voice] = wave_size[wave];
-    voice_table[voice] = wave_table_data[wave];
-    voice_one_shot[voice] = wave_one_shot[wave];
-    voice_loop_start[voice] = wave_loop_start[wave];
-    voice_loop_enabled[voice] = wave_loop_enabled[wave];
-    voice_loop_end[voice] = wave_loop_end[wave];
-    voice_midi_note[voice] = wave_midi_note[wave];
-    voice_offset_hz[voice] = wave_offset_hz[wave];
-    // voice_phase[voice] = 0; // need to decide how to sync/reset phase???
-    if (update_freq) {
-      osc_set_freq(voice, voice_freq[voice]);
-    }
-  }
-}
-
-void osc_trigger(int voice) {
-  if (voice_one_shot[voice]) {
-    if (voice_direction[voice]) {
-      voice_phase[voice] = (float)(voice_table_size[voice] - 1);
-    } else {
-      voice_phase[voice] = 0;
-    }
-    voice_finished[voice] = 0;
-  } else {
-    voice_phase[voice] = 0;
-  }
-}
-
-typedef struct {
-    float a;
-    float d;
-    float s;
-    float r;
-    float attack_time;    // attack duration in samples
-    float decay_time;     // decay duration in samples
-    float sustain_level;     // 0 to 1
-    float release_time;   // release duration in samples
-    uint64_t sample_start;   // sample count when note is triggered
-    uint64_t sample_release; // sample count when note is released
-    int is_active;            // envelope state
-    float velocity; // multiply envelope by this value
-} envelope_t;
-
-envelope_t voice_amp_envelope[VOICE_MAX];
-
-// Initialize the envelope
-void envelope_init(int v, float attack_time, float decay_time,
-               float sustain_level, float release_time) {
-    voice_amp_envelope[v].a = attack_time;
-    voice_amp_envelope[v].d = decay_time;
-    voice_amp_envelope[v].s = sustain_level;
-    voice_amp_envelope[v].r = release_time;
-    voice_amp_envelope[v].attack_time = attack_time * MAIN_SAMPLE_RATE; // convert seconds to samples
-    voice_amp_envelope[v].decay_time = decay_time * MAIN_SAMPLE_RATE;
-    voice_amp_envelope[v].sustain_level = fmaxf(0, fminf(1.0f, sustain_level)); // clamp 0 to 1
-    voice_amp_envelope[v].release_time = release_time * MAIN_SAMPLE_RATE;
-    voice_amp_envelope[v].sample_start = 0;
-    voice_amp_envelope[v].sample_release = 0;
-    voice_amp_envelope[v].is_active = 0;
-}
-
-// Trigger the envelope (note on)
-void amp_envelope_trigger(int v, float f) {
-    voice_amp_envelope[v].sample_start = synth_sample_count;
-    voice_amp_envelope[v].sample_release = 0;
-    voice_amp_envelope[v].velocity = f;
-    voice_amp_envelope[v].is_active = 1;
-}
-
-// Release the envelope (note off)
-void amp_envelope_release(int v) {
-    if (voice_amp_envelope[v].is_active) {
-        voice_amp_envelope[v].sample_release = synth_sample_count;
-    }
-}
-
-// Get the current amplitude (0 to 1) at given sample count
-float amp_envelope_step(int v) {
-    if (!voice_amp_envelope[v].is_active) return 0;
-
-    float samples_since_start = (float)(synth_sample_count - voice_amp_envelope[v].sample_start);
-
-    // Attack phase
-    if (samples_since_start < voice_amp_envelope[v].attack_time) {
-        return samples_since_start / voice_amp_envelope[v].attack_time; // linear ramp up
-    }
-
-    // Decay phase
-    float decay_start = voice_amp_envelope[v].attack_time;
-    if (samples_since_start < decay_start + voice_amp_envelope[v].decay_time) {
-        float samples_in_decay = samples_since_start - decay_start;
-        float decay_progress = samples_in_decay / voice_amp_envelope[v].decay_time;
-        return 1.0f - decay_progress * (1.0f - voice_amp_envelope[v].sustain_level); // linear decay to sustain
-    }
-
-    // Sustain phase
-    if (voice_amp_envelope[v].sample_release == 0) {
-        return voice_amp_envelope[v].sustain_level;
-    }
-
-    // Release phase
-    float samples_since_release = (float)(synth_sample_count - voice_amp_envelope[v].sample_release);
-    if (samples_since_release < voice_amp_envelope[v].release_time) {
-        float release_progress = samples_since_release / voice_amp_envelope[v].release_time;
-        return voice_amp_envelope[v].sustain_level * (1.0f - release_progress); // linear ramp down
-    }
-
-    // Envelope finished
-    voice_amp_envelope[v].is_active = 0;
-    return 0.0f;
-}
-
-float quantize_bits_int(float v, int bits) {
-  int levels = (1 << bits) - 1;
-  int iv = (int)(v * (float)levels + 0.5);
-  return (float)iv * (1.0f / (float)levels);
-}
 
 int main_running = 1;
 int udp_running = 1;
@@ -713,6 +279,9 @@ void system_show(void) {
   printf("# udp_port %d\n", udp_port);
 }
 
+int requested_seq_frames_per_callback = SEQ_FRAMES_PER_CALLBACK;
+int seq_frames_per_callback = 0;
+
 void show_stats(void) {
   // do something useful
   printf("# synth frames per callback %d : %gms\n",
@@ -771,18 +340,18 @@ void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_co
 
   static wire_t w = {.voice = 0, .state = 0, .last_func = FUNC_NULL, .pattern = 0, };
 
-  static float i = 0;
+  int advance = 0;
   static float clock_sec = 0.0f;
   float frame_time_sec = (float)frame_count / (float)MAIN_SAMPLE_RATE;
   clock_sec += frame_time_sec;
-  if (clock_sec > tick_max) {
-    i = 0; // trigger next step
-    clock_sec -= tick_max;
+  if (clock_sec >= tempo_time_per_step) {
+    advance = 1; // trigger next step
+    clock_sec -= tempo_time_per_step;
   } else {
-    i = 1;
+    advance = 0;
   }
 
-  if (i == 0) {
+  if (advance) {
     sprintf(new_scope->debug_text, "%d:%d %s",
       scope_pattern_pointer, seq_pointer[scope_pattern_pointer],
       seq_pattern[scope_pattern_pointer][seq_pointer[scope_pattern_pointer]]);
@@ -806,126 +375,13 @@ void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_co
   }
 }
 
-typedef struct {
-    uint64_t state;
-} AudioRNG;
-
-void audio_rng_init(AudioRNG* rng, uint64_t seed);
-float audio_rng_float(AudioRNG* rng);
-
-void synth(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
-  static AudioRNG synth_random;
+void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
   static int first = 1;
   if (first) {
     pthread_setname_np(pthread_self(), "synth");
-    synth_frames_per_callback = (int)frame_count;
-    audio_rng_init(&synth_random, 1);
     first = 0;
   }
-  float *buffer = (float *)output;
-  int num_frames = (int)frame_count;
-  int num_channels = pDevice->playback.channels;
-  for (int i = 0; i < num_frames; i++) {
-    synth_sample_count++;
-    float sample_left = 0.0f;
-    float sample_right = 0.0f;
-    float f = 0.0f;
-    float whiteish = audio_rng_float(&synth_random);
-    for (int n = 0; n < VOICE_MAX; n++) {
-      if (voice_finished[n]) {
-        voice_sample[n] = 0.0f;
-        continue;
-      }  
-      if (voice_amp[n] == 0) {
-        voice_sample[n] = 0.0f;
-        continue;
-      }
-      if (voice_wave_table_index[n] == WAVE_TABLE_NOISE_ALT) {
-        // bypass lots of stuff if this voice uses random source...
-        // reuse the one white noise source for each sample
-        f = whiteish;
-      } else {
-        if (voice_freq_mod_osc[n] >= 0) {
-          // try to use modulators phase_inc instead of recalculating...
-          // REQUIRES re-thinking how I'm scaling frequency modulators via wire...
-          // REVISIT experiments to see if this still makes sense
-          int mod = voice_freq_mod_osc[n];
-          float g = voice_sample[mod] * voice_freq_mod_depth[n];
-          float inc = voice_phase_inc[n] + (voice_phase_inc[mod] * voice_freq_scale[n] * g);
-          f = osc_next(n, inc);
-        } else {
-          f = osc_next(n, voice_phase_inc[n]);
-        }
-      }
-      if (voice_sample_hold_max[n]) {
-        if (voice_sample_hold_count[n] == 0) {
-          voice_sample_hold[n] = f;
-        }
-        voice_sample[n] = voice_sample_hold[n];
-        voice_sample_hold_count[n]++;
-        if (voice_sample_hold_count[n] >= voice_sample_hold_max[n]) {
-          voice_sample_hold_count[n] = 0;
-        }
-      } else {
-        voice_sample[n] = f;
-      }
-
-      // apply quantizer
-      if (voice_quantize[n]) voice_sample[n] = quantize_bits_int(voice_sample[n], voice_quantize[n]);
-
-      // apply multi-mode filter
-      if (voice_filter_mode[n]) voice_sample[n] = mmf_process(n, voice_sample[n]);
-
-      // apply amp to sample
-      float amp = voice_amp[n];
-      float env = 1.0f;
-      if (voice_use_amp_envelope[n]) env = amp_envelope_step(n) * voice_amp_envelope[n].velocity;
-      float mod = 1.0f;
-      if (voice_amp_mod_osc[n] >= 0) {
-        int m = voice_amp_mod_osc[n];
-        mod = voice_sample[m] * voice_amp_mod_depth[n];
-      }
-      float final = amp * env * mod;
-      if (voice_smoother_enable[n]) {
-        voice_smoother_gain[n] += voice_smoother_smoothing[n] * (final - voice_smoother_gain[n]);
-        final = voice_smoother_gain[n];
-      }
-      voice_sample[n] *= final;
-
-      if (voice_disconnect[n] == 0) {
-        // accumulate samples
-        if (voice_pan_mod_osc[n] >= 0) {
-          // handle pan modulation
-          float q = voice_sample[voice_pan_mod_osc[n]] * voice_pan_mod_depth[n];
-          voice_pan_left[n]  = (1.0f - q) / 2.0f;
-          voice_pan_right[n] = (1.0f + q) / 2.0f;
-        }
-        float left  = voice_sample[n] * voice_pan_left[n];
-        float right = voice_sample[n] * voice_pan_right[n];
-        sample_left  += left;
-        sample_right += right;
-      }
-    }
-
-    // Adjust to main volume: smooth it otherwise is sounds crummy with realtime changes
-    volume_smoother_gain += volume_smoother_smoothing * (volume_final - volume_smoother_gain);
-    float volume_adjusted = volume_smoother_gain;
-
-    sample_left  *= volume_adjusted;
-    sample_right *= volume_adjusted;
-
-    // Write to all channels
-    buffer[i * num_channels + 0] = sample_left;
-    buffer[i * num_channels + 1] = sample_right;
-    if (scope_enable) { // make writing to scope optional
-      new_scope->buffer_left[new_scope->buffer_pointer]  = sample_left;
-      new_scope->buffer_right[new_scope->buffer_pointer] = sample_right;
-      new_scope->buffer_pointer++;
-      new_scope->buffer_pointer %= new_scope->buffer_len;
-      sprintf(new_scope->status_text, "%g %g %g %g",
-        volume_user, volume_final, volume_smoother_gain, volume_smoother_smoothing);
-    }
-  }
+  synth((float *)output, (float *)input, (int)frame_count, (int)pDevice->playback.channels);
 }
 
 void sleep_float(double seconds) {
@@ -1554,7 +1010,7 @@ int wire(char *line, wire_t *w, int output) {
               } else if (t > 0) {
                 if (token == '+') {
                   // use t as a fraction multiplied by BPS time
-                  t *= tick_max;
+                  t *= tempo_time_per_step;
                 }
                 queue_float_acc += t;
                 uint64_t queue_new = (uint64_t)(queue_float_acc * (float)MAIN_SAMPLE_RATE);
@@ -1798,7 +1254,7 @@ int wire(char *line, wire_t *w, int output) {
             ptr += v.next;
           } else return ERR_PARSING;
           tempo_set(v.args[0]);
-          if (scope_enable) sprintf(new_scope->status_text, "M%g", tick_user);
+          if (scope_enable) sprintf(new_scope->status_text, "M%g", tempo_bpm);
           break;
         case 'm':
           v = parse_none(FUNC_MUTE, FUNC_NULL, w);
@@ -1953,11 +1409,11 @@ int wire(char *line, wire_t *w, int output) {
 char my_data[] = "hello";
 
 void tempo_set(float m) {
-  tick_user = m;
+  tempo_bpm = m;
   float bps = m / 60.f;
   float time_per_step = 1.0f / bps;
   //printf("# BPM %g -> BPS %g -> time_per_step %g\n", m, bps, time_per_step);
-  tick_max = time_per_step;
+  tempo_time_per_step = time_per_step;
 }
 
 int main(int argc, char *argv[]) {
@@ -1996,7 +1452,7 @@ int main(int argc, char *argv[]) {
   synth_config.playback.format = ma_format_f32;
   synth_config.playback.channels = AUDIO_CHANNELS;
   synth_config.sampleRate = MAIN_SAMPLE_RATE;
-  synth_config.dataCallback = synth;
+  synth_config.dataCallback = synth_callback;
   synth_config.periodSizeInFrames = requested_synth_frames_per_callback;
   synth_config.periodSizeInMilliseconds = 0;
   synth_config.periods = 3;
@@ -2112,73 +1568,6 @@ void normalize_preserve_zero(float *data, int length) {
   }
 }
 
-//
-
-// Initialize the RNG with a seed
-void audio_rng_init(AudioRNG* rng, uint64_t seed) {
-    rng->state = seed ? seed : 1; // Ensure non-zero seed
-}
-
-// Generate next random number (full 64-bit range)
-uint64_t audio_rng_next(AudioRNG* rng) {
-    // High-quality LCG parameters (Knuth's MMIX)
-    rng->state = rng->state * 6364136223846793005ULL + 1442695040888963407ULL;
-    return rng->state;
-}
-
-// Generate random float in range [-1.0, 1.0] for audio
-float audio_rng_float(AudioRNG* rng) {
-    uint64_t raw = audio_rng_next(rng);
-    // Use upper 32 bits for better quality
-    uint32_t val = (uint32_t)(raw >> 32);
-    // Convert to signed float [-1.0, 1.0]
-    return (float)((int32_t)val) / 2147483648.0f;
-}
-
-// Generate random float in range [0.0, 1.0]
-float audio_rng_uniform(AudioRNG* rng) {
-    uint64_t raw = audio_rng_next(rng);
-    uint32_t val = (uint32_t)(raw >> 32);
-    return (float)val / 4294967296.0f;
-}
-
-// Generate random float in custom range [min, max]
-float audio_rng_range(AudioRNG* rng, float min, float max) {
-    return min + audio_rng_uniform(rng) * (max - min);
-}
-
-// Example usage for white noise generation
-void generate_white_noise(AudioRNG* rng, float* buffer, int n) {
-    for (int i = 0; i < n; i++) {
-        buffer[i] = audio_rng_float(rng);
-    }
-}
-
-// Example usage for pink noise (simple approximation)
-typedef struct {
-    AudioRNG rng;
-    float b0, b1, b2, b3, b4, b5, b6;
-} PinkNoiseGen;
-
-void pink_noise_init(PinkNoiseGen* gen, uint64_t seed) {
-    audio_rng_init(&gen->rng, seed);
-    gen->b0 = gen->b1 = gen->b2 = gen->b3 = gen->b4 = gen->b5 = gen->b6 = 0.0f;
-}
-
-float pink_noise_sample(PinkNoiseGen* gen) {
-    float white = audio_rng_float(&gen->rng);
-    gen->b0 = 0.99886f * gen->b0 + white * 0.0555179f;
-    gen->b1 = 0.99332f * gen->b1 + white * 0.0750759f;
-    gen->b2 = 0.96900f * gen->b2 + white * 0.1538520f;
-    gen->b3 = 0.86650f * gen->b3 + white * 0.3104856f;
-    gen->b4 = 0.55000f * gen->b4 + white * 0.5329522f;
-    gen->b5 = -0.7616f * gen->b5 - white * 0.0168980f;
-    float pink = gen->b0 + gen->b1 + gen->b2 + gen->b3 + gen->b4 + gen->b5 + gen->b6 + white * 0.5362f;
-    gen->b6 = white * 0.115926f;
-    return pink * 0.11f; // Scale to reasonable amplitude
-}
-//
-
 void wave_table_init(void) {
   float *table;
 
@@ -2187,8 +1576,8 @@ void wave_table_init(void) {
     wave_size[i] = 0;
   }
 
-  AudioRNG pink;
-  audio_rng_init(&pink, 1);
+  uint64_t white_noise;
+  audio_rng_init(&white_noise, 1);
   for (int w = WAVE_TABLE_SINE; w <= WAVE_TABLE_NOISE_ALT; w++) {
     int size = SIZE_SINE;
     char *name = "?";
@@ -2221,8 +1610,8 @@ void wave_table_init(void) {
         case WAVE_TABLE_SAW_DOWN: f = 2.0f * phase - 1.0f; break;
         case WAVE_TABLE_SAW_UP: f = 1.0f - 2.0f * phase; break;
         case WAVE_TABLE_TRI: f = (phase < 0.5f) ? (4.0f * phase - 1.0f) : (3.0f - 4.0f * phase); break;
-        case WAVE_TABLE_NOISE: f = audio_rng_float(&pink); break;
-        case WAVE_TABLE_NOISE_ALT: f = audio_rng_float(&pink); break;
+        case WAVE_TABLE_NOISE: f = audio_rng_float(&white_noise); break;
+        case WAVE_TABLE_NOISE_ALT: f = audio_rng_float(&white_noise); break;
         default: f = 0; break;
       }
       wave_table_data[w][off++] = f;
@@ -2312,7 +1701,7 @@ void pattern_show(int pattern_pointer) {
     if (strlen(line) == 0) break;
     if (first) {
       int state = seq_state[pattern_pointer];
-      printf("; M%g\n", tick_user);
+      printf("; M%g\n", tempo_bpm);
       printf("; y%d z%d %%%d # [%d]\n",
         pattern_pointer, state, seq_modulo[pattern_pointer], seq_pointer[pattern_pointer]);
       first = 0;
@@ -2670,7 +2059,7 @@ int wavetable_show(int n) {
       }
     }
     printf("# w%d size:%d", n, size);
-    printf(" +hz:%g midi:%d", wave_offset_hz[n], wave_midi_note[n]);
+    printf(" +hz:%g midi:%g", wave_offset_hz[n], wave_midi_note[n]);
     puts("");
     downsample_block_average_min_max(table, size, new_scope->wave_data, SCOPE_WAVE_WIDTH, new_scope->wave_min, new_scope->wave_max);
     new_scope->wave_len = SCOPE_WAVE_WIDTH;
@@ -2835,25 +2224,7 @@ int voice_copy(int v, int n) {
   return 0;
 }
 
-// Process a single sample through the filter - VERY FAST
-// Only multiplication and addition, no transcendental functions
-float mmf_process(int n, float input) {
-    // Calculate output using Direct Form II - only 5 multiplies, 4 adds
-    float output = voice_filter[n].b0 * input +
-                  voice_filter[n].b1 * voice_filter[n].x1 +
-                  voice_filter[n].b2 * voice_filter[n].x2 -
-                  voice_filter[n].a1 * voice_filter[n].y1 -
-                  voice_filter[n].a2 * voice_filter[n].y2;
-    
-    // Update delay lines
-    voice_filter[n].x2 = voice_filter[n].x1;
-    voice_filter[n].x1 = input;
-    voice_filter[n].y2 = voice_filter[n].y1;
-    voice_filter[n].y1 = output;
-    
-    return output;
-}
-
+#if 0
 #define FREQ_TABLE_SIZE 128
 #define RES_TABLE_SIZE 32
 
@@ -2912,3 +2283,4 @@ void audio_callback(float* input_buffer, float* output_buffer, int num_samples) 
     }
 }
 */
+#endif
