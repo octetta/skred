@@ -98,4 +98,7 @@ extern int scope_enable;
 extern float tempo_time_per_step;
 extern float tempo_bpm;
 
+extern int console_voice;
+extern int scope_pattern_pointer;
+
 #endif

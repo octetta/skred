@@ -5,6 +5,8 @@
 #include "synth.def"
 #undef ARRAY
 
+void synth(float *buffer, float *input, int num_frames, int num_channels);
+
 extern int requested_synth_frames_per_callback;
 extern int synth_frames_per_callback;
 

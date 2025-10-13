@@ -138,29 +138,13 @@ enum {
 };
 
 int wire(char *line, wire_t *w, int output);
-int queue_item(uint64_t when, char *what, int voice);
 void show_threads(void);
 void system_show(void);
 int audio_show(void);
 int patch_load(int voice, int n, int output);
-void synth(float *buffer, float *input, int num_frames, int num_channels);
 int wavetable_show(int n);
 int audio_show(void);
 char *wire_err_str(int n);
-
-extern queued_t work_queue[QUEUE_SIZE];
-extern int debug;
-extern int trace;
-extern int udp_port;
-extern int requested_seq_frames_per_callback;
-extern int seq_frames_per_callback;
-extern int scope_enable;
-extern float tempo_time_per_step;
-extern float tempo_bpm;
-
-extern int console_voice;
-
-extern int scope_pattern_pointer;
 
 #endif
 
