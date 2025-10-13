@@ -1,4 +1,6 @@
+#include "skred.h"
 #include "wire.h"
+#include "seq.h"
 #include "miniwav.h"
 
 void voice_push(voice_stack_t *s, float n) {
@@ -204,9 +206,6 @@ int patch_load(int voice, int n, int output) {
   sprintf(file, "exp%d.patch", n);
   FILE *in = fopen(file, "r");
   int r = 0;
-  voice_stack_t vs;
-  vs.ptr = 0;
-  int state = 0;
   if (in) {
     wire_t w = {.voice = 0, .state = 0, .last_func = FUNC_NULL, .pattern = 0, };
     char line[1024];
@@ -214,7 +213,6 @@ int patch_load(int voice, int n, int output) {
       size_t len = strlen(line);
       if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
       if (output) printf("# %s\n", line);
-      int temp_voice = voice;
       r = wire(line, &w, trace);
       if (r != 0) {
         if (output) printf("# error in patch\n");
@@ -223,7 +221,6 @@ int patch_load(int voice, int n, int output) {
     }
     fclose(in);
   }
-  //hide[voice] = 0;
   return r;
 }
 
@@ -274,11 +271,6 @@ int wave_load(int which, int where) {
 extern int scope_enable;
 extern scope_buffer_t *new_scope;
 
-extern int seq_pointer[PATTERNS_MAX];
-extern int seq_modulo[PATTERNS_MAX];
-extern int seq_state[PATTERNS_MAX];
-extern int seq_pattern_mute[PATTERNS_MAX][SEQ_STEPS_MAX];
-extern char seq_pattern[PATTERNS_MAX][SEQ_STEPS_MAX][STEP_MAX];
 
 void pattern_show(int pattern_pointer) {
   int first = 1;
@@ -298,13 +290,7 @@ void pattern_show(int pattern_pointer) {
   }
 }
 
-void tempo_set(float m) {
-  tempo_bpm = m;
-  float bps = m / 60.f;
-  float time_per_step = 1.0f / bps;
-  //printf("# BPM %g -> BPS %g -> time_per_step %g\n", m, bps, time_per_step);
-  tempo_time_per_step = time_per_step;
-}
+void tempo_set(float m);
 
 void downsample_block_average_min_max(
   const float *source, int source_len, float *dest, int dest_len,
@@ -723,7 +709,7 @@ int wire(char *line, wire_t *w, int output) {
           if (v.argc == 1) {
             ptr += v.next;
             int m = (int)v.args[0];
-            seq_modulo[w->pattern] = m;
+            seq_modulo_set(w->pattern, m);
           }
           break;
         case '!':
@@ -731,7 +717,7 @@ int wire(char *line, wire_t *w, int output) {
           if (v.argc == 1) {
             ptr += v.next;
             int step = (int)v.args[0];
-            seq_pattern_mute[w->pattern][step] = 0;
+            seq_mute_set(w->pattern, step, 0);
           }
           break;
         case '.':
@@ -739,7 +725,7 @@ int wire(char *line, wire_t *w, int output) {
           if (v.argc == 1) {
             ptr += v.next;
             int step = (int)v.args[0];
-            seq_pattern_mute[w->pattern][step] = 1;
+            seq_mute_set(w->pattern, step, 1);
           }
           break;
         case 'x':
@@ -747,38 +733,14 @@ int wire(char *line, wire_t *w, int output) {
           if (v.argc == 1) {
             ptr += v.next;
             int p = (int)v.args[0];
-            if (strlen(w->scratch) == 0) seq_pattern[w->pattern][p][0] = '\0';
-            strcpy(seq_pattern[w->pattern][p], w->scratch);
+            seq_step_set(w->pattern, p, w->scratch);
           }
           break;
         case 'Z':
           v = parse(ptr, FUNC_MAIN_SEQ, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
-            switch ((int)v.args[0]) {
-              case 0: // stop
-                for (int p = 0; p < PATTERNS_MAX; p++) {
-                  seq_state[p] = SEQ_STOPPED;
-                  seq_pointer[p] = 0;
-                }
-                break;
-              case 1: // start
-                for (int p = 0; p < PATTERNS_MAX; p++) {
-                  seq_state[p] = SEQ_RUNNING;
-                  seq_pointer[p] = 0;
-                }
-                break;
-              case 2: // pause
-                for (int p = 0; p < PATTERNS_MAX; p++) {
-                  seq_state[p] = SEQ_PAUSED;
-                }
-                break;
-              case 3: // resume
-                for (int p = 0; p < PATTERNS_MAX; p++) {
-                  seq_state[p] = SEQ_RUNNING;
-                }
-                break;
-            }
+            seq_state_all((int)v.args[0]);
           } else {
             if (output) for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(p);
           }
@@ -787,22 +749,7 @@ int wire(char *line, wire_t *w, int output) {
           v = parse(ptr, FUNC_SEQ, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
-            switch ((int)v.args[0]) {
-              case 0: // stop
-                seq_state[w->pattern] = SEQ_STOPPED;
-                seq_pointer[w->pattern] = 0;
-                break;
-              case 1: // start
-                seq_state[w->pattern] = SEQ_RUNNING;
-                seq_pointer[w->pattern] = 0;
-                break;
-              case 2: // pause
-                seq_state[w->pattern] = SEQ_PAUSED;
-                break;
-              case 3: // resume
-                seq_state[w->pattern] = SEQ_RUNNING;
-                break;
-            }
+            seq_state_set(w->pattern, (int)v.args[0]);
           } else {
             if (output) pattern_show(w->pattern);
           }

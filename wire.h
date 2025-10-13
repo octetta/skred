@@ -17,23 +17,6 @@ typedef struct {
   int ptr;
 } voice_stack_t;
 
-#define QUEUED_MAX (1024)
-#define QUEUE_SIZE (1024)
-
-enum {
-  Q_FREE = 0,
-  Q_PREP = 1,
-  Q_READY = 2,
-  Q_USING = 3,
-};
-
-typedef struct {
-  int state;
-  uint64_t when;
-  char what[QUEUED_MAX];
-  int voice;
-} queued_t;
-
 typedef struct {
   int func;
   int sub_func;

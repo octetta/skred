@@ -54,105 +54,22 @@ int console_voice = 0;
 
 int udp_port = UDP_PORT;
 
-void pattern_reset(int p);
-void seq_init(void);
-void pattern_show(int pattern_pointer);
-
 int main_running = 1;
 int udp_running = 1;
 
 #include "wire.h"
 
-queued_t work_queue[QUEUE_SIZE];
 
-int queue_item(uint64_t when, char *what, int voice) {
-  int p = -1;
-  for (int q = 0; q < QUEUE_SIZE; q++) {
-    if (work_queue[q].state == Q_FREE) {
-      work_queue[q].state = Q_PREP;
-      work_queue[q].when = when;
-      work_queue[q].voice = voice;
-      strcpy(work_queue[q].what, what);
-      work_queue[q].state = Q_READY;
-      p = q;
-      break;
-    }
-  }
-  return p;
-}
+#include "seq.h"
 
-int requested_seq_frames_per_callback = SEQ_FRAMES_PER_CALLBACK;
-int seq_frames_per_callback = 0;
-
-char seq_pattern[PATTERNS_MAX][SEQ_STEPS_MAX][STEP_MAX];
-int seq_pattern_mute[PATTERNS_MAX][SEQ_STEPS_MAX];
-
-int scope_pattern_pointer = 0;
-int seq_pointer[PATTERNS_MAX];
-int seq_counter[PATTERNS_MAX];
-int seq_state[PATTERNS_MAX];
-int seq_modulo[PATTERNS_MAX];
-
-void seq(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
+void seq_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
   static int first = 1;
   if (first) {
     pthread_setname_np(pthread_self(), "seq");
     seq_frames_per_callback = (int)frame_count;
     first = 0;
   }
-  
-  static int voice = 0;
-  static voice_stack_t vs;
-  static int state = 0;
-  
-  // run expired (ready) queued things...
-  static wire_t v = {.voice = 0, .state = 0, .last_func = FUNC_NULL, .pattern = 0, };
-  for (int q = 0; q < QUEUE_SIZE; q++) {
-    if ((work_queue[q].state == Q_READY) && (work_queue[q].when < synth_sample_count)) {
-      work_queue[q].state = Q_USING;
-      v.voice = work_queue[q].voice;
-      wire(work_queue[q].what, &v, 0);
-      work_queue[q].state = Q_FREE;
-    }
-  }
-
-  static float q;
-
-  static wire_t w = {.voice = 0, .state = 0, .last_func = FUNC_NULL, .pattern = 0, };
-
-  int advance = 0;
-  static float clock_sec = 0.0f;
-  float frame_time_sec = (float)frame_count / (float)MAIN_SAMPLE_RATE;
-  clock_sec += frame_time_sec;
-  if (clock_sec >= tempo_time_per_step) {
-    advance = 1; // trigger next step
-    clock_sec -= tempo_time_per_step;
-  } else {
-    advance = 0;
-  }
-
-  if (advance) {
-    sprintf(new_scope->debug_text, "%d:%d %s",
-      scope_pattern_pointer, seq_pointer[scope_pattern_pointer],
-      seq_pattern[scope_pattern_pointer][seq_pointer[scope_pattern_pointer]]);
-    for (int p = 0; p < PATTERNS_MAX; p++) {
-      if (seq_state[p] != SEQ_RUNNING) continue;
-      if (seq_modulo[p] > 1) {
-        if ((seq_counter[p] % seq_modulo[p]) != 0) {
-          seq_counter[p]++;
-          continue;
-        }
-      }
-      seq_counter[p]++;
-      if (seq_pattern_mute[p][seq_pointer[p]] == 0) wire(seq_pattern[p][seq_pointer[p]], &w, 0);
-      seq_pointer[p]++;
-      switch (seq_pattern[p][seq_pointer[p]][0]) {
-        case '\0':
-          seq_pointer[p] = 0;
-          break;
-      }
-    }
-  }
+  seq((int)frame_count);
 }
 
 void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
@@ -257,10 +174,10 @@ int main(int argc, char *argv[]) {
   seq_config.playback.format = ma_format_f32;
   seq_config.playback.channels = AUDIO_CHANNELS;
   seq_config.sampleRate = MAIN_SAMPLE_RATE;
-  seq_config.dataCallback = seq;
+  seq_config.dataCallback = seq_callback;
   seq_config.periodSizeInFrames = requested_seq_frames_per_callback;
   seq_config.periodSizeInMilliseconds = 0;
-  seq_config.periods = 3;
+  seq_config.periods = 2; // examples say "3"... trying something different
   seq_config.noClip = MA_TRUE;
   ma_device seq_device;
   ma_device_init(NULL, &seq_config, &seq_device);
@@ -274,9 +191,6 @@ int main(int argc, char *argv[]) {
   pthread_create(&udp_thread_handle, NULL, udp_main, NULL);
   pthread_detach(udp_thread_handle);
 
-  voice_stack_t vs;
-  vs.ptr = 0;
-
   if (load_patch_number >= 0) patch_load(0, load_patch_number, 0);
 
   scope_share_t shared;
@@ -284,7 +198,6 @@ int main(int argc, char *argv[]) {
   new_scope->buffer_len = SCOPE_WIDTH_IN_SAMPLES;
   sprintf(new_scope->status_text, "n/a");
 
-  int state = 0;
   wire_t w = {.voice = 0, .state = 0, .last_func = FUNC_NULL, .pattern = 0, };
 
   if (execute_from_start[0] != '\0') {
@@ -331,23 +244,6 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
-void pattern_reset(int p) {
-  seq_pointer[p] = 0;
-  seq_state[p] = SEQ_STOPPED;
-  seq_counter[p] = 0;
-  seq_modulo[p] = 1;
-  for (int s = 0; s < SEQ_STEPS_MAX; s++) {
-    seq_pattern[p][s][0] = '\0';
-    seq_pattern_mute[p][s] = 0;
-  }
-}
-
-void seq_init(void) {
-  for (int p = 0; p < PATTERNS_MAX; p++) {
-    pattern_reset(p);
-  }
-}
-
 struct sockaddr_in serve;
 
 int udp_open(int port) {
@@ -378,15 +274,11 @@ void *udp_main(void *arg) {
   tv.tv_sec = 1;
   tv.tv_usec = 0;
   setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (struct timeval *)&tv, sizeof(struct timeval));
-  int voice = 0;
   struct sockaddr_in client;
   unsigned int client_len = sizeof(client);
   char line[1024];
-  voice_stack_t vs;
-  vs.ptr = 0;
   fd_set readfds;
   struct timeval timeout;
-  int state = 0;
   wire_t w = { .voice = 0, .state = 0, .pattern = 0, .pattern = 0, };
   while (udp_running) {
     FD_ZERO(&readfds);

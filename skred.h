@@ -74,4 +74,28 @@ enum {
   SEQ_PAUSED = 2,
 };
 
+#define QUEUED_MAX (1024)
+#define QUEUE_SIZE (1024)
+
+enum {
+  Q_FREE = 0,
+  Q_PREP = 1,
+  Q_READY = 2,
+  Q_USING = 3,
+};
+
+typedef struct {
+  int state;
+  uint64_t when;
+  char what[QUEUED_MAX];
+  int voice;
+} queued_t;
+
+extern int debug;
+extern int trace;
+extern int udp_port;
+extern int scope_enable;
+extern float tempo_time_per_step;
+extern float tempo_bpm;
+
 #endif

@@ -5,10 +5,7 @@
 
 #include "miniwav.h"
 
-//void capture_to_wav(char *name) {
 int mw_put(char *name, int16_t *capture, int frames) {
-    // int16_t *capture = amy_captured();
-    // int frames = amy_frames();
     wav_t wave = {
         .RIFFChunkID = {'R', 'I', 'F', 'F'},
         .RIFFChunkSize = frames + 36,
@@ -27,9 +24,8 @@ int mw_put(char *name, int16_t *capture, int frames) {
     FILE *out = NULL;
     out = fopen(name, "wb+");
     if (out) {
-        int n;
-        n = fwrite(&wave, 1, sizeof(wave), out);
-        n = fwrite(capture, 1, frames * sizeof(int16_t), out);
+        fwrite(&wave, 1, sizeof(wave), out);
+        fwrite(capture, 1, frames * sizeof(int16_t), out);
         fclose(out);
     } else {
         perror("! fopen");
@@ -40,7 +36,6 @@ int mw_put(char *name, int16_t *capture, int frames) {
 
 int mw_frames(char *name) {
     FILE *in = fopen(name, "rb");
-    int length = 0;
 
     if (in) {
         wav_t wav;
@@ -91,7 +86,6 @@ float *mw_get(char *name, int *frames_out, wav_t *w) {
     wav_t wav;
     wav_t *this = &wav;
     if (w) this = w;
-    int r = -1;
     float *table = NULL;
     FILE *in = mw_header(name, this);
     if (in) {
@@ -112,9 +106,6 @@ float *mw_get(char *name, int *frames_out, wav_t *w) {
         if (sample < -32767) sample = -32767;
         float f = (float)sample / 32767;
         table[frames_current] = f;
-        // double rate = 1000.0 / (double)this->SamplesRate;
-        // double msec = rate * (double)frames;
-        // int16_t *dest;
         frames_current++;
       }
       fclose(in);
