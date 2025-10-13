@@ -64,4 +64,14 @@ enum {
   WAVE_TABLE_MAX
 };
 
+#define PATTERNS_MAX (16)
+#define SEQ_STEPS_MAX (256)
+#define STEP_MAX (256)
+
+enum {
+  SEQ_STOPPED = 0,
+  SEQ_RUNNING = 1,
+  SEQ_PAUSED = 2,
+};
+
 #endif

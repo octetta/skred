@@ -46,10 +46,13 @@ raylib-quickstart-main/Makefile :
 synth.o: synth.c synth.h synth-types.h
 	gcc $(COPTS) -c $<
 
+wire.o: wire.c wire.h
+	gcc $(COPTS) -c $<
+
 skred.o: skred.c raylib-quickstart-main/Makefile
 	gcc $(COPTS) -c $<
 
-skred : skred.o miniwav.o amysamples.o synth.o $(ELIB) scope-shared.o miniaudio.o
+skred : skred.o miniwav.o amysamples.o synth.o wire.o $(ELIB) scope-shared.o miniaudio.o
 	gcc $(COPTS) $^ -o $@ $(LIB)
 
 linenoise.o: linenoise.c linenoise.h

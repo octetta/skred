@@ -1,6 +1,14 @@
 #ifndef _SYNTH_TYPES_H_
 #define _SYNTH_TYPES_H_
 
+enum {
+  FILTER_LOWPASS = 1,
+  FILTER_HIGHPASS = 2,
+  FILTER_BANDPASS = 3,
+  FILTER_NOTCH = 4,
+  FILTER_ALL_PASS = 5,
+};
+
 // Low-pass filter state structure
 typedef struct {
   float x1, x2;  // Input delay line

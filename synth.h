@@ -40,6 +40,41 @@ float amp_envelope_step(int v);
 
 int volume_set(float v);
 
-void synth(float *buffer, float *input, int num_frames, int num_channels);
+int envelope_is_flat(int v);
+
+int cz_set(int v, int n, float f);
+int cmod_set(int voice, int o, float f);
+
+int amp_set(int v, float f);
+int pan_set(int voice, float f);
+int wave_quant(int voice, int n);
+int freq_set(int v, float f);
+int voice_set(int n, int *old_voice);
+int voice_copy(int v, int n);
+int wave_set(int voice, int wave);
+int wave_mute(int voice, int state);
+int wave_dir(int voice, int state);
+int freq_midi(int voice, float f);
+int amp_mod_set(int voice, int o, float f);
+int envelope_velocity(int voice, float f);
+int envelope_set(int voice, float a, float d, float s, float r);
+int wave_reset(int voice, int n);
+int freq_mod_set(int voice, int o, float f);
+int pan_mod_set(int voice, int o, float f);
+
+char *voice_format(int v, char *out, int verbose);
+void voice_show(int v, char c, int debug);
+int voice_show_all(int voice);
+int voice_trigger(int voice);
+int wave_default(int voice);
+int wave_loop(int voice, int state);
+int voice_copy(int v, int n);
+float midi2hz(float f);
+int voice_set(int n, int *old_voice);
+int voice_trigger(int voice);
+int wave_default(int voice);
+void wave_table_init(void);
+void wave_free(void);
+void voice_init(void);
 
 #endif

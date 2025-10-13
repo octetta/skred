@@ -1,0 +1,183 @@
+#ifndef _WIRE_H_
+#define _WIRE_H_
+
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+
+#include <dirent.h>
+#include <sys/types.h>
+
+#define VOICE_STACK_LEN (8)
+
+typedef struct {
+  float s[VOICE_STACK_LEN];
+  int ptr;
+} voice_stack_t;
+
+#define QUEUED_MAX (1024)
+#define QUEUE_SIZE (1024)
+
+enum {
+  Q_FREE = 0,
+  Q_PREP = 1,
+  Q_READY = 2,
+  Q_USING = 3,
+};
+
+typedef struct {
+  int state;
+  uint64_t when;
+  char what[QUEUED_MAX];
+  int voice;
+} queued_t;
+
+typedef struct {
+  int func;
+  int sub_func;
+  int next;
+  int argc;
+  float args[8];
+} value_t;
+
+#define WIRE_SCRATCH_MAX (1024)
+
+typedef struct {
+  int voice;
+  voice_stack_t stack;
+  int state;
+  char scratch[WIRE_SCRATCH_MAX];
+  int scratch_pointer;
+  char queued[QUEUED_MAX];
+  int queued_pointer;
+  int last_func;
+  int last_sub_func;
+  int pattern;
+} wire_t;
+
+enum {
+  FUNC_NULL,
+  FUNC_ERR,
+  FUNC_SYS,
+  FUNC_IMM,
+  //
+  FUNC_VOICE,
+  FUNC_FREQ,
+  FUNC_AMP,
+  FUNC_TRIGGER,
+  FUNC_VELOCITY,
+  FUNC_MUTE,
+  FUNC_AMP_MOD,
+  FUNC_CZ_MOD,
+  FUNC_FREQ_MOD,
+  FUNC_PAN_MOD,
+  FUNC_MIDI,
+  FUNC_WAVE,
+  FUNC_LOOP,
+  FUNC_DIR,
+  FUNC_INTER,
+  FUNC_PAN,
+  FUNC_ENVELOPE,
+  FUNC_QUANT,
+  FUNC_HOLD,
+  FUNC_RESET,
+  FUNC_FILTER_MODE,
+  FUNC_FILTER_FREQ,
+  FUNC_FILTER_RES,
+  FUNC_COPY,
+  FUNC_SMOOTHER,
+  FUNC_GLISSANDO,
+  // subfunctions
+  FUNC_HELP,
+  FUNC_QUIT,
+  FUNC_STATS0,
+  FUNC_STATS1,
+  FUNC_TRACE,
+  FUNC_DEBUG,
+  FUNC_SCOPE,
+  FUNC_LOAD,
+  FUNC_SAVE,
+  FUNC_WAVE_READ,
+  //
+  FUNC_WAVE_SHOW,
+  FUNC_DELAY,
+  FUNC_COMMENT,
+  FUNC_WHITESPACE,
+  FUNC_METRO,
+  FUNC_SEQ,
+  FUNC_MAIN_SEQ,
+  FUNC_STEP,
+  FUNC_STEP_MUTE,
+  FUNC_STEP_UNMUTE,
+  FUNC_PATTERN,
+  FUNC_WAVE_DEFAULT,
+  FUNC_CZ,
+  FUNC_VOLUME_SET,
+  //
+  FUNC_UNKNOWN,
+};
+
+enum {
+  ERR_EXPECTED_INT,
+  ERR_EXPECTED_FLOAT,
+  ERR_INVALID_VOICE,
+  ERR_FREQUENCY_OUT_OF_RANGE,
+  ERR_AMPLITUDE_OUT_OF_RANGE,
+  ERR_INVALID_WAVE,
+  ERR_EMPTY_WAVE,
+  ERR_INVALID_DIRECTION,
+  ERR_INVALID_LOOPING,
+  ERR_PAN_OUT_OF_RANGE,
+  ERR_INVALID_DELAY,
+  ERR_INVALID_MODULATOR,
+  ERR_UNKNOWN_FUNC,
+  ERR_UNKNOWN_SYS,
+  ERR_INVALID_TRACE,
+  ERR_INVALID_DEBUG,
+  ERR_INVALID_MUTE,
+  ERR_INVALID_EXT_SAMPLE,
+  ERR_PARSING,
+  ERR_INVALID_PATCH,
+  ERR_INVALID_MIDI_NOTE,
+  ERR_INVALID_MOD,
+  //
+  ERR_INVALID_AMP,
+  ERR_INVALID_FILTER_MODE,
+  ERR_INVALID_FILTER_RES,
+  ERR_INVALID_PAN,
+  ERR_INVALID_QUANT,
+  ERR_INVALID_FREQ,
+  ERR_INVALID_WAVETABLE,
+  // add new stuff before here...
+  ERR_UNKNOWN,
+};
+
+int wire(char *line, wire_t *w, int output);
+int queue_item(uint64_t when, char *what, int voice);
+void show_threads(void);
+void system_show(void);
+int audio_show(void);
+int patch_load(int voice, int n, int output);
+void synth(float *buffer, float *input, int num_frames, int num_channels);
+int wavetable_show(int n);
+int audio_show(void);
+char *wire_err_str(int n);
+
+extern queued_t work_queue[QUEUE_SIZE];
+extern int debug;
+extern int trace;
+extern int udp_port;
+extern int requested_seq_frames_per_callback;
+extern int seq_frames_per_callback;
+extern int scope_enable;
+extern float tempo_time_per_step;
+extern float tempo_bpm;
+
+extern int console_voice;
+
+extern int scope_pattern_pointer;
+
+#endif
+
