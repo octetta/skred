@@ -236,11 +236,11 @@ int main(int argc, char *argv[]) {
   sleep_float(.5); // give a bit of time for the smoothing to apply
 
   // Cleanup
-  ma_device_uninit(&synth_device);
   ma_device_uninit(&seq_device);
-
+  sleep_float(.5); // make sure we don't crash the callback b/c thread timing and wave_data
+  ma_device_uninit(&synth_device);
+  sleep_float(.5); // make sure we don't crash the callback b/c thread timing and wave_data
   udp_running = 0;
-
   sleep_float(.5); // make sure we don't crash the callback b/c thread timing and wave_data
 
   wave_free();
