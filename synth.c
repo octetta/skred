@@ -2,13 +2,75 @@
 
 #include "synth-types.h"
 
+#define USE_PRE
+
+// #undef USE_PRE
+
+#ifdef USE_PRE
+
 #define ARRAY(type, name, size, init) type name[size] = init;
+#include "synth.def"
+#undef ARRAY
+
+#else
+
+#define ARRAY(type, name, size, init) type *name;
+#include "synth.def"
+#undef ARRAY
+
+#endif
+
+#define ARRAY(type, name, size, init) int name##__len__ = size;
 #include "synth.def"
 #undef ARRAY
 
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdio.h>
+
+void synth_init(void) {
+
+  if (debug) {
+#define ARRAY(type, name, size, init) printf("%s : %d\n", #name, name##__len__);
+#include "synth.def"
+#undef ARRAY
+  }
+
+#ifdef USE_PRE
+
+  printf("# synth_init :: USE_PRE\n");
+
+#else
+
+  printf("# synth_init :: USE_MALLOC\n");
+#define ARRAY(type, name, size, init) name = (type*)malloc(size * sizeof(type));
+#include "synth.def"
+#undef ARRAY
+
+#define ARRAY(type, name, size, init) if (name == NULL) printf("malloc %s failed\n", #name);
+#include "synth.def"
+#undef ARRAY
+
+#endif
+}
+
+void synth_free(void) {
+#ifdef USE_PRE
+
+  printf("# synth_free :: USE_PRE\n");
+  //
+  
+#else
+  
+  printf("# synth_free :: USE_FREE\n");
+
+#define ARRAY(type, name, size, init) free(name);
+#include "synth.def"
+#undef ARRAY
+
+#endif
+}
 
 int requested_synth_frames_per_callback = SYNTH_FRAMES_PER_CALLBACK;
 int synth_frames_per_callback = 0;
@@ -852,8 +914,12 @@ int freq_midi(int voice, float f) {
 }
 
 void voice_reset(int i) {
+  voice_wave_table_index[i] = 0;
+  voice_table_rate[i] = 0;
+  voice_table_size[i] = 0;
   voice_sample[i] = 0;
   voice_amp[i] = 0;
+  voice_user_amp[i] = 0;
   voice_pan[i] = 0;
   voice_pan_left[i] = 0.5f;
   voice_pan_right[i] = 0.5f;
@@ -870,8 +936,8 @@ void voice_reset(int i) {
   envelope_init(i, 0.0f, 0.0f, 1.0f, 0.0f);
   voice_freq[i] = 440.0f;
   osc_set_wave_table_index(i, WAVE_TABLE_SINE);
-  mmf_init(i, 8000.0f, 0.707f);
   voice_filter_mode[i] = 0;
+  mmf_init(i, 8000.0f, 0.707f);
   //
   voice_smoother_enable[i] = 1;
   voice_smoother_gain[i] = 0.0f;

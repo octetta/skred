@@ -149,8 +149,12 @@ int main(int argc, char *argv[]) {
       }
     }
   }
+  
   show_threads();
+  
   linenoiseHistoryLoad(HISTORY_FILE);
+  
+  synth_init();
   wave_table_init();
   voice_init();
   seq_init();
@@ -205,6 +209,8 @@ int main(int argc, char *argv[]) {
     if (n < 0) main_running = 0;
   }
 
+  new_scope->voice_text[0] = '\0';
+
   while (main_running) {
     voice_format(current_voice, new_scope->voice_text, 0);
     char *line = linenoise("# ");
@@ -238,6 +244,7 @@ int main(int argc, char *argv[]) {
   sleep_float(.5); // make sure we don't crash the callback b/c thread timing and wave_data
 
   wave_free();
+  synth_free();
 
   show_threads();
 

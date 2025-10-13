@@ -65,6 +65,9 @@ linenoise.o: linenoise.c linenoise.h
 miniaudio.o: miniaudio.c miniaudio.h
 	gcc -c $<
 
+check : skred
+	valgrind --tool=memcheck --leak-check=full ./skred
+
 clean :
 	rm -f *.o
 	rm -f $(EXE)
