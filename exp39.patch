@@ -1,36 +1,28 @@
-S100
-Z0
-M120
+S100 # reset all voicds
+Z0 # stop all patterns
+
 v21w131/a20
 v20w145a20
 v0w117a5
-y0
-{v21T}x0
-{v20T}x1
-y1
-{ v0T +.33v0T +.33v0T } x0
 
+M240
 
-###
+y0 %2
+{v21T} x0
+{v20T} x1
 
-
-; M237.842
-; y0 z1 %2 # [1]
-; {v21T} x0
-; {v20T} x1
-; M237.842
-; y1 z1 %1 # [0]
+; y1 %1
 ; { v0T +.33v0T +.33v0T } x0
-; M237.842
-; y2 z1 %3 # [5]
+
+; y2 %3
 ; {v1n65T} x0
 ; {v1n69T} x1
 ; {v1n75T} x2
 ; {v1n78T} x3
 ; {v1n75T} x4
 ; {v1n78T} x5
-; M237.842
-; y3 z1 %3 # [3]
+
+; y3 %3
 ; {v0n69} x0
 ; {v0n70} x1
 ; {v0n71} x2
