@@ -49,6 +49,7 @@ char *display_func_func_str[FUNC_UNKNOWN+1] = {
   [FUNC_UNKNOWN] = "unknown",
   [FUNC_SMOOTHER] = "smoother",
   [FUNC_GLISSANDO] = "glissando",
+  [FUNC_DATA] = "data",
   //
   [FUNC_HELP] = "help",
   [FUNC_SEQ] = "seq",
@@ -152,6 +153,12 @@ void wire_show(wire_t *w) {
   printf("# voice %d\n", w->voice);
   printf("# state %d\n", w->state);
   printf("# pattern %d\n", w->pattern);
+  printf("# scratch %s\n", w->scratch);
+  printf("# data max %d\n", w->data_max);
+  printf("# data len %d\n", w->data_len);
+  printf("( ");
+  for (int i = 0; i < w->data_len; i++) printf("%g ", w->data[i]);
+  printf(")\n");
 }
 
 void system_show(void) {
@@ -207,7 +214,7 @@ int patch_load(int voice, int n, int output) {
   FILE *in = fopen(file, "r");
   int r = 0;
   if (in) {
-    wire_t w = {.voice = 0, .state = 0, .last_func = FUNC_NULL, .pattern = 0, };
+    wire_t w = WIRE();
     char line[1024];
     while (fgets(line, sizeof(line), in) != NULL) {
       size_t len = strlen(line);
@@ -377,8 +384,23 @@ int wavetable_show(int n) {
 
 static char *ignore = " \t\r\n;";
 
+void wire_data_push(wire_t *w) {
+  if (w->data_len >= w->data_max) {
+    // too much data, ignoring...
+    return;
+  }
+  if (w->data_acc[0] != '\0') {
+    float f = strtof(w->data_acc, NULL);
+    // printf("# [%d] %s ~> %g\n", w->data_len, w->data_acc, f);
+    w->data_acc[0] = '\0';
+    w->data_acc_ptr = 0;
+    w->data[w->data_len] = f;
+    w->data_len++;
+  }
+}
+
 int wire(char *line, wire_t *w, int output) {
-  wire_t safe = {.voice = 0, .state = 0, .last_func = FUNC_NULL, .pattern = 0, };
+  wire_t safe = WIRE();
   if (w == NULL) w = &safe;
   size_t len = strlen(line);
   if (len == 0) return 0;
@@ -394,7 +416,6 @@ int wire(char *line, wire_t *w, int output) {
 
   char c;
 
-  int local_state = w->state;
   uint64_t queue_now = 0;
   float queue_float_acc = 0.0f;
   w->queued_pointer = 0;
@@ -402,21 +423,59 @@ int wire(char *line, wire_t *w, int output) {
 
   while (more) {
     // guard against over-runs...
-    if (ptr >= max) break;
-    if (*ptr == '\0') break;
-    if (local_state != 0) {
-      // code protocol section
+    if (*ptr == '\0' || ptr >= max) {
+      // handle the case where we only had one thing on a line
+      switch (w->state) {
+        case W_SCRATCH:
+          w->scratch[w->scratch_pointer++] = ' ';
+          w->scratch[w->scratch_pointer+1] = '\0';
+          break;
+        case W_DATA:
+          wire_data_push(w);
+          break;
+      }
+      break;
+    }
+    if (w->state == W_SCRATCH) {
+      // collect chars to scratch...
       char c = *ptr;
       switch (*ptr++) {
         case '}':
           // do something with accumulated characters...
           w->scratch[w->scratch_pointer] = '\0';
           w->scratch[w->scratch_pointer+1] = '\0';
-          local_state = 0;
+          w->state = W_PROTOCOL;
           continue;
         default:
           if (w->scratch_pointer < WIRE_SCRATCH_MAX) {
             w->scratch[w->scratch_pointer++] = c;
+          }
+          continue;
+      }
+    } else if (w->state == W_DATA) {
+      // collect floats to data...
+      char c = *ptr;
+      switch (*ptr++) {
+        case '\0':
+          puts("# got null in w_data...");
+          break;
+        case ')':
+          // stop collecting data
+          wire_data_push(w);
+          w->state = W_PROTOCOL;
+          continue;
+        default:
+          switch (c) {
+            case '-': case '.':
+            case '0': case '1': case '2': case '3': case '4':
+            case '5': case '6': case '7': case '8': case '9':
+              w->data_acc[w->data_acc_ptr] = c;
+              w->data_acc[w->data_acc_ptr+1] = '\0';
+              w->data_acc_ptr++;
+              break;
+            default:
+              wire_data_push(w);
+              break;
           }
           continue;
       }
@@ -442,8 +501,15 @@ int wire(char *line, wire_t *w, int output) {
       char token = *ptr++;
       switch (token) {
         case '{':
-          local_state = 1;
+          w->state = W_SCRATCH;
           w->scratch_pointer = 0;
+          continue;
+        case '(':
+          //puts("# -> W_DATA");
+          w->state = W_DATA;
+          w->data_len = 0;
+          w->data_acc[0] = '\0';
+          w->data_acc_ptr = 0;
           continue;
         case '[':
           voice_push(&w->stack, (float)voice);
@@ -842,25 +908,43 @@ int wire(char *line, wire_t *w, int output) {
         case 's':
           v = parse(ptr, FUNC_SMOOTHER, FUNC_NULL, 1, w);
           if (v.argc == 1) {
+            ptr += v.next;
             if (v.args[0] <= 0.0f) {
               voice_smoother_enable[voice] = 0;
             } else {
               voice_smoother_enable[voice] = 1;
               voice_smoother_smoothing[voice] = v.args[0];
             }
+          } else return ERR_PARSING;
+          break;
+        case 'D':
+          v = parse(ptr, FUNC_DATA, FUNC_NULL, 1, w);
+          if (v.argc == 1) {
             ptr += v.next;
+            int n = (int)v.args[0];
+            if (w->data_max != n) {
+              if (w->data) {
+                printf("# free data and alloc %d\n", n);
+                free(w->data);
+              }
+              w->data_max = n;
+              w->data = (float *)malloc(n * sizeof(float));
+              w->data_acc[0] = '\0';
+              w->data_acc_ptr = 0;
+              w->data_len = 0;
+            }
           } else return ERR_PARSING;
           break;
         case 'g':
           v = parse(ptr, FUNC_GLISSANDO, FUNC_NULL, 1, w);
           if (v.argc == 1) {
+            ptr += v.next;
             if (v.args[0] <= 0.0f) {
               voice_glissando_enable[voice] = 0;
             } else {
               voice_glissando_enable[voice] = 1;
               voice_glissando_speed[voice] = v.args[0];
             }
-            ptr += v.next;
           } else return ERR_PARSING;
           break;
         case 'S':
@@ -908,7 +992,6 @@ int wire(char *line, wire_t *w, int output) {
     w->queued_pointer = 0;
   }
   w->voice = voice;
-  w->state = local_state;
   return r;
 }
 

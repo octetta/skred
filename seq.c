@@ -32,7 +32,7 @@ void seq(int frame_count) {
   // static int state = 0;
   
   // run expired (ready) queued things...
-  static wire_t v = {.voice = 0, .state = 0, .last_func = FUNC_NULL, .pattern = 0, };
+  static wire_t v = WIRE();
   for (int q = 0; q < QUEUE_SIZE; q++) {
     if ((work_queue[q].state == Q_READY) && (work_queue[q].when < synth_sample_count)) {
       work_queue[q].state = Q_USING;
@@ -42,9 +42,7 @@ void seq(int frame_count) {
     }
   }
 
-  // static float q;
-
-  static wire_t w = {.voice = 0, .state = 0, .last_func = FUNC_NULL, .pattern = 0, };
+  static wire_t w = WIRE();
 
   int advance = 0;
   static float clock_sec = 0.0f;

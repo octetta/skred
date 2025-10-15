@@ -33,6 +33,12 @@ typedef struct {
   int state;
   char scratch[WIRE_SCRATCH_MAX];
   int scratch_pointer;
+  float *data;
+  int data_max;
+  int data_pointer;
+  int data_len;
+  char data_acc[64];
+  int data_acc_ptr;
   char queued[QUEUED_MAX];
   int queued_pointer;
   int last_func;
@@ -72,6 +78,7 @@ enum {
   FUNC_COPY,
   FUNC_SMOOTHER,
   FUNC_GLISSANDO,
+  FUNC_DATA,
   // subfunctions
   FUNC_HELP,
   FUNC_QUIT,
@@ -137,6 +144,17 @@ enum {
   ERR_UNKNOWN,
 };
 
+enum {
+  W_PROTOCOL = 0,
+  W_SCRATCH,
+  W_DATA,
+  W_DATA_0,
+  W_DATA_1,
+  W_DATA_2,
+  W_DATA_3,
+  W_DATA_4,
+};
+
 int wire(char *line, wire_t *w, int output);
 void show_threads(void);
 void system_show(void);
@@ -145,6 +163,9 @@ int patch_load(int voice, int n, int output);
 int wavetable_show(int n);
 int audio_show(void);
 char *wire_err_str(int n);
+
+#define WIRE() { .voice = 0, .state = W_PROTOCOL, .last_func = FUNC_NULL, \
+  .pattern = 0, .data = NULL, .data_max = 0 }
 
 #endif
 

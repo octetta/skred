@@ -202,7 +202,7 @@ int main(int argc, char *argv[]) {
   new_scope->buffer_len = SCOPE_WIDTH_IN_SAMPLES;
   sprintf(new_scope->status_text, "n/a");
 
-  wire_t w = {.voice = 0, .state = 0, .last_func = FUNC_NULL, .pattern = 0, };
+  wire_t w = WIRE();
 
   if (execute_from_start[0] != '\0') {
     int n = wire(execute_from_start, &w, 1);
@@ -286,7 +286,7 @@ void *udp_main(void *arg) {
   char line[1024];
   fd_set readfds;
   struct timeval timeout;
-  wire_t w = { .voice = 0, .state = 0, .pattern = 0, .pattern = 0, };
+  wire_t w = WIRE();
   while (udp_running) {
     FD_ZERO(&readfds);
     FD_SET(sock, &readfds);
