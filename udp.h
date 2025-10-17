@@ -5,5 +5,6 @@
 
 void udp_start(int port);
 void udp_stop(void);
+int udp_info(void);
 
 #endif

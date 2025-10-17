@@ -161,8 +161,10 @@ void wire_show(wire_t *w) {
   printf(")\n");
 }
 
+#include "udp.h"
+
 void system_show(void) {
-  printf("# udp_port %d\n", udp_port);
+  printf("# udp_port %d\n", udp_info());
 }
 
 void show_stats(void) {
@@ -1045,4 +1047,13 @@ char *wire_err_str(int n) {
     }
   }
   return "no-string";
+}
+
+void wire_init(wire_t *w) {
+  w->voice = 0;
+  w->state = W_PROTOCOL;
+  w->last_func = FUNC_NULL;
+  w->pattern = 0;
+  w->data = NULL;
+  w->data_max = 0;
 }

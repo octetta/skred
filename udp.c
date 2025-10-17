@@ -8,7 +8,7 @@
 #include "udp.h"
 
 // Simple hash function for UDP address/port to array index
-int get_connection_index(struct sockaddr_in *addr, int array_size) {
+static int get_connection_index(struct sockaddr_in *addr, int array_size) {
     uint32_t ip = addr->sin_addr.s_addr;
     uint16_t port = addr->sin_port;
     
@@ -20,14 +20,15 @@ int get_connection_index(struct sockaddr_in *addr, int array_size) {
     
     return hash % array_size;
 }
-int udp_port = UDP_PORT;
-int udp_running = 1;
 
-pthread_t udp_thread_handle;
+static int udp_port = UDP_PORT;
+static int udp_running = 1;
 
-struct sockaddr_in serve;
+static pthread_t udp_thread_handle;
 
-int udp_open(int port) {
+static struct sockaddr_in serve;
+
+static int udp_open(int port) {
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     int opt = 1;
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(int));
@@ -41,7 +42,15 @@ int udp_open(int port) {
     return -1;
 }
 
-void *udp_main(void *arg) {
+typedef struct {
+  wire_t w;
+  int in_use;
+  int last_use;
+} udp_state_t;
+
+#define UDP_PORT_MAX (127)
+
+static void *udp_main(void *arg) {
   if (udp_port <= 0) {
     return NULL;
   }
@@ -60,7 +69,12 @@ void *udp_main(void *arg) {
   char line[1024];
   fd_set readfds;
   struct timeval timeout;
-  wire_t w = WIRE();
+  udp_state_t user[UDP_PORT_MAX];
+  for (int i = 0; i < UDP_PORT_MAX; i++) {
+    wire_init(&user[i].w);
+    user[i].in_use = 0;
+    user[i].last_use = 0;
+  }
   while (udp_running) {
     FD_ZERO(&readfds);
     FD_SET(sock, &readfds);
@@ -74,7 +88,8 @@ void *udp_main(void *arg) {
         // printf("# from %d\n", ntohs(client.sin_port)); // port
         // in the future, this should get ip and port and use for
         // context amongst multiple udp clients
-        wire(line, &w, 0);
+        int which = get_connection_index(&client, UDP_PORT_MAX);
+        wire(line, &user[which].w, 0);
       } else {
         if (errno == EAGAIN) continue;
       }
@@ -96,4 +111,8 @@ void udp_start(int port) {
 
 void udp_stop(void) {
   udp_running = 0;
+}
+
+int udp_info(void) {
+  return udp_port;
 }

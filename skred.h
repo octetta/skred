@@ -92,7 +92,6 @@ typedef struct {
 
 extern int debug;
 extern int trace;
-extern int udp_port;
 extern int scope_enable;
 extern float tempo_time_per_step;
 extern float tempo_bpm;

@@ -167,5 +167,7 @@ char *wire_err_str(int n);
 #define WIRE() { .voice = 0, .state = W_PROTOCOL, .last_func = FUNC_NULL, \
   .pattern = 0, .data = NULL, .data_max = 0 }
 
+void wire_init(wire_t *w);
+
 #endif
 
