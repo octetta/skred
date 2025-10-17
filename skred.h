@@ -9,7 +9,6 @@
 #define VOICE_MAX (32)
 #define AUDIO_CHANNELS (2)
 #define AMY_FACTOR (0.025f)
-#define UDP_PORT (60440)
 #define SYNTH_FRAMES_PER_CALLBACK (512)
 #define SEQ_FRAMES_PER_CALLBACK (128)
 

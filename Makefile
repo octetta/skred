@@ -6,10 +6,6 @@ EXE = \
 
 all : $(EXE)
 
-ELIB = \
-	linenoise.o \
-  #
-
 LIB = \
 	-lm \
 	-lasound \
@@ -50,13 +46,29 @@ synth.o: synth.c synth.h synth-types.h
 seq.o: seq.c seq.h
 	gcc $(COPTS) -c $<
 
+udp.o: udp.c udp.h
+	gcc $(COPTS) -c $<
+
 wire.o: wire.c wire.h
 	gcc $(COPTS) -c $<
 
 skred.o: skred.c raylib-quickstart-main/Makefile
 	gcc $(COPTS) -c $<
 
-skred : skred.o miniwav.o amysamples.o synth.o seq.o wire.o $(ELIB) scope-shared.o miniaudio.o
+OBJS = \
+  skred.o \
+  miniwav.o \
+  amysamples.o \
+  synth.o \
+  seq.o \
+  wire.o \
+  udp.o \
+  scope-shared.o \
+  miniaudio.o \
+	linenoise.o \
+  #
+
+skred : $(OBJS)
 	gcc $(COPTS) $^ -o $@ $(LIB)
 
 linenoise.o: linenoise.c linenoise.h
