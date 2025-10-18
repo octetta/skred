@@ -70,6 +70,7 @@ char *display_func_func_str[FUNC_UNKNOWN+1] = {
   [FUNC_WHITESPACE] = "white-space",
   [FUNC_METRO] = "metro",
   [FUNC_WAVE_READ] = "wave-read",
+  [FUNC_DATA_READ] = "data-read",
   [FUNC_CZ] = "cz",
   [FUNC_VOLUME_SET] = "volume",
 };
@@ -236,6 +237,39 @@ int patch_load(int voice, int n, int output) {
 #define SAVE_WAVE_LEN (8)
 static float *save_wave_list[SAVE_WAVE_LEN]; // to keep from crashing the synth, have a place to store free-ed waves
 static int save_wave_ptr = 0;
+
+int data_load(wire_t *w, int where) {
+  if (where < EXT_SAMPLE_00 || where >= EXT_SAMPLE_99) return ERR_INVALID_EXT_SAMPLE;
+  if (w == NULL) return 100; // fix todo
+  if (w->data == NULL) return 100; // fix todo
+  float *table = w->data;
+  int len = w->data_len;
+    // duped elsewhere todo consolidate
+    if (wave_table_data[where]) {
+      if (save_wave_ptr >= SAVE_WAVE_LEN) {
+        save_wave_ptr = 0;
+      }
+      if (save_wave_list[save_wave_ptr]) {
+        printf("# freeing old wave %d\n", save_wave_ptr);
+        free(save_wave_list[save_wave_ptr]);
+      }
+      save_wave_list[save_wave_ptr++] = wave_table_data[where];
+    }
+    wave_table_data[where] = table;
+    wave_size[where] = len;
+    wave_rate[where] = (float)44100.0f;
+    wave_one_shot[where] = 1;
+    wave_loop_enabled[where] = 0;
+    wave_loop_start[where] = 1;
+    wave_loop_end[where] = len;
+    wave_midi_note[where] = 69;
+    wave_offset_hz[where] = (float)len / 44100.0f * 440.0f;
+    char *name = "data";
+    int channels = 1;
+    printf("# read %d frames from %s to %d (ch:%d sr:%d)\n",
+      len, name, where, channels, 44100);
+  return 0;
+}
 
 int wave_load(int which, int where) {
   if (where < EXT_SAMPLE_00 || where >= EXT_SAMPLE_99) return ERR_INVALID_EXT_SAMPLE;
@@ -579,6 +613,15 @@ int wire(char *line, wire_t *w, int output) {
                 } else return ERR_PARSING;
                 r = patch_load(voice, which, output);
               }
+              break;
+            case 'D':
+              // :D# load data into wave slot #
+              v = parse(ptr, FUNC_SYS, FUNC_DATA_READ, 1, w);
+              if (v.argc == 1) {
+                ptr += v.next;
+                int where = (int)v.args[0];
+                data_load(w, where);
+              } else return ERR_PARSING;
               break;
             case 'w':
               // :w#,# load wave#.wav into wave slot #

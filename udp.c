@@ -99,6 +99,17 @@ static void *udp_main(void *arg) {
       perror("# select");
     }
   }
+  for (int i = 0; i < UDP_PORT_MAX; i++) {
+    if (user[i].data) {
+      free(user[i].data);
+      user[i].data = NULL;
+      user[i].data_len = 0;
+      user[i].data_max = 0;
+    }
+    wire_init(&user[i].w);
+    user[i].in_use = 0;
+    user[i].last_use = 0;
+  }
   if (debug) printf("# udp stopping\n");
   return NULL;
 }
