@@ -158,7 +158,7 @@ void wire_show(wire_t *w) {
   printf("# data max %d\n", w->data_max);
   printf("# data len %d\n", w->data_len);
   printf("( ");
-  for (int i = 0; i < w->data_len; i++) printf("%g ", w->data[i]);
+  for (int i = 0; i < w->data_len; i++) printf("%.8f ", w->data[i]);
   printf(")\n");
 }
 
