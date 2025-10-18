@@ -89,7 +89,7 @@ static void *udp_main(void *arg) {
         // in the future, this should get ip and port and use for
         // context amongst multiple udp clients
         int which = get_connection_index(&client, UDP_PORT_MAX);
-        wire(line, &user[which].w, 0);
+        wire(line, &user[which].w);
       } else {
         if (errno == EAGAIN) continue;
       }
@@ -100,15 +100,13 @@ static void *udp_main(void *arg) {
     }
   }
   for (int i = 0; i < UDP_PORT_MAX; i++) {
-    if (user[i].data) {
-      free(user[i].data);
-      user[i].data = NULL;
-      user[i].data_len = 0;
-      user[i].data_max = 0;
+    if (user[i].w.data) {
+      free(user[i].w.data);
+      user[i].w.data = NULL;
+      user[i].w.data_len = 0;
+      user[i].w.data_max = 0;
+      user[i].in_use = 0;
     }
-    wire_init(&user[i].w);
-    user[i].in_use = 0;
-    user[i].last_use = 0;
   }
   if (debug) printf("# udp stopping\n");
   return NULL;

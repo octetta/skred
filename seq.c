@@ -37,7 +37,7 @@ void seq(int frame_count) {
     if ((work_queue[q].state == Q_READY) && (work_queue[q].when < synth_sample_count)) {
       work_queue[q].state = Q_USING;
       v.voice = work_queue[q].voice;
-      wire(work_queue[q].what, &v, 0);
+      wire(work_queue[q].what, &v);
       work_queue[q].state = Q_FREE;
     }
   }
@@ -71,7 +71,7 @@ void seq(int frame_count) {
         }
       }
       seq_counter[p]++;
-      if (seq_pattern_mute[p][seq_pointer[p]] == 0) wire(seq_pattern[p][seq_pointer[p]], &w, 0);
+      if (seq_pattern_mute[p][seq_pointer[p]] == 0) wire(seq_pattern[p][seq_pointer[p]], &w);
       seq_pointer[p]++;
       switch (seq_pattern[p][seq_pointer[p]][0]) {
         case '\0':

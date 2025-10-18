@@ -101,7 +101,7 @@ value_t parse_none(int func, int sub_func, wire_t *w) {
   v.sub_func = sub_func;
   v.argc = 0;
   v.next = 0;
-  if (trace) dump(v);
+  if (w->trace) dump(v);
   return v;
 }
 
@@ -136,11 +136,11 @@ value_t parse(const char *ptr, int func, int sub_func, int argc, wire_t *w) {
       v.next = 0;
       break;
   }
-  if (debug) {
+  if (w->debug) {
     printf("# argc:%d next:%d", v.argc, v.next);
     puts("");
   }
-  if (trace) dump(v);
+  if (w->trace) dump(v);
 
   return v;
 }
@@ -223,7 +223,7 @@ int patch_load(int voice, int n, int output) {
       size_t len = strlen(line);
       if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
       if (output) printf("# %s\n", line);
-      r = wire(line, &w, trace);
+      r = wire(line, &w);
       if (r != 0) {
         if (output) printf("# error in patch\n");
         break;
@@ -266,8 +266,7 @@ int data_load(wire_t *w, int where) {
     wave_offset_hz[where] = (float)len / 44100.0f * 440.0f;
     char *name = "data";
     int channels = 1;
-    printf("# read %d frames from %s to %d (ch:%d sr:%d)\n",
-      len, name, where, channels, 44100);
+    printf("# read %d frames from %s to %d (ch:%d sr:%d)\n", len, name, where, channels, 44100);
   return 0;
 }
 
@@ -435,7 +434,7 @@ void wire_data_push(wire_t *w) {
   }
 }
 
-int wire(char *line, wire_t *w, int output) {
+int wire(char *line, wire_t *w) {
   wire_t safe = WIRE();
   if (w == NULL) w = &safe;
   size_t len = strlen(line);
@@ -496,6 +495,7 @@ int wire(char *line, wire_t *w, int output) {
           puts("# got null in w_data...");
           break;
         case ')':
+          puts("# W_DATA -> W_PROTOCOL");
           // stop collecting data
           wire_data_push(w);
           w->state = W_PROTOCOL;
@@ -519,7 +519,7 @@ int wire(char *line, wire_t *w, int output) {
       // wire protocol section
       // skip whitespace and semicolons
       ptr += strspn(ptr, ignore);
-      if (debug) printf("# [%ld] '%c' (%d)\n", ptr-line, *ptr, *ptr);
+      if (w->debug) printf("# [%ld] '%c' (%d)\n", ptr-line, *ptr, *ptr);
       if (queue_now) {
         // we started queue-ing, so...
         char c = *ptr;
@@ -541,7 +541,7 @@ int wire(char *line, wire_t *w, int output) {
           w->scratch_pointer = 0;
           continue;
         case '(':
-          //puts("# -> W_DATA");
+          puts("# W_PROTOCOL -> W_DATA");
           w->state = W_DATA;
           w->data_len = 0;
           w->data_acc[0] = '\0';
@@ -561,24 +561,27 @@ int wire(char *line, wire_t *w, int output) {
           switch (*ptr++) {
             case '\0': return 100;
             case 'q': return -1;
+            case 'i':
+              if (w->output) w->output = 0; else w->output = 1;
+              break;
             case 't':
               v = parse_none(FUNC_SYS, FUNC_TRACE, w);
               c = *ptr;
               if (c == '0' || c == '1') {
-                trace = c - '0';
+                w->trace = c - '0';
                 ptr++;
               } else {
-                if (trace) trace = 0; else trace = 1;
+                if (w->trace) w->trace = 0; else w->trace = 1;
               }
               break;
             case 'S':
               v = parse_none(FUNC_SYS, FUNC_STATS0, w);
-              if (output) show_stats();
-              if (output) wire_show(w);
+              if (w->output) show_stats();
+              if (w->output) wire_show(w);
               break;
             case 's':
               v = parse_none(FUNC_SYS, FUNC_STATS1, w);
-              if (output) {
+              if (w->output) {
                 system_show();
                 show_threads();
                 audio_show();
@@ -588,10 +591,10 @@ int wire(char *line, wire_t *w, int output) {
               v = parse_none(FUNC_SYS, FUNC_DEBUG, w);
               c = *ptr;
               if (c == '0' || c == '1') {
-                debug = c - '0';
+                w->debug = c - '0';
                 ptr++;
               } else {
-                if (debug) debug = 0; else debug = 1;
+                if (w->debug) w->debug = 0; else w->debug = 1;
               }
               break;
             case 'o':
@@ -611,7 +614,7 @@ int wire(char *line, wire_t *w, int output) {
                   ptr += v.next;
                   which = (int)v.args[0];
                 } else return ERR_PARSING;
-                r = patch_load(voice, which, output);
+                r = patch_load(voice, which, w->output);
               }
               break;
             case 'D':
@@ -752,7 +755,7 @@ int wire(char *line, wire_t *w, int output) {
             ptr += v.next;
           } else return ERR_PARSING;
           r = voice_set((int)v.args[0], &voice);
-          if (output) console_voice = voice;
+          if (w->output) console_voice = voice;
           break;
         case 'V':
           v = parse(ptr, FUNC_VOLUME_SET, FUNC_NULL, 1, w);
@@ -853,7 +856,7 @@ int wire(char *line, wire_t *w, int output) {
             ptr += v.next;
             seq_state_all((int)v.args[0]);
           } else {
-            if (output) for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(p);
+            if (w->output) for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(p);
           }
           break;
         case 'z':
@@ -862,7 +865,7 @@ int wire(char *line, wire_t *w, int output) {
             ptr += v.next;
             seq_state_set(w->pattern, (int)v.args[0]);
           } else {
-            if (output) pattern_show(w->pattern);
+            if (w->output) pattern_show(w->pattern);
           }
           break;
         case 'M':
@@ -967,6 +970,7 @@ int wire(char *line, wire_t *w, int output) {
           if (v.argc == 1) {
             ptr += v.next;
             int n = (int)v.args[0];
+            printf("# D%d allocate %d\n", n, n);
             if (w->data_max != n) {
               if (w->data) {
                 printf("# free data and alloc %d\n", n);
@@ -1021,7 +1025,7 @@ int wire(char *line, wire_t *w, int output) {
           break;
         //
         default:
-          if (output) printf("# not sure\n");
+          if (w->output) printf("# not sure\n");
           return ERR_UNKNOWN_FUNC;
           more = 0;
           break;
@@ -1099,4 +1103,7 @@ void wire_init(wire_t *w) {
   w->pattern = 0;
   w->data = NULL;
   w->data_max = 0;
+  w->output = 0;
+  w->trace = 0;
+  w->debug = 0;
 }

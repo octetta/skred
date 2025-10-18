@@ -44,6 +44,9 @@ typedef struct {
   int last_func;
   int last_sub_func;
   int pattern;
+  int output;
+  int debug;
+  int trace;
 } wire_t;
 
 enum {
@@ -156,7 +159,7 @@ enum {
   W_DATA_4,
 };
 
-int wire(char *line, wire_t *w, int output);
+int wire(char *line, wire_t *w);
 void show_threads(void);
 void system_show(void);
 int audio_show(void);
@@ -166,7 +169,7 @@ int audio_show(void);
 char *wire_err_str(int n);
 
 #define WIRE() { .voice = 0, .state = W_PROTOCOL, .last_func = FUNC_NULL, \
-  .pattern = 0, .data = NULL, .data_max = 0 }
+  .pattern = 0, .data = NULL, .data_max = 0, .output = 0, .debug = 0, .trace = 0}
 
 void wire_init(wire_t *w);
 

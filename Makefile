@@ -2,6 +2,7 @@ EXE = \
 	skred \
 	scope-shared \
 	scope \
+	wav2data \
   #
 
 all : $(EXE)
@@ -30,6 +31,9 @@ scope-shared : scope-shared.c
 
 scope : scope.c scope-shared.o
 	gcc -g -D_GNU_SOURCE -DUSE_RAYLIB $(RLINC) $(RLLIB) $^ -o $@ -lraylib -lm
+
+wav2data : wav2data.c miniwav.o
+	gcc -g -D_GNU_SOURCE $^ -o $@
 
 miniwav.o : miniwav.c miniwav.h
 	gcc $(COPTS) -c $<

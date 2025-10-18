@@ -200,9 +200,12 @@ int main(int argc, char *argv[]) {
   sprintf(new_scope->status_text, "n/a");
 
   wire_t w = WIRE();
+  w.output = 1;
+  w.debug = debug;
+  w.trace = trace;
 
   if (execute_from_start[0] != '\0') {
-    int n = wire(execute_from_start, &w, 1);
+    int n = wire(execute_from_start, &w);
     if (n < 0) main_running = 0;
   }
 
@@ -217,7 +220,7 @@ int main(int argc, char *argv[]) {
     }
     if (strlen(line) == 0) continue;
     linenoiseHistoryAdd(line);
-    int n = wire(line, &w, 1);
+    int n = wire(line, &w);
     if (n < 0) break; // request to stop or error
     if (n > 0) {
       char *s = wire_err_str(n);
