@@ -1,0 +1,74 @@
+CC = x86_64-w64-mingw32-gcc
+
+EXE = \
+	skred.exe \
+  #
+
+all : $(EXE)
+
+LIB = \
+	-lm \
+  -pthread \
+	-lpthread \
+  -lws2_32 \
+  #
+
+COPTS = \
+  -D_GNU_SOURCE \
+  -Wall \
+  -g
+
+wav2data : wav2data.c miniwav.o
+	$(CC) -g -D_GNU_SOURCE $^ -o $@
+
+miniwav.o : miniwav.c miniwav.h
+	$(CC) $(COPTS) -c $<
+
+amysamples.o : amysamples.c amysamples.h
+	$(CC) $(COPTS) -c $<
+
+raylib-quickstart-main/Makefile :
+	sh make-raylib
+  
+synth.o: synth.c synth.h synth-types.h
+	$(CC) $(COPTS) -c $<
+
+seq.o: seq.c seq.h
+	$(CC) $(COPTS) -c $<
+
+udp.o: udp.c udp.h
+	$(CC) $(COPTS) -c $<
+
+wire.o: wire.c wire.h
+	$(CC) $(COPTS) -c $<
+
+skred.o: skred.c
+	$(CC) $(COPTS) -c $<
+
+OBJS = \
+  skred.o \
+  miniwav.o \
+  amysamples.o \
+  synth.o \
+  seq.o \
+  wire.o \
+  udp.o \
+  miniaudio.o \
+  #
+
+skred.exe : $(OBJS)
+	$(CC) $(COPTS) $^ -o $@ $(LIB) -static
+
+linenoise.o: linenoise.c linenoise.h
+	$(CC) -c $<
+
+miniaudio.o: miniaudio.c miniaudio.h
+	$(CC) -c $<
+
+clean :
+	rm -f *.o
+	rm -f $(EXE)
+
+test-windows :
+	$(CC) test-windows-audio.c -o tone.exe
+	wine tone.exe

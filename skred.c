@@ -15,27 +15,29 @@
    phase distortion modulation source, phase distortion depth -> phase distortion amount
 */
 
-#include <arpa/inet.h>
 #include <errno.h>
-#include <netdb.h>
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
 
+#ifndef _WIN32
 #include "linenoise.h"
+#endif
+
 #include "skred.h"
 
+#ifndef _WIN32
 #include "scope-shared.h"
-
-int scope_enable = 0;
 scope_buffer_t safety;
 scope_buffer_t *new_scope = &safety;
+#endif
+
+int scope_enable = 0;
 
 #include "miniaudio.h"
 
@@ -150,7 +152,9 @@ int main(int argc, char *argv[]) {
   
   show_threads();
   
+#ifndef _WIN32
   linenoiseHistoryLoad(HISTORY_FILE);
+#endif
   
   synth_init();
   wave_table_init();
@@ -194,10 +198,12 @@ int main(int argc, char *argv[]) {
 
   if (load_patch_number >= 0) patch_load(0, load_patch_number, 0);
 
+#ifndef _WIN32
   scope_share_t shared;
   new_scope = scope_setup(&shared, "w");
   new_scope->buffer_len = SCOPE_WIDTH_IN_SAMPLES;
   sprintf(new_scope->status_text, "n/a");
+#endif
 
   wire_t w = WIRE();
   w.output = 1;
@@ -209,27 +215,41 @@ int main(int argc, char *argv[]) {
     if (n < 0) main_running = 0;
   }
 
+#ifndef _WIN32
   new_scope->voice_text[0] = '\0';
+#endif
 
   while (main_running) {
+#ifndef _WIN32
     voice_format(current_voice, new_scope->voice_text, 0);
+#endif
+#ifndef _WIN32
     char *line = linenoise("# ");
+#else
+    char buffer[1024];
+    char *line = fgets(buffer, sizeof(buffer), stdin);
+#endif
     if (line == NULL) {
       main_running = 0;
       break;
     }
     if (strlen(line) == 0) continue;
+#ifndef _WIN32
     linenoiseHistoryAdd(line);
+#endif
     int n = wire(line, &w);
+#ifndef _WIN32
     linenoiseFree(line);
+#endif
     if (n < 0) break; // request to stop or error
     if (n > 0) {
       char *s = wire_err_str(n);
       printf("# %s ERR:%d\n", s, n);
     }
-    //linenoiseFree(line);
   }
+#ifndef _WIN32
   linenoiseHistorySave(HISTORY_FILE);
+#endif
 
   // turn down volume smoothly to avoid clicks
   volume_set(0);

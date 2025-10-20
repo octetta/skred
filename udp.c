@@ -1,7 +1,19 @@
 #include <errno.h>
+
 #include <pthread.h>
 #include <stdint.h>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+//#define close closesocket
+typedef int socklen_t;
+#else
 #include <arpa/inet.h>
+#define SOCKET int
+#define INVALID_SOCKET (-1)
+#define SOCKET_ERROR (-1)
+#endif
 
 #include "skred.h"
 #include "wire.h"
@@ -29,10 +41,23 @@ static pthread_t udp_thread_handle;
 static struct sockaddr_in serve;
 
 static int udp_open(int port) {
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+#ifdef _WIN32
+  static int first = 1;
+  if (first) {
+    WSADATA wsa;
+    WSAStartup(MAKEWORD(2,2), &wsa);
+    first = 0;
+  }
+#endif
+    SOCKET sock = socket(AF_INET, SOCK_DGRAM, 0);
     int opt = 1;
+#ifdef _WIN32
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char *)&opt, sizeof(int));
+    memset(&serve, 0, sizeof(serve));
+#else
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(int));
     bzero(&serve, sizeof(serve));
+#endif
     serve.sin_family = AF_INET;
     serve.sin_addr.s_addr = htonl(INADDR_ANY);
     serve.sin_port = htons(port);
@@ -60,10 +85,12 @@ static void *udp_main(void *arg) {
     return NULL;
   }
   pthread_setname_np(pthread_self(), "udp");
+#if 0
   struct timeval tv;
   tv.tv_sec = 1;
   tv.tv_usec = 0;
   setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (struct timeval *)&tv, sizeof(struct timeval));
+#endif
   struct sockaddr_in client;
   unsigned int client_len = sizeof(client);
   char line[1024];
@@ -123,6 +150,9 @@ void udp_start(int port) {
 
 void udp_stop(void) {
   udp_running = 0;
+#ifdef _WIN32
+  WSACleanup();
+#endif
 }
 
 int udp_info(void) {
