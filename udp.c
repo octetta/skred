@@ -89,6 +89,9 @@ static void *udp_main(void *arg) {
         // in the future, this should get ip and port and use for
         // context amongst multiple udp clients
         int which = get_connection_index(&client, UDP_PORT_MAX);
+        if (user[which].w.debug) {
+          printf("\r[%d]<%s>\r\n", which, line);
+        }
         wire(line, &user[which].w);
       } else {
         if (errno == EAGAIN) continue;

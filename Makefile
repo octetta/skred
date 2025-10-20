@@ -87,3 +87,7 @@ check : skred
 clean :
 	rm -f *.o
 	rm -f $(EXE)
+
+test-windows :
+	x86_64-w64-mingw32-gcc test-windows-audio.c -o tone.exe
+	wine tone.exe
