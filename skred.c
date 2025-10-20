@@ -221,12 +221,13 @@ int main(int argc, char *argv[]) {
     if (strlen(line) == 0) continue;
     linenoiseHistoryAdd(line);
     int n = wire(line, &w);
+    linenoiseFree(line);
     if (n < 0) break; // request to stop or error
     if (n > 0) {
       char *s = wire_err_str(n);
       printf("# %s ERR:%d\n", s, n);
     }
-    linenoiseFree(line);
+    //linenoiseFree(line);
   }
   linenoiseHistorySave(HISTORY_FILE);
 

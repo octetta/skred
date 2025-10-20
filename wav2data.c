@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "miniwav.h"
+#define COLS (5)
 int main(int argc, char *argv[]) {
   wav_t wav;
   int len;
@@ -13,11 +14,15 @@ int main(int argc, char *argv[]) {
     // printf("# table:%p len:%d\n", table, len);
     printf("D%d\n", len);
     printf("( ");
+    int c = 0;
     for (int i = 0; i < len; i++) {
       printf("%.8f ", table[i]);
-      if (i && (i % 5) == 0) puts("");
+      if (c++ >= (COLS-1)) {
+        puts(" ");
+        c = 0;
+      }
     }
-    puts(")");
+    puts(" ) ");
   }
   free(table);
   return 0;

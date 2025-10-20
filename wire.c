@@ -150,16 +150,27 @@ value_t parse(const char *ptr, int func, int sub_func, int argc, wire_t *w) {
 #include "synth.h"
 
 void wire_show(wire_t *w) {
-  if (w == NULL) return;
-  printf("# voice %d\n", w->voice);
-  printf("# state %d\n", w->state);
-  printf("# pattern %d\n", w->pattern);
-  printf("# scratch %s\n", w->scratch);
-  printf("# data max %d\n", w->data_max);
-  printf("# data len %d\n", w->data_len);
-  printf("( ");
-  for (int i = 0; i < w->data_len; i++) printf("%.8f ", w->data[i]);
-  printf(")\n");
+  if (w != NULL) {
+    printf("# voice %d\n", w->voice);
+    printf("# state %d\n", w->state);
+    printf("# pattern %d\n", w->pattern);
+    printf("# scratch %s\n", w->scratch);
+    printf("# data max %d\n", w->data_max);
+    printf("# data len %d\n", w->data_len);
+    printf("( ");
+    int flag = 1;
+    for (int i = 0; i < w->data_len; i++) {
+      if (i < 10) {
+        printf("%.8f ", w->data[i]);
+      } else if (i > w->data_len - 10) {
+        printf("%.8f ", w->data[i]);
+      } else if (flag) {
+        flag = 0;
+        printf(" ... ");
+      }
+    }
+    printf(")\n");
+  }
 }
 
 #include "udp.h"
@@ -1102,8 +1113,10 @@ void wire_init(wire_t *w) {
   w->last_func = FUNC_NULL;
   w->pattern = 0;
   w->data = NULL;
+  w->data_len = 0;
   w->data_max = 0;
   w->output = 0;
   w->trace = 0;
   w->debug = 0;
+  w->scratch[0] = '\0';
 }

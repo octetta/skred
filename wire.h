@@ -168,8 +168,19 @@ int wavetable_show(int n);
 int audio_show(void);
 char *wire_err_str(int n);
 
-#define WIRE() { .voice = 0, .state = W_PROTOCOL, .last_func = FUNC_NULL, \
-  .pattern = 0, .data = NULL, .data_max = 0, .output = 0, .debug = 0, .trace = 0}
+#define WIRE() { \
+  .voice = 0, \
+  .state = W_PROTOCOL, \
+  .last_func = FUNC_NULL, \
+  .pattern = 0, \
+  .data = NULL, \
+  .data_len = 0, \
+  .data_max = 0, \
+  .output = 0, \
+  .trace = 0, \
+  .debug = 0, \
+}
+              
 
 void wire_init(wire_t *w);
 

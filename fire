@@ -1,8 +1,10 @@
-#!/usr/bin/env tclsh8
+#!/usr/bin/env tclsh8.6
+
+set TCL tclsh8.6
 
 proc daemonize {} {
   global argv argv0
-  set cmd [list exec tclsh8 $argv0]
+  set cmd [list exec $::TCL $argv0]
   lappend cmd -daemon
   lappend cmd {*}$argv
   lappend cmd &
