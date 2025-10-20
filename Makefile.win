@@ -1,7 +1,9 @@
 CC = x86_64-w64-mingw32-gcc
 
+OUT = win
+
 EXE = \
-	skred.exe \
+	$(OUT)/skred.exe \
   #
 
 all : $(EXE)
@@ -21,49 +23,46 @@ COPTS = \
 wav2data : wav2data.c miniwav.o
 	$(CC) -g -D_GNU_SOURCE $^ -o $@
 
-miniwav.o : miniwav.c miniwav.h
-	$(CC) $(COPTS) -c $<
+$(OUT)/miniwav.o : miniwav.c miniwav.h
+	$(CC) $(COPTS) -c $< -o $@
 
-amysamples.o : amysamples.c amysamples.h
-	$(CC) $(COPTS) -c $<
+$(OUT)/amysamples.o : amysamples.c amysamples.h
+	$(CC) $(COPTS) -c $< -o $@
 
 raylib-quickstart-main/Makefile :
 	sh make-raylib
   
-synth.o: synth.c synth.h synth-types.h
-	$(CC) $(COPTS) -c $<
+$(OUT)/synth.o: synth.c synth.h synth-types.h
+	$(CC) $(COPTS) -c $< -o $@
 
-seq.o: seq.c seq.h
-	$(CC) $(COPTS) -c $<
+$(OUT)/seq.o: seq.c seq.h
+	$(CC) $(COPTS) -c $< -o $@
 
-udp.o: udp.c udp.h
-	$(CC) $(COPTS) -c $<
+$(OUT)/udp.o: udp.c udp.h
+	$(CC) $(COPTS) -c $< -o $@
 
-wire.o: wire.c wire.h
-	$(CC) $(COPTS) -c $<
+$(OUT)/wire.o: wire.c wire.h
+	$(CC) $(COPTS) -c $< -o $@
 
-skred.o: skred.c
-	$(CC) $(COPTS) -c $<
+$(OUT)/skred.o: skred.c
+	$(CC) $(COPTS) -c $< -o $@
 
 OBJS = \
-  skred.o \
-  miniwav.o \
-  amysamples.o \
-  synth.o \
-  seq.o \
-  wire.o \
-  udp.o \
-  miniaudio.o \
+  $(OUT)/skred.o \
+  $(OUT)/miniwav.o \
+  $(OUT)/amysamples.o \
+  $(OUT)/synth.o \
+  $(OUT)/seq.o \
+  $(OUT)/wire.o \
+  $(OUT)/udp.o \
+  $(OUT)/miniaudio.o \
   #
 
-skred.exe : $(OBJS)
+$(OUT)/skred.exe : $(OBJS)
 	$(CC) $(COPTS) $^ -o $@ $(LIB) -static
 
-linenoise.o: linenoise.c linenoise.h
-	$(CC) -c $<
-
-miniaudio.o: miniaudio.c miniaudio.h
-	$(CC) -c $<
+$(OUT)/miniaudio.o: miniaudio.c miniaudio.h
+	$(CC) -c $< -o $@
 
 clean :
 	rm -f *.o
