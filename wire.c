@@ -187,7 +187,11 @@ void show_stats(void) {
     seq_frames_per_callback, (float)seq_frames_per_callback / (float)MAIN_SAMPLE_RATE * 1000.0f);
   for (int i = 0; i < QUEUE_SIZE; i++) {
     if (work_queue[i].state != Q_FREE) {
+#ifdef _WIN32
+      printf("# [%d] (%d) @%lld {%s}\n", i, work_queue[i].state, work_queue[i].when, work_queue[i].what);
+#else
       printf("# [%d] (%d) @%ld {%s}\n", i, work_queue[i].state, work_queue[i].when, work_queue[i].what);
+#endif
     }
   }
 }
@@ -534,7 +538,11 @@ int wire(char *line, wire_t *w) {
       // wire protocol section
       // skip whitespace and semicolons
       ptr += strspn(ptr, ignore);
+#ifdef _WIN32
+      if (w->debug) printf("# [%lld] '%c' (%d)\n", ptr-line, *ptr, *ptr);
+#else
       if (w->debug) printf("# [%ld] '%c' (%d)\n", ptr-line, *ptr, *ptr);
+#endif
       if (queue_now) {
         // we started queue-ing, so...
         char c = *ptr;
@@ -1071,7 +1079,11 @@ int audio_show(void) {
   int active = 0;
   for (int i = 0; i < VOICE_MAX; i++) if (voice_amp[i] != 0) active++;
   printf("# synth active voice count %d\n", active);
+#ifdef _WIN32
+  printf("# synth sample count %lld\n", synth_sample_count);
+#else
   printf("# synth sample count %ld\n", synth_sample_count);
+#endif
   return 0;
 }
 

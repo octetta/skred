@@ -93,7 +93,11 @@ static void *udp_main(void *arg) {
   setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (struct timeval *)&tv, sizeof(struct timeval));
 #endif
   struct sockaddr_in client;
+#ifdef _WIN32
+  int client_len = sizeof(client);
+#else
   unsigned int client_len = sizeof(client);
+#endif
   char line[1024];
   fd_set readfds;
   struct timeval timeout;
