@@ -1,8 +1,7 @@
 EXE = \
 	skred \
 	wav2data \
-	# scope \
-	# scope-shared \
+	scope \
   #
 
 all : $(EXE)
@@ -23,16 +22,9 @@ COPTS = \
 RLINC = -I raylib-quickstart-main/build/external/raylib-master/src
 RLLIB = -L raylib-quickstart-main/bin/Debug
 
-scope-shared.o : scope-shared.c scope-shared.h
-	gcc $(COPTS) -c $<
-
-scope-shared : scope-shared.c
-	gcc -DSCOPE_SHARED_DEMO $^ -o $@
-
 skred-mem.o : skred-mem.c
 	gcc $(COPTS) -c $<
 
-# scope : scope.c scope-shared.o raylib-quickstart-main/Makefile
 scope : scope.c skred-mem.o # raylib-quickstart-main/Makefile
 	gcc -g -D_GNU_SOURCE -DUSE_RAYLIB $(RLINC) $(RLLIB) $^ -o $@ -lraylib -lm
 
@@ -71,7 +63,6 @@ OBJS = \
   seq.o \
   wire.o \
   udp.o \
-  scope-shared.o \
   miniaudio.o \
 	linenoise.o \
 	skred-mem.o \
