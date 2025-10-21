@@ -1,5 +1,6 @@
 history.txt
-win/*
+win/*.o
+win/*.exe
 linux/*
 skred.exe
 tone.exe

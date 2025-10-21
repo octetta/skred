@@ -1,0 +1,22 @@
+Z0
+S100
+
+M201
+V3
+
+v0 w108 f242.603 J1 K200 Q10 q13 h8 a20 c1,.5  # bass
+v1 w105 f440 a20  # snare
+
+:w3,200
+v2 w200 a20 # cymbal or hi-hat?
+
+y0 # select pattern 0
+%2 # every other beat
+
+{v0T+.5v0T} x0
+{v1T} x1
+
+y1
+{v2T+.5v2T} x0
+
+Z1
