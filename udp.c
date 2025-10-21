@@ -33,7 +33,7 @@ static int get_connection_index(struct sockaddr_in *addr, int array_size) {
     return hash % array_size;
 }
 
-static int udp_port = UDP_PORT;
+static int udp_port = 0;
 static int udp_running = 1;
 
 static pthread_t udp_thread_handle;
@@ -86,6 +86,7 @@ static void *udp_main(void *arg) {
   }
   pthread_setname_np(pthread_self(), "udp");
 #if 0
+  // don't remember why i wrote this, but i don't think it's needed with select()
   struct timeval tv;
   tv.tv_sec = 1;
   tv.tv_usec = 0;
@@ -142,10 +143,13 @@ static void *udp_main(void *arg) {
   return NULL;
 }
 
-void udp_start(int port) {
+int udp_start(int port) {
+  if (port == 0) return 0;
+  udp_port = port;
   udp_running = 1;
   pthread_create(&udp_thread_handle, NULL, udp_main, NULL);
   pthread_detach(udp_thread_handle);
+  return port;
 }
 
 void udp_stop(void) {

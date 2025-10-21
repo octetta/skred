@@ -202,11 +202,15 @@ int main(int argc, char *argv[]) {
   ma_device_start(&seq_device);
 
   if (audio_show() != 0) return 1;
-  system_show();
 
   pthread_setname_np(pthread_self(), "repl");
 
-  udp_start(udp_port);
+  if (udp_port != 0) {
+    int r = udp_start(udp_port);
+    if (r != udp_port) udp_port = 0;
+  }
+
+  system_show();
 
   if (load_patch_number >= 0) patch_load(0, load_patch_number, 0);
 
@@ -289,7 +293,7 @@ int main(int argc, char *argv[]) {
   sleep_float(.5); // give a bit of time for the smoothing to apply
 
   // Cleanup
-  udp_stop();
+  if (udp_port != 0) udp_stop();
   ma_device_uninit(&seq_device);
   sleep_float(.5); // make sure we don't crash the callback b/c thread timing and wave_data
   ma_device_uninit(&synth_device);

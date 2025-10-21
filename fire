@@ -20,24 +20,70 @@ package require udp
 set addr 127.0.0.1
 set port 60440
 
-set sock [udp_open]
+set sock [udp_open 0]
 fconfigure $sock -buffering none -translation binary
+fconfigure $sock -remote [list $addr $port]
 
-proc dest {addr port} {
-  fconfigure $::sock -remote [list $addr $port]
+proc dest {} {
+  global addr port sock
 }
 
-dest $addr $port
+proc change_addr_port {} {
+  global addr port sock wire_addr wire_port
+  
+  if {($addr != $wire_addr) || ($port != $wire_port)} {
+    # puts "change from ($addr $port) -> ($wire_addr $wire_port)"
+    
+    # Try multiple times with delays
+    set attempts 0
+    set new_sock ""
+    
+    while {$attempts < 5} {
+      incr attempts
+      # puts "Attempt $attempts..."
+      
+      set new_sock [udp_open]
+      
+      if {$new_sock in [file channels]} {
+        # puts "  SUCCESS on attempt $attempts"
+        # puts "  udp_open returned: $new_sock"
+        # puts "  file channels: [file channels]"
+        break
+      }
+      
+      after 50  ;# Wait 50ms
+      update
+    }
+    
+    if {$new_sock ni [file channels]} {
+      puts "FAILED after $attempts attempts"
+      tk_messageBox -message "Cannot create UDP socket. Check if tcpudp extension is working." -type ok
+      return
+    }
+    
+    # Close old socket
+    if {[info exists sock]} {
+      catch {close $sock}
+    }
+    
+    set ::addr $wire_addr
+    set ::port $wire_port
+    fconfigure $new_sock -buffering none -translation binary
+    fconfigure $new_sock -remote [list $::addr $::port]
+    set ::sock $new_sock
+  }
+}
 
 proc wire {msg} {
-  puts -nonewline $::sock $msg
+  global sock
+  puts -nonewline $sock $msg
   # puts $msg
 }
 
 # Check if already running as daemon
 if {[lsearch $argv "-daemon"] != -1} {
   close stdin
-  close stdout
+  # close stdout
   close stderr
     
   # Change working directory to /tmp (safe?)
@@ -49,6 +95,8 @@ if {[lsearch $argv "-daemon"] != -1} {
   set current_val 440
   set wire_string "f%s"
   set window_title "fire"
+  set wire_addr 127.0.0.1
+  set wire_port 60440
 
   set wire_check 1
 
@@ -63,14 +111,14 @@ if {[lsearch $argv "-daemon"] != -1} {
   wm title . $window_title
   wm geometry .
 
-proc resizeWindow {} {
+proc resize_window {} {
     update idletasks
     set reqWidth [winfo reqwidth .]
     set reqHeight [winfo reqheight .]
     wm geometry . "${reqWidth}x${reqHeight}"
 }
 
-set ::configVisible 1
+set configVisible 1
 proc toggleConfig {} {
     global configVisible
     if {$configVisible} {
@@ -82,16 +130,16 @@ proc toggleConfig {} {
         set ::configVisible 1
         pack .config -fill both -expand 1 -padx 10 -pady 5 -before .content
     }
-    resizeWindow
+    resize_window
 }
 
-proc toggleButton {num} {
+proc toggle_button {num} {
   global voice
   if {$voice == $num} {
     # .content.buttonGrid.b$num configure -relief raised
     .content.buttonGrid.b$num configure -bg lightblue -relief raised
 
-    set voice -1
+    set ::voice -1
     return
   }
   # Deselect previous button
@@ -99,7 +147,7 @@ proc toggleButton {num} {
     .content.buttonGrid.b$voice configure -bg lightblue -relief raised
   }
   # Select new button
-  set voice $num
+  set ::voice $num
   .content.buttonGrid.b$num configure -bg orange -relief sunken
 }
 
@@ -142,23 +190,30 @@ proc toggleButton {num} {
   checkbutton .config.entryCheck -variable wire_check -text {}
   grid .config.labelFormat .config.entryFormat .config.entryCheck -sticky w -padx 5 -pady 2
 
+  label .config.labelComm -text "comm"
+  entry .config.entryAddr -textvariable wire_addr -width 20
+  entry .config.entryPort -textvariable wire_port -width 20
+  grid .config.labelComm .config.entryAddr .config.entryPort -sticky w -padx 5 -pady 2
+
   # Update button
-  button .config.update -text " update " -command updateSlider -padx 1 -pady 1 -relief flat -bd 0 -bg orange -activebackground red
+  button .config.update -text " update " -command update_settings -padx 1 -pady 1 -relief flat -bd 0 -bg orange -activebackground red
   grid .config.update -columnspan 3 -pady 2 -sticky w
 
   # Bind Enter key to update slider for each entry field
-  bind .config.entryA <Return> updateSlider
-  bind .config.entryB <Return> updateSlider
-  bind .config.entryC <Return> updateSlider
-  bind .config.entryFormat <Return> updateSlider
+  bind .config.entryA <Return> update_settings
+  bind .config.entryB <Return> update_settings
+  bind .config.entryC <Return> update_settings
+  bind .config.entryFormat <Return> update_settings
+  bind .config.entryAddr <Return> update_settings
+  bind .config.entryPort <Return> update_settings
 
   frame .content
   frame .content.buttonGrid
-  set voice -1
+  set ::voice -1
 
   for {set i 0} {$i < 32} {incr i} {
     button .content.buttonGrid.b$i -text " v$i " -padx 1 -pady 1 -font {Arial 10} -bd 0 \
-      -command "toggleButton $i" -bg lightblue
+      -command "toggle_button $i" -bg lightblue
     grid .content.buttonGrid.b$i -row [expr {$i / 16}] -column [expr {$i % 16}] \
       -sticky nsew
   }
@@ -179,10 +234,12 @@ proc toggleButton {num} {
 }
 
 proc fire {value} {
-    global current_val wire_string
+    global current_val
+    global wire_string
+    global voice
     set tmp $wire_string
-    if {$::voice >= 0} {
-      set tmp "v$::voice $wire_string"
+    if {$voice >= 0} {
+      set tmp "v$voice $wire_string"
     } {
       set tmp $wire_string
     }
@@ -198,8 +255,11 @@ proc fire {value} {
 }
 
 # Procedure to update slider configuration
-proc updateSlider {} {
-    global min_val max_val step_val current_val
+proc update_settings {} {
+    global min_val
+    global max_val
+    global step_val
+    global current_val
     
     # Validate inputs
     if {![string is double $min_val] || ![string is double $max_val] || ![string is double $step_val]} {
@@ -230,6 +290,8 @@ proc updateSlider {} {
     
     # Restore the command after updating
     .slider configure -command {fire}
+
+    change_addr_port
 }
 
 proc main {min_val max_val step_val current_val wire_string wire_check window_title} {
