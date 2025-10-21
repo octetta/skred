@@ -45,6 +45,9 @@ $(OUT)/udp.o: udp.c udp.h
 $(OUT)/wire.o: wire.c wire.h
 	$(CC) $(COPTS) -c $< -o $@
 
+$(OUT)/skred-mem.o : skred-mem.c
+	$(CC) $(COPTS) -c $< -o $@
+
 $(OUT)/skred.o: skred.c
 	$(CC) $(COPTS) -c $< -o $@
 
@@ -64,6 +67,7 @@ OBJS = \
   $(OUT)/udp.o \
   $(OUT)/miniaudio.o \
   $(OUT)/winline.o \
+  $(OUT)/skred-mem.o \
   #
 
 $(OUT)/skred.exe : $(OBJS)

@@ -33,13 +33,12 @@
 
 #include "skred.h"
 
-#ifndef _WIN32
+#include "skred-mem.h"
 #include "scope-shared.h"
-scope_buffer_t safety;
-scope_buffer_t *new_scope = &safety;
-#endif
 
 int scope_enable = 0;
+scope_buffer_t scope_safety;
+scope_buffer_t *scope = &scope_safety;
 
 #include "miniaudio.h"
 
@@ -77,12 +76,25 @@ void seq_callback(ma_device* pDevice, void* output, const void* input, ma_uint32
 
 void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
   static int first = 1;
+  static int num_channels = 1;
   if (first) {
     pthread_setname_np(pthread_self(), "synth");
+    if (scope_enable) scope->buffer_pointer = 0;
+    num_channels = (int)pDevice->playback.channels;
     first = 0;
   }
   synth((float *)output, (float *)input, (int)frame_count, (int)pDevice->playback.channels);
   // copy frame buffer to shared memory?
+  if (scope_enable) {
+    float *f = (float *)output;
+    for (int i = 0; i < frame_count * num_channels; i+=2) {
+      scope->buffer_left[scope->buffer_pointer] = f[i];
+      scope->buffer_right[scope->buffer_pointer] = f[i+1];
+      scope->buffer_pointer++;
+      if (scope->buffer_pointer >= SCOPE_WIDTH_IN_SAMPLES) scope->buffer_pointer = 0;
+      //scope->buffer_pointer %= scope->buffer_len;
+    }
+  }
 }
 
 void sleep_float(double seconds) {
@@ -214,12 +226,23 @@ int main(int argc, char *argv[]) {
 
   if (load_patch_number >= 0) patch_load(0, load_patch_number, 0);
 
-#ifndef _WIN32
-  scope_share_t shared;
-  new_scope = scope_setup(&shared, "w");
-  new_scope->buffer_len = SCOPE_WIDTH_IN_SAMPLES;
-  sprintf(new_scope->status_text, "n/a");
-#endif
+  if (scope_enable) {
+    scope->buffer_len = SCOPE_WIDTH_IN_SAMPLES;
+    sprintf(scope->status_text, "n/a");
+  }
+
+  //float bogus[44100 * 2];
+  skred_mem_t scope_shared;
+#define SKRED_SCOPE_NAME "skred-o-scope.001"
+  if (skred_mem_create(&scope_shared, SKRED_SCOPE_NAME, sizeof(scope_buffer_t)) != 0) {
+    printf("# did not create scope shared memory %s\n", SKRED_SCOPE_NAME);
+    scope_enable = 0;
+  } else {
+    printf("# scope buffer ready\n");
+    scope = (scope_buffer_t *)scope_shared.addr;
+    scope_enable = 1;
+    sprintf(scope->status_text, "n/a");
+  }
 
   wire_t w = WIRE();
   w.output = 1;
@@ -231,14 +254,12 @@ int main(int argc, char *argv[]) {
     if (n < 0) main_running = 0;
   }
 
-#ifndef _WIN32
-  new_scope->voice_text[0] = '\0';
-#endif
+  if (scope_enable) scope->voice_text[0] = '\0';
 
   while (main_running) {
-#ifndef _WIN32
-    voice_format(current_voice, new_scope->voice_text, 0);
-#endif
+    if (scope_enable) {
+      voice_format(current_voice, scope->voice_text, 0);
+    }
 
     char *line = NULL;
 

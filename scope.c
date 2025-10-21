@@ -240,7 +240,17 @@ int main(int argc, char *argv[]) {
     exit(2);
   }
   scope_share_t shared;
+#if 0
   scope = scope_setup(&shared, "r");
+#else
+#include "skred-mem.h"
+  skred_mem_t xyz;
+  if (skred_mem_open(&xyz, "skred-o-scope.001", sizeof(scope_buffer_t)) != 0) {
+    printf("# fail\n");
+    exit(1);
+  }
+  scope = (scope_buffer_t *)xyz.addr;
+#endif
   if (scope == NULL) {
     printf("# can't attach to shared scope buffer\n");
     exit(3);

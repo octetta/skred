@@ -480,15 +480,6 @@ void synth(float *buffer, float *input, int num_frames, int num_channels) {
     // Write to all channels
     buffer[i * num_channels + 0] = sample_left;
     buffer[i * num_channels + 1] = sample_right;
-#if 0
-    if (scope_enable) { // make writing to scope optional
-      new_scope->buffer_left[new_scope->buffer_pointer]  = sample_left;
-      new_scope->buffer_right[new_scope->buffer_pointer] = sample_right;
-      new_scope->buffer_pointer++;
-      new_scope->buffer_pointer %= new_scope->buffer_len;
-      sprintf(new_scope->status_text, "%g %g %g %g", volume_user, volume_final, volume_smoother_gain, volume_smoother_smoothing);
-    }
-#endif
   }
 }
 

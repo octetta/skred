@@ -1,8 +1,8 @@
 EXE = \
 	skred \
-	scope-shared \
 	wav2data \
 	# scope \
+	# scope-shared \
   #
 
 all : $(EXE)
@@ -29,7 +29,11 @@ scope-shared.o : scope-shared.c scope-shared.h
 scope-shared : scope-shared.c
 	gcc -DSCOPE_SHARED_DEMO $^ -o $@
 
-scope : scope.c scope-shared.o raylib-quickstart-main/Makefile
+skred-mem.o : skred-mem.c
+	gcc $(COPTS) -c $<
+
+# scope : scope.c scope-shared.o raylib-quickstart-main/Makefile
+scope : scope.c skred-mem.o # raylib-quickstart-main/Makefile
 	gcc -g -D_GNU_SOURCE -DUSE_RAYLIB $(RLINC) $(RLLIB) $^ -o $@ -lraylib -lm
 
 wav2data : wav2data.c miniwav.o
@@ -70,6 +74,7 @@ OBJS = \
   scope-shared.o \
   miniaudio.o \
 	linenoise.o \
+	skred-mem.o \
   #
 
 skred : $(OBJS)

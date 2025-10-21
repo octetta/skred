@@ -324,11 +324,9 @@ int wave_load(int which, int where) {
 
 // this is a mess i need to clean up
 
-#ifndef _WIN32
 #include "scope-shared.h"
 extern int scope_enable;
-extern scope_buffer_t *new_scope;
-#endif
+extern scope_buffer_t *scope;
 
 
 void pattern_show(int pattern_pointer) {
@@ -428,10 +426,10 @@ int wavetable_show(int n) {
     printf("# w%d size:%d", n, size);
     printf(" +hz:%g midi:%g", wave_offset_hz[n], wave_midi_note[n]);
     puts("");
-#ifndef _WIN32
-    downsample_block_average_min_max(table, size, new_scope->wave_data, SCOPE_WAVE_WIDTH, new_scope->wave_min, new_scope->wave_max);
-    new_scope->wave_len = SCOPE_WAVE_WIDTH;
-#endif
+    if (scope_enable) {
+      downsample_block_average_min_max(table, size, scope->wave_data, SCOPE_WAVE_WIDTH, scope->wave_min, scope->wave_max);
+      scope->wave_len = SCOPE_WAVE_WIDTH;
+    }
   }
   return 0;
 }
@@ -800,9 +798,7 @@ int wire(char *line, wire_t *w) {
             ptr += v.next;
           } else return ERR_PARSING;
           r = wave_set(voice, (int)v.args[0]);
-#ifndef _WIN32
-          sprintf(new_scope->wave_text, "w%d", (int)v.args[0]);
-#endif
+          if (scope_enable) sprintf(scope->wave_text, "w%d", (int)v.args[0]);
           break;
         case 'T':
           v = parse_none(FUNC_TRIGGER, FUNC_NULL, w);
@@ -832,9 +828,9 @@ int wire(char *line, wire_t *w) {
             ptr += v.next;
           } else return ERR_PARSING;
           r = wavetable_show((int)v.args[0]);
-#ifndef _WIN32
-          sprintf(new_scope->wave_text, "w%d", (int)v.args[0]);
-#endif
+          if (scope_enable) {
+            sprintf(scope->wave_text, "w%d", (int)v.args[0]);
+          }
           break;
         case 'y':
           v = parse(ptr, FUNC_PATTERN, FUNC_NULL, 1, w);
@@ -901,9 +897,7 @@ int wire(char *line, wire_t *w) {
             ptr += v.next;
           } else return ERR_PARSING;
           tempo_set(v.args[0]);
-#ifndef _WIN32
-          if (scope_enable) sprintf(new_scope->status_text, "M%g", tempo_bpm);
-#endif
+          if (scope_enable) sprintf(scope->status_text, "M%g", tempo_bpm);
           break;
         case 'm':
           v = parse_none(FUNC_MUTE, FUNC_NULL, w);
