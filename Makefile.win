@@ -4,6 +4,7 @@ OUT = win
 
 EXE = \
 	$(OUT)/skred.exe \
+	$(OUT)/wlex.exe \
   #
 
 all : $(EXE)
@@ -47,6 +48,12 @@ $(OUT)/wire.o: wire.c wire.h
 $(OUT)/skred.o: skred.c
 	$(CC) $(COPTS) -c $< -o $@
 
+$(OUT)/winline.o: winline.c winline.h
+	$(CC) $(COPTS) -c $< -o $@
+
+$(OUT)/wlex.o: wlex.c winline.h
+	$(CC) $(COPTS) -c $< -o $@
+
 OBJS = \
   $(OUT)/skred.o \
   $(OUT)/miniwav.o \
@@ -56,16 +63,20 @@ OBJS = \
   $(OUT)/wire.o \
   $(OUT)/udp.o \
   $(OUT)/miniaudio.o \
+  $(OUT)/winline.o \
   #
 
 $(OUT)/skred.exe : $(OBJS)
 	$(CC) $(COPTS) $^ -o $@ $(LIB) -static
 
+$(OUT)/wlex.exe : $(OUT)/wlex.o $(OUT)/winline.o
+	$(CC) $(COPTS) $^ -o $@ # $(LIB) -static
+
 $(OUT)/miniaudio.o: miniaudio.c miniaudio.h
 	$(CC) -c $< -o $@
 
 clean :
-	rm -f *.o
+	rm -f $(OUT)/*.o
 	rm -f $(EXE)
 
 test-windows :

@@ -25,7 +25,9 @@
 #include <time.h>
 #include <unistd.h>
 
-#ifndef _WIN32
+#ifdef _WIN32
+#include "winline.h"
+#else
 #include "linenoise.h"
 #endif
 
@@ -127,10 +129,12 @@ int main(int argc, char *argv[]) {
   int load_patch_number = -1;
   int udp_port = UDP_PORT;
   char execute_from_start[1024] = "";
+  int use_edit = 1;
   if (argc > 1) {
     for (int i=1; i<argc; i++) {
       if (argv[i][0] == '-') {
         switch (argv[i][1]) {
+          case 'n': use_edit = 0; break;
           case 'd': debug = 1; break;
           case 't': trace = 1; break;
           case 'p': udp_port = (int)strtol(&(argv[i][2]), NULL, 0); break;
@@ -152,7 +156,15 @@ int main(int argc, char *argv[]) {
   
   show_threads();
   
-#ifndef _WIN32
+
+#ifdef _WIN32
+  if (winlineInit() < 0) {
+    use_edit = 0;
+  } else {
+    winlineHistoryLoad(HISTORY_FILE);
+    winlineHistorySetMaxLen(100);
+  }
+#else
   linenoiseHistoryLoad(HISTORY_FILE);
 #endif
   
@@ -223,33 +235,53 @@ int main(int argc, char *argv[]) {
 #ifndef _WIN32
     voice_format(current_voice, new_scope->voice_text, 0);
 #endif
-#ifndef _WIN32
-    char *line = linenoise("# ");
+
+    char *line = NULL;
+
+    if (use_edit) {
+#ifdef _WIN32
+      line = winlineReadLine("# ");
 #else
-    char buffer[1024];
-    char *line = fgets(buffer, sizeof(buffer), stdin);
+      line = linenoise("# ");
 #endif
+    } else {
+      char buffer[1024];
+      printf("# ");
+      line = fgets(buffer, sizeof(buffer), stdin);
+    }
     if (line == NULL) {
       main_running = 0;
       break;
     }
     if (strlen(line) == 0) continue;
-#ifndef _WIN32
+    if (use_edit) {
+#ifdef _WIN32
+    winlineHistoryAdd(line);
+#else
     linenoiseHistoryAdd(line);
 #endif
+    }
     int n = wire(line, &w);
-#ifndef _WIN32
-    linenoiseFree(line);
+    if (use_edit) {
+#ifdef _WIN32
+      free(line);
+#else
+      linenoiseFree(line);
 #endif
+    }
     if (n < 0) break; // request to stop or error
     if (n > 0) {
       char *s = wire_err_str(n);
       printf("# %s ERR:%d\n", s, n);
     }
   }
-#ifndef _WIN32
-  linenoiseHistorySave(HISTORY_FILE);
+  if (use_edit) {
+#ifdef _WIN32
+    winlineHistorySave(HISTORY_FILE);
+#else
+    linenoiseHistorySave(HISTORY_FILE);
 #endif
+  }
 
   // turn down volume smoothly to avoid clicks
   volume_set(0);
