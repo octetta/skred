@@ -783,7 +783,7 @@ int wire(char *line, wire_t *w) {
           if (v.argc == 1) {
             ptr += v.next;
           } else return ERR_PARSING;
-          r = volume_set((int)v.args[0]);
+          r = volume_set(v.args[0]);
           break;
         case '>':
           v = parse(ptr, FUNC_COPY, FUNC_NULL, 1, w);
