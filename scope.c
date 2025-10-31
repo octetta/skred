@@ -81,6 +81,7 @@ void *scope_main(void *arg) {
   }
   //
   SetTraceLogLevel(LOG_NONE);
+  SetConfigFlags(FLAG_WINDOW_HIGHDPI);
   InitWindow(screenWidth, screenHeight, "skred-o-scope");
   //
   SetWindowPosition((int)position_in.x, (int)position_in.y);
