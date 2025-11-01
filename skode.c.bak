@@ -6,7 +6,6 @@
 #define MAX_NUMBERS 8
 #define MAX_BRACE_BUFFER 65536
 #define MAX_PAREN_NUMBERS 128
-#define MAX_VARIABLES 62  // 10 digits + 26 lowercase + 26 uppercase
 
 typedef enum {
   SKODE_START,
@@ -14,8 +13,7 @@ typedef enum {
   SKODE_NUMBER,
   SKODE_COMMENT,
   SKODE_BRACE_CONTENT,
-  SKODE_PAREN_NUMBERS,
-  SKODE_VARIABLE
+  SKODE_PAREN_NUMBERS
 } skode_state_t;
 
 typedef struct {
@@ -24,13 +22,17 @@ typedef struct {
   int num_count;
   
   // Brace content buffer
-  char brace_buf[MAX_BRACE_BUFFER];
+  //char brace_buf[MAX_BRACE_BUFFER];
+  char *brace_buf;
+  int brace_max;
   int brace_len;
   int brace_complete;
   
   // Paren numbers
-  float paren_numbers[MAX_PAREN_NUMBERS];
+  //float paren_numbers[MAX_PAREN_NUMBERS];
+  float *paren_numbers;
   int paren_count;
+  int paren_max;
   int paren_complete;
 } skode_command_t;
 
@@ -40,61 +42,56 @@ typedef struct {
   int cmd_len;
   char num_buf[32];
   int num_len;
-  char var_buf[32];
-  int var_len;
   skode_command_t current;
-  
-  // Variable storage: $0-$9, $a-$z, $A-$Z
-  float variables[MAX_VARIABLES];
-  int var_defined[MAX_VARIABLES];
 } skode_t;
 
 void skode_init(skode_t *p) {
   p->state = SKODE_START;
   p->cmd_len = 0;
   p->num_len = 0;
-  p->var_len = 0;
   p->current.cmd[0] = '\0';
   p->current.num_count = 0;
   p->current.brace_len = 0;
+  p->current.brace_max = MAX_BRACE_BUFFER;
+  p->current.brace_buf = malloc(MAX_BRACE_BUFFER);
   p->current.brace_complete = 0;
   p->current.paren_count = 0;
+  p->current.paren_max = MAX_PAREN_NUMBERS;
+  p->current.paren_numbers = malloc(MAX_PAREN_NUMBERS);
   p->current.paren_complete = 0;
-  
-  // Initialize variables as undefined
-  for (int i = 0; i < MAX_VARIABLES; i++) {
-    p->variables[i] = 0.0f;
-    p->var_defined[i] = 0;
-  }
+}
+
+void skode_free(skode_t *p) {
+  if (p->current.brace_buf) free(p->current.brace_buf);
+  p->current.brace_buf = NULL;
+  if (p->current.paren_numbers) free(p->current.paren_numbers);
+  p->current.paren_numbers = NULL;
 }
 
 static void emit_command(skode_command_t *cmd) {
   if (cmd->cmd[0] == '\0' && cmd->brace_len == 0 && cmd->paren_count == 0) return;
   
   if (cmd->cmd[0] != '\0') {
-    // Skip printing variable assignments (=)
-    if (cmd->cmd[0] != '=') {
-      printf("Command: %s", cmd->cmd);
-      if (cmd->num_count > 0) {
-        printf(" [");
-        for (int i = 0; i < cmd->num_count; i++) {
-          printf("%.2f", cmd->numbers[i]);
-          if (i < cmd->num_count - 1) printf(", ");
-        }
-        printf("]");
+    printf("cmd %s", cmd->cmd);
+    if (cmd->num_count > 0) {
+      printf(" [");
+      for (int i = 0; i < cmd->num_count; i++) {
+        printf("%g", cmd->numbers[i]);
+        if (i < cmd->num_count - 1) printf(" ");
       }
-      printf("\n");
+      printf("]");
     }
+    printf("\n");
   }
   
   if (cmd->brace_len > 0 && cmd->brace_complete) {
-    printf("Brace content (%d bytes): {%.*s}\n", cmd->brace_len, cmd->brace_len, cmd->brace_buf);
+    printf("str {%.*s}\n", cmd->brace_len, cmd->brace_buf);
   }
   
   if (cmd->paren_count > 0 && cmd->paren_complete) {
-    printf("Paren numbers [%d]: (", cmd->paren_count);
+    printf("data (");
     for (int i = 0; i < cmd->paren_count; i++) {
-      printf("%.2f", cmd->paren_numbers[i]);
+      printf("%g", cmd->paren_numbers[i]);
       if (i < cmd->paren_count - 1) printf(" ");
     }
     printf(")\n");
@@ -114,53 +111,24 @@ static void finish_number(skode_t *p) {
 static void finish_paren_number(skode_t *p) {
   if (p->num_len > 0) {
     p->num_buf[p->num_len] = '\0';
-    if (p->current.paren_count < MAX_PAREN_NUMBERS) {
+    if (p->current.paren_count < p->current.paren_max) {
       p->current.paren_numbers[p->current.paren_count++] = atof(p->num_buf);
     }
     p->num_len = 0;
   }
 }
 
-// Map variable name to index: 0-9, a-z, A-Z
-static int var_name_to_index(char c) {
-  if (c >= '0' && c <= '9') return c - '0';
-  if (c >= 'a' && c <= 'z') return 10 + (c - 'a');
-  if (c >= 'A' && c <= 'Z') return 36 + (c - 'A');
-  return -1;
-}
-
-static void handle_variable_assignment(skode_t *p) {
-  // Format: =<var> <value>
-  // var_buf contains the variable name, numbers[0] contains the value
-  if (p->var_len == 1 && p->current.num_count == 1) {
-    int idx = var_name_to_index(p->var_buf[0]);
-    if (idx >= 0 && idx < MAX_VARIABLES) {
-      p->variables[idx] = p->current.numbers[0];
-      p->var_defined[idx] = 1;
-      printf("Set $%c = %.2f\n", p->var_buf[0], p->variables[idx]);
-    }
-  }
-  p->var_len = 0;
-}
-
-static float get_variable_value(skode_t *p, char c) {
-  int idx = var_name_to_index(c);
-  if (idx >= 0 && idx < MAX_VARIABLES && p->var_defined[idx]) {
-    return p->variables[idx];
-  }
-  return 0.0f; // Undefined variables return 0
-}
-
 void skode_finish(skode_t *p, int debug) {
   finish_number(p);
-  
-  // Handle variable assignment if this is an = command
-  if (p->current.cmd[0] == '=') {
-    handle_variable_assignment(p);
-  }
-  
   if (debug) emit_command(&p->current);
-  
+  /*
+    things using this should check the same things emit_command use:
+      cmd->current->cmd
+      cmd->current->num_count
+      cmd->current->brace_len and brace_complete
+      cmd->current->paren_count and paren_complete
+    so maybe the interface could be simpler/cleaner?
+  */
   p->current.cmd[0] = '\0';
   p->current.num_count = 0;
   p->current.brace_len = 0;
@@ -171,11 +139,7 @@ void skode_finish(skode_t *p, int debug) {
 }
 
 static int is_command_char(char c) {
-  return isalpha(c) || \
-    c == '/' || c == ':' || \
-    c == '[' || c == ']' || \
-    c == '+' || c == '~' || \
-    c == '=' || c == '$';
+  return isalpha(c) || c == '/' || c == ':' || c == '+' || c == '~';
 }
 
 static int is_number_char(char c) {
@@ -194,6 +158,7 @@ void skode_chunk(skode_t *p, const char *chunk, int len, int debug) {
         } else if (c == ';') {
           skode_finish(p, debug);
         } else if (c == '\n') {
+          // Newline only finishes command if we have numbers
           if (p->current.num_count > 0 || p->num_len > 0) {
             skode_finish(p, debug);
           }
@@ -213,28 +178,14 @@ void skode_chunk(skode_t *p, const char *chunk, int len, int debug) {
           p->cmd_buf[0] = '/';
           p->cmd_len = 1;
           p->state = SKODE_COMMAND;
-        } else if (c == '=') {
-          skode_finish(p, debug);
-          p->cmd_buf[0] = '=';
-          p->cmd_len = 1;
-          p->cmd_buf[1] = '\0';
-          strcpy(p->current.cmd, p->cmd_buf);
-          p->var_len = 0;
-          p->state = SKODE_VARIABLE;
-        } else if (c == '$') {
-          p->state = SKODE_VARIABLE;
-          p->var_len = 0;
         } else if (c == '+' || c == '~') {
+          // Timing command
           skode_finish(p, debug);
           p->cmd_buf[0] = c;
           p->cmd_len = 1;
           p->cmd_buf[1] = '\0';
           strcpy(p->current.cmd, p->cmd_buf);
           p->state = SKODE_NUMBER;
-        } else if (c == '[') {
-          // push voice
-        } else if (c == ']') {
-          // pop voice
         } else if (isalpha(c)) {
           skode_finish(p, debug);
           p->cmd_buf[0] = c;
@@ -242,6 +193,8 @@ void skode_chunk(skode_t *p, const char *chunk, int len, int debug) {
           p->cmd_buf[1] = '\0';
           strcpy(p->current.cmd, p->cmd_buf);
           p->state = SKODE_NUMBER;
+        } else if (!isspace(c) && c != ',') {
+          // Invalid character at start
         }
         break;
         
@@ -254,17 +207,14 @@ void skode_chunk(skode_t *p, const char *chunk, int len, int debug) {
         } else if (c == '\n' || c == ';') {
           skode_finish(p, debug);
         } else if (!isspace(c) && c != ',') {
+          // Invalid after slash
           p->state = SKODE_START;
         }
         break;
         
       case SKODE_NUMBER:
-        if (c == '$') {
-          finish_number(p);
-          p->var_len = 0;
-          p->state = SKODE_VARIABLE;
-        } else if (is_number_char(c)) {
-          if (p->num_len < 31) {
+        if (is_number_char(c)) {
+          if (p->num_len == 0 || p->num_len < 31) {
             p->num_buf[p->num_len++] = c;
           }
         } else if (c == ' ' || c == '\t' || c == ',') {
@@ -272,6 +222,7 @@ void skode_chunk(skode_t *p, const char *chunk, int len, int debug) {
         } else if (c == ';') {
           skode_finish(p, debug);
         } else if (c == '\n') {
+          // Newline only finishes command if we have numbers
           if (p->current.num_count > 0 || p->num_len > 0) {
             skode_finish(p, debug);
           }
@@ -279,8 +230,9 @@ void skode_chunk(skode_t *p, const char *chunk, int len, int debug) {
           skode_finish(p, debug);
           p->state = SKODE_COMMENT;
         } else if (is_command_char(c)) {
+          // Any command character starts a new command
           skode_finish(p, debug);
-          i--;
+          i--; // Reprocess this character
         } else if (c == '{') {
           skode_finish(p, debug);
           p->current.brace_len = 0;
@@ -300,9 +252,11 @@ void skode_chunk(skode_t *p, const char *chunk, int len, int debug) {
           p->current.brace_complete = 1;
           skode_finish(p, debug);
         } else {
-          if (p->current.brace_len < MAX_BRACE_BUFFER - 1) {
+          // Collect character if buffer not full
+          if (p->current.brace_len < p->current.brace_max - 1) {
             p->current.brace_buf[p->current.brace_len++] = c;
           }
+          // Continue reading until '}' even if buffer is full
         }
         break;
         
@@ -320,29 +274,6 @@ void skode_chunk(skode_t *p, const char *chunk, int len, int debug) {
         }
         break;
         
-      case SKODE_VARIABLE:
-        if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
-          if (p->var_len < 31) {
-            p->var_buf[p->var_len++] = c;
-          }
-          
-          if (p->current.cmd[0] != '=') {
-            float val = get_variable_value(p, c);
-            if (p->current.num_count < MAX_NUMBERS) {
-              p->current.numbers[p->current.num_count++] = val;
-            }
-            p->var_len = 0;
-            p->state = SKODE_NUMBER;
-          } else {
-            p->state = SKODE_NUMBER;
-          }
-        } else {
-          p->var_len = 0;
-          p->state = SKODE_START;
-          i--;
-        }
-        break;
-        
       case SKODE_COMMENT:
         if (c == '\n') {
           p->state = SKODE_START;
@@ -353,6 +284,7 @@ void skode_chunk(skode_t *p, const char *chunk, int len, int debug) {
 }
 
 void test(skode_t *parser) {
+  // Test cases
   const char *tests[] = {
     "f100 ",
     "f 100\n",
@@ -376,13 +308,7 @@ void test(skode_t *parser) {
     "-1.5 1e-5\n",
     "1 2 3\n",
     "100\n",
-    ")\n",
-    "=a 10\n",
-    "=b 20.5\n",
-    "=0 100\n",
-    "g $a $b\n",
-    "f $0\n",
-    "x $a $b $0\n"
+    ")\n"
   };
   
   printf("Parsing test chunks:\n");
@@ -393,6 +319,7 @@ void test(skode_t *parser) {
     skode_chunk(parser, tests[i], strlen(tests[i]), 1);
   }
   
+  // Finish any remaining command
   if (parser->current.cmd[0] != '\0' || parser->num_len > 0) {
     skode_finish(parser, 1);
   }
@@ -419,6 +346,7 @@ int main(int argc, char *argv[]) {
   } else {
     test(&parser);
   }
+  skode_free(&parser);
   
   return 0;
 }
