@@ -196,7 +196,50 @@ void show_stats(void) {
   }
 }
 
+#ifdef _WIN32
+#include <windows.h>
+#include <tlhelp32.h>
+#include <processthreadsapi.h>
+#endif
+
 void show_threads(void) {
+#ifdef _WIN32
+  DWORD processId = GetCurrentProcessId();
+  HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+  if (hSnapshot == INVALID_HANDLE_VALUE) {
+      return;
+  }
+
+  THREADENTRY32 te32;
+  te32.dwSize = sizeof(THREADENTRY32);
+
+  if (Thread32First(hSnapshot, &te32)) {
+    do {
+      if (te32.th32OwnerProcessID == processId) {
+        HANDLE hThread = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, te32.th32ThreadID);
+        if (hThread) {
+          PWSTR threadName = NULL;
+          HRESULT hr = GetThreadDescription(hThread, &threadName);
+          if (FAILED(hr)) {
+            printf("# %lu <GetThreadDescription failed>\n", te32.th32ThreadID);
+          } else if (threadName == NULL || wcslen(threadName) == 0) {
+            printf("# %lu <unnamed>\n", te32.th32ThreadID);
+          } else {
+            char narrowName[256];
+            WideCharToMultiByte(CP_UTF8, 0, threadName, -1, narrowName, sizeof(narrowName), NULL, NULL);
+            printf("# %lu %s\n", te32.th32ThreadID, narrowName);
+            LocalFree(threadName);
+          }
+          CloseHandle(hThread);
+        } else {
+          printf("# %lu <cannot open thread>\n", te32.th32ThreadID);
+        }
+      }
+    } while (Thread32Next(hSnapshot, &te32));
+  }
+
+  CloseHandle(hSnapshot);
+#else
   DIR* dir = opendir("/proc/self/task");
   struct dirent* entry;
   if (dir == NULL) {
@@ -224,6 +267,7 @@ void show_threads(void) {
   }
 
   closedir(dir);
+#endif
 }
 
 int patch_load(int voice, int n, int output) {

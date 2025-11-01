@@ -36,6 +36,8 @@
 #include "skred-mem.h"
 #include "scope-shared.h"
 
+#include "util.h"
+
 int scope_enable = 0;
 scope_buffer_t scope_safety;
 scope_buffer_t *scope = &scope_safety;
@@ -66,19 +68,24 @@ int main_running = 1;
 
 void seq_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
   static int first = 1;
+  static int last_frame_count = 0;
   if (first) {
-    pthread_setname_np(pthread_self(), "seq");
+    util_set_thread_name("seq");
     seq_frames_per_callback = (int)frame_count;
     first = 0;
   }
   seq((int)frame_count);
+  if ((int)frame_count != last_frame_count) {
+    printf("# frame count %d -> %d\n", last_frame_count, (int)frame_count);
+    last_frame_count = (int)frame_count;
+  }
 }
 
 void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
   static int first = 1;
   static int num_channels = 1;
   if (first) {
-    pthread_setname_np(pthread_self(), "synth");
+    util_set_thread_name("synth");
     if (scope_enable) scope->buffer_pointer = 0;
     num_channels = (int)pDevice->playback.channels;
     first = 0;
@@ -215,7 +222,7 @@ int main(int argc, char *argv[]) {
 
   if (audio_show() != 0) return 1;
 
-  pthread_setname_np(pthread_self(), "repl");
+  util_set_thread_name("repl");
 
   if (udp_port != 0) {
     int r = udp_start(udp_port);

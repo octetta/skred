@@ -18,6 +18,7 @@ typedef int socklen_t;
 #include "skred.h"
 #include "wire.h"
 #include "udp.h"
+#include "util.h"
 
 // Simple hash function for UDP address/port to array index
 static int get_connection_index(struct sockaddr_in *addr, int array_size) {
@@ -84,7 +85,7 @@ static void *udp_main(void *arg) {
     puts("# udp thread cannot run");
     return NULL;
   }
-  pthread_setname_np(pthread_self(), "udp");
+  util_set_thread_name("udp");
 #if 0
   // don't remember why i wrote this, but i don't think it's needed with select()
   struct timeval tv;

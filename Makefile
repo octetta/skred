@@ -22,6 +22,9 @@ COPTS = \
 RLINC = -I raylib-quickstart-main/build/external/raylib-master/src
 RLLIB = -L raylib-quickstart-main/bin/Debug
 
+util.o : util.c
+	gcc $(COPTS) -c $<
+
 skred-mem.o : skred-mem.c
 	gcc $(COPTS) -c $<
 
@@ -66,6 +69,7 @@ OBJS = \
   miniaudio.o \
 	linenoise.o \
 	skred-mem.o \
+	util.o \
   #
 
 skred : $(OBJS)

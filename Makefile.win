@@ -24,6 +24,9 @@ COPTS = \
 wav2data : wav2data.c miniwav.o
 	$(CC) -g -D_GNU_SOURCE $^ -o $@
 
+$(OUT)/util.o : util.c util.h
+	$(CC) $(COPTS) -c $< -o $@
+
 $(OUT)/miniwav.o : miniwav.c miniwav.h
 	$(CC) $(COPTS) -c $< -o $@
 
@@ -68,6 +71,7 @@ OBJS = \
   $(OUT)/miniaudio.o \
   $(OUT)/winline.o \
   $(OUT)/skred-mem.o \
+  $(OUT)/util.o \
   #
 
 $(OUT)/skred.exe : $(OBJS)
