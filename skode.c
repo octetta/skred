@@ -3,29 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 
-#define MAX_ARGS 8
-#define MAX_VARS 62 // 10 digits + 26 lowercase + 26 uppercase
-#define MAX_PAREN 128
-#define MAX_BRACE 65536
-#define MAX_NUMBUF 32
-
-typedef struct skode_s {
-  char cmd[3];
-  char nbuf[MAX_NUMBUF];
-  char vname;
-  float arg[MAX_ARGS];
-  float vars[MAX_VARS];
-  float paren[MAX_PAREN];
-  int narg;
-  int nvar;
-  int nparen;
-  int vdef[MAX_VARS];
-  int nlen;
-  char brace[MAX_BRACE];
-  int blen;
-  enum { START, CMD, ARG, VAR, BRACE, PAREN, COMMENT } state;
-  void (*fn)(struct skode_s *p);
-} skode_t;
+#include "skode.h"
 
 static int vidx(char c) {
   if (c >= '0' && c <= '9') return c - '0';
@@ -69,7 +47,7 @@ static void finish(skode_t *p) {
     }
   }
   emit(p);
-  memset(p->cmd, 0, 3);
+  memset(p->cmd, 0, MAX_CMD);
   p->narg = p->blen = p->nparen = 0;
   p->state = START;
 }
@@ -78,15 +56,18 @@ static void startcmd(skode_t *p, char c) {
   finish(p);
   p->cmd[0] = c;
   p->cmd[1] = 0;
-  p->state = (c == '/') ? CMD : ARG;
+  p->state = ((c == '/') || (c == ':')) ? CMD : ARG;
 }
 
 void parse_init(skode_t *p, void (*fn)(skode_t *p)) {
   memset(p, 0, sizeof(skode_t));
   p->fn = fn;
+  p->paren = malloc(MAX_PAREN * sizeof(float));
+  p->parenc = MAX_PAREN;
 }
 
 void parse_free(skode_t *p) {
+  free(p->paren);
 }
 
 void parse(skode_t *p, const char *s, int len) {
@@ -172,7 +153,7 @@ void parse(skode_t *p, const char *s, int len) {
         } else if (c == '(') {
           finish(p);
           p->state = PAREN;
-        } else if (strchr("/+=~", c)) {
+        } else if (strchr("\\?>![]:/+=~", c)) {
           pushnum(p, 0);
           finish(p);
           i--;
@@ -191,7 +172,7 @@ void parse(skode_t *p, const char *s, int len) {
           p->cmd[1] = 0;
           p->state = VAR;
         }
-        else if (isalpha(c) || strchr("/+~", c)) startcmd(p, c);
+        else if (isalpha(c) || strchr("\\?>![]:/+~", c)) startcmd(p, c);
         else if (c == '\n') {
           if (p->narg > 0 || p->nlen > 0 || p->cmd[0]) finish(p);
         }
@@ -200,15 +181,28 @@ void parse(skode_t *p, const char *s, int len) {
   }
 }
 
+void parse_end(skode_t *p) {
+  if (p->cmd[0] || p->narg > 0) finish(p);
+}
+
+#ifdef MAIN
+
 void myemit(skode_t *p) {
   if (is_cmd(p)) {
-    printf("%s", p->cmd);
+    char major = p->cmd[0];
+    char minor = p->cmd[1];
+    if (p->cmd[0] == ':' || p->cmd[0] == '/') {
+      printf("(%c %c)", p->cmd[0], p->cmd[1]);
+    } else {
+      printf("(%c)", p->cmd[0]);
+    }
+    if (p->narg) printf(" [");
     for (int i = 0; i < p->narg; i++) printf(" %g", p->arg[i]);
-    printf("\n");
+    printf(" ]\n");
   }
   if (is_bracket(p)) printf("{%.*s}\n", p->blen, p->brace);
   if (is_paren(p)) {
-    printf("(");
+    printf("( ");
     for (int i = 0; i < p->nparen; i++) printf("%g ", p->paren[i]);
     printf(")\n");
   }
@@ -237,6 +231,10 @@ int main(int argc, char **argv) {
       parse(&p, tests[i], strlen(tests[i]));
   }
   
-  if (p.cmd[0] || p.narg > 0) finish(&p);
+  parse_end(&p);
+  parse_free(&p);
+
   return 0;
 }
+
+#endif

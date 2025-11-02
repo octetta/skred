@@ -33,7 +33,7 @@ scope : scope.c skred-mem.o # raylib-quickstart-main/Makefile
 	gcc -g -D_GNU_SOURCE -DUSE_RAYLIB $(RLINC) $(RLLIB) $^ -o $@ -lraylib -lm
 
 skode : skode.c
-	gcc -g $^ -o $@
+	gcc -DMAIN -g $^ -o $@
 
 wav2data : wav2data.c miniwav.o
 	gcc -g -D_GNU_SOURCE $^ -o $@
