@@ -3,7 +3,7 @@ EXE = \
 	wav2data \
 	scope \
 	skode \
-	skode-small \
+	skode-smaller \
   #
 
 all : $(EXE)
@@ -36,7 +36,7 @@ scope : scope.c skred-mem.o # raylib-quickstart-main/Makefile
 skode : skode.c
 	gcc -g $^ -o $@
 
-skode-small : skode-small.c
+skode-smaller : skode-smaller.c
 	gcc -g $^ -o $@
 
 wav2data : wav2data.c miniwav.o
