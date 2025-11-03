@@ -31,8 +31,8 @@ typedef struct skode_s {
 int is_cmd(skode_t *p);
 int is_bracket(skode_t *p);
 int is_paren(skode_t *p);
-void parse_init(skode_t *p, void (*fn)(skode_t *p));
-void parse(skode_t *p, const char *s, int len);
-void parse_end(skode_t *p);
-void parse_free(skode_t *p);
+void sparse_init(skode_t *p, void (*fn)(skode_t *p));
+void sparse(skode_t *p, const char *s, int len);
+void sparse_end(skode_t *p);
+void sparse_free(skode_t *p);
 #endif

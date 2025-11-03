@@ -32,8 +32,8 @@ skred-mem.o : skred-mem.c
 scope : scope.c skred-mem.o # raylib-quickstart-main/Makefile
 	gcc -g -D_GNU_SOURCE -DUSE_RAYLIB $(RLINC) $(RLLIB) $^ -o $@ -lraylib -lm
 
-skode : skode.c
-	gcc -DMAIN -g $^ -o $@
+skode.o : skode.c
+	gcc -DMAIN $(COPTS) -c $<
 
 wav2data : wav2data.c miniwav.o
 	gcc -g -D_GNU_SOURCE $^ -o $@
@@ -76,8 +76,22 @@ OBJS = \
 	util.o \
   #
 
+SOBJS = \
+  skode.o \
+  miniwav.o \
+  amysamples.o \
+  synth.o \
+  miniaudio.o \
+	linenoise.o \
+	skred-mem.o \
+	util.o \
+  #
+
 skred : $(OBJS)
 	gcc $(COPTS) $^ -o $@ $(LIB)
+
+skode : $(SOBJS)
+	gcc -DMAIN -g $^ -o $@ $(LIB)
 
 linenoise.o: linenoise.c linenoise.h
 	gcc -c $<

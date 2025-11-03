@@ -59,18 +59,18 @@ static void startcmd(skode_t *p, char c) {
   p->state = ((c == '/') || (c == ':')) ? CMD : ARG;
 }
 
-void parse_init(skode_t *p, void (*fn)(skode_t *p)) {
+void sparse_init(skode_t *p, void (*fn)(skode_t *p)) {
   memset(p, 0, sizeof(skode_t));
   p->fn = fn;
   p->paren = malloc(MAX_PAREN * sizeof(float));
   p->parenc = MAX_PAREN;
 }
 
-void parse_free(skode_t *p) {
+void sparse_free(skode_t *p) {
   free(p->paren);
 }
 
-void parse(skode_t *p, const char *s, int len) {
+void sparse(skode_t *p, const char *s, int len) {
   for (int i = 0; i < len; i++) {
     char c = s[i];
     
@@ -181,11 +181,48 @@ void parse(skode_t *p, const char *s, int len) {
   }
 }
 
-void parse_end(skode_t *p) {
+void sparse_end(skode_t *p) {
   if (p->cmd[0] || p->narg > 0) finish(p);
 }
 
 #ifdef MAIN
+
+//
+int debug = 0;
+int trace = 0;
+//
+#include "miniaudio.h"
+#include "skred.h"
+#include "synth-types.h"
+#include "synth.h"
+#include "util.h"
+
+//
+void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
+  static int first = 1;
+  static int num_channels = 1;
+  if (first) {
+    util_set_thread_name("synth");
+    //if (scope_enable) scope->buffer_pointer = 0;
+    num_channels = (int)pDevice->playback.channels;
+    first = 0;
+  }
+  synth((float *)output, (float *)input, (int)frame_count, (int)pDevice->playback.channels);
+  // copy frame buffer to shared memory?
+#if 0
+  if (scope_enable) {
+    float *f = (float *)output;
+    for (int i = 0; i < frame_count * num_channels; i+=2) {
+      scope->buffer_left[scope->buffer_pointer] = f[i];
+      scope->buffer_right[scope->buffer_pointer] = f[i+1];
+      scope->buffer_pointer++;
+      if (scope->buffer_pointer >= SCOPE_WIDTH_IN_SAMPLES) scope->buffer_pointer = 0;
+      //scope->buffer_pointer %= scope->buffer_len;
+    }
+  }
+#endif
+}
+//
 
 void myemit(skode_t *p) {
   if (is_cmd(p)) {
@@ -196,6 +233,20 @@ void myemit(skode_t *p) {
     } else {
       printf("(%c)", p->cmd[0]);
     }
+    //
+#if 1
+    static int voice = 0;
+    if (major == 'f') {
+      if (p->narg) freq_set(voice, p->arg[0]);
+    } else if (major == 'a') {
+      if (p->narg) amp_set(voice, p->arg[0]);
+    } else if (major == 'w') {
+      if (p->narg) wave_set(voice, p->arg[0]);
+    } else if (major == 'v') {
+      if (p->narg) voice_set(p->arg[0], &voice);
+    }
+#endif
+    //
     if (p->narg) printf(" [");
     for (int i = 0; i < p->narg; i++) printf(" %g", p->arg[i]);
     printf(" ]\n");
@@ -210,7 +261,28 @@ void myemit(skode_t *p) {
 
 int main(int argc, char **argv) {
   skode_t p;
-  parse_init(&p, myemit);
+  sparse_init(&p, myemit);
+  //
+  synth_init();
+  wave_table_init();
+  voice_init();
+  //seq_init();
+
+  // miniaudio's synth device setup
+  ma_device_config synth_config = ma_device_config_init(ma_device_type_playback);
+  synth_config.playback.format = ma_format_f32;
+  synth_config.playback.channels = AUDIO_CHANNELS;
+  synth_config.sampleRate = MAIN_SAMPLE_RATE;
+  synth_config.dataCallback = synth_callback;
+  synth_config.periodSizeInFrames = requested_synth_frames_per_callback;
+  synth_config.periodSizeInMilliseconds = 0;
+  synth_config.periods = 3;
+  synth_config.noClip = MA_TRUE;
+  ma_device synth_device;
+  ma_device_init(NULL, &synth_config, &synth_device);
+  ma_device_start(&synth_device);
+
+  //
   const char *tests[] = {
     "f100\n", "f 100\n", "/f 10 20\n", "g 1 2 3\n", "{text}\n", 
     "(1 2 3)\n", "=a 10\n", "g $a\n", "m\n", "200 150\n", "ae1,2,3\n",
@@ -223,16 +295,16 @@ int main(int argc, char **argv) {
     if (strcmp(name, "-") != 0) f = fopen(name, "r");
     if (f) {
       char line[1024];
-      while (fgets(line, 1024, f)) parse(&p, line, strlen(line));
+      while (fgets(line, 1024, f)) sparse(&p, line, strlen(line));
       fclose(f);
     }
   } else {
     for (int i = 0; i < sizeof(tests)/sizeof(tests[0]); i++)
-      parse(&p, tests[i], strlen(tests[i]));
+      sparse(&p, tests[i], strlen(tests[i]));
   }
   
-  parse_end(&p);
-  parse_free(&p);
+  sparse_end(&p);
+  sparse_free(&p);
 
   return 0;
 }
