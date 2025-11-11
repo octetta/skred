@@ -1,4 +1,4 @@
-#!/usr/bin/env tclsh
+#!/usr/bin/env tclsh8.6
 package require Tk
 
 set width 4
@@ -91,7 +91,7 @@ proc backgroundSelf {} {
       exec wish $argv0 {*}$argv &
     } else {
       # exec nohup wish $argv0 {*}$argv > /dev/null 2>&1 &
-      exec nohup wish $argv0 {*}$argv > /dev/null &
+      exec nohup wish8 $argv0 {*}$argv > /dev/null &
     }
     exit 0
   }

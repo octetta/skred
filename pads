@@ -1,5 +1,5 @@
 #!/bin/bash
-wish fourby \
+tclsh8.6 fourby \
 "[v0T]" \
 "[v1T]" \
 "[v2T]" \

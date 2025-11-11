@@ -1,2 +1,2 @@
 #!/bin/bash
-wish fire 0 1 .00001 c1,%s 0 "czer"
+wish8 fire 0 1 .00001 c1,%s 0 "czer"

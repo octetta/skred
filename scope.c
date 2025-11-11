@@ -80,8 +80,8 @@ void *scope_main(void *arg) {
     //printf("# %s read fopen fail\n", CONFIG_FILE);
   }
   //
-  SetTraceLogLevel(LOG_NONE);
   SetConfigFlags(FLAG_WINDOW_HIGHDPI);
+  SetTraceLogLevel(LOG_NONE);
   InitWindow(screenWidth, screenHeight, "skred-o-scope");
   //
   SetWindowPosition((int)position_in.x, (int)position_in.y);

@@ -720,7 +720,7 @@ int amp_mod_set(int voice, int o, float f) {
 
 int freq_mod_set(int voice, int o, float f) {
   if (voice < 0 && voice >= VOICE_MAX) return 100; // <-- LAZY  ERR_INVALID_VOICE;
-  if (o < 0 && o >= VOICE_MAX) return 100; // <-- LAZY  ERR_INVALID_VOICE;
+  if (o < 0 || o >= VOICE_MAX) return 100; // <-- LAZY  ERR_INVALID_VOICE;
   voice_freq_mod_osc[voice] = o;
   voice_freq_mod_depth[voice] = f;
   voice_freq_scale[voice] = voice_table_size[voice] / voice_table_size[o];
