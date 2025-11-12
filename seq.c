@@ -1,10 +1,15 @@
 #include "skred.h"
+#ifndef SKODE
 #include "wire.h"
+#else
+#include "skode.h"
+#endif
 #include "synth-types.h"
 #include "synth.h"
 #include "seq.h"
 
 #include <stdio.h>
+#include <string.h>
 
 int requested_seq_frames_per_callback = SEQ_FRAMES_PER_CALLBACK;
 int seq_frames_per_callback = 0;
@@ -32,17 +37,26 @@ void seq(int frame_count) {
   // static int state = 0;
   
   // run expired (ready) queued things...
+#ifndef SKODE
   static wire_t v = WIRE();
+#else
+#endif
   for (int q = 0; q < QUEUE_SIZE; q++) {
     if ((work_queue[q].state == Q_READY) && (work_queue[q].when < synth_sample_count)) {
       work_queue[q].state = Q_USING;
+#ifndef SKODE
       v.voice = work_queue[q].voice;
       wire(work_queue[q].what, &v);
+#else
+#endif
       work_queue[q].state = Q_FREE;
     }
   }
 
+#ifndef SKODE
   static wire_t w = WIRE();
+#else
+#endif
 
   int advance = 0;
   static float clock_sec = 0.0f;
@@ -71,7 +85,10 @@ void seq(int frame_count) {
         }
       }
       seq_counter[p]++;
+#ifndef SKODE
       if (seq_pattern_mute[p][seq_pointer[p]] == 0) wire(seq_pattern[p][seq_pointer[p]], &w);
+#else
+#endif
       seq_pointer[p]++;
       switch (seq_pattern[p][seq_pointer[p]][0]) {
         case '\0':

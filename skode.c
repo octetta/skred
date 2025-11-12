@@ -208,6 +208,9 @@ void sparse_complete(skode_t *p) {
 
 #ifdef MAIN
 
+float tempo_time_per_step = 10.0f;
+float tempo_bpm = 0.0f;
+
 //
 int debug = 0;
 int trace = 0;
@@ -249,6 +252,27 @@ void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint
   }
 #endif
 }
+
+#ifdef USE_SEQ
+#include "seq.h"
+
+void seq_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
+  static int first = 1;
+  static int last_frame_count = 0;
+  if (first) {
+    util_set_thread_name("seq");
+    seq_frames_per_callback = (int)frame_count;
+    first = 0;
+  }
+  seq((int)frame_count);
+  if ((int)frame_count != last_frame_count) {
+    printf("# frame count %d -> %d\n", last_frame_count, (int)frame_count);
+    last_frame_count = (int)frame_count;
+  }
+}
+#endif
+
+//
 
 //
 void handle(skode_t *p);
@@ -371,7 +395,7 @@ void handle_cmd(skode_t *p) {
     case 'W': wavetable_show(p->voice, p->arg[0]); break;
 #endif
 #ifdef USE_SEQ
-    case 'x': seq_set_step(p->pattern, p->brace); break;
+    case 'x': seq_step_set(p->pattern, p->arg[0], p->brace); break;
     case 'y': {
       p->pattern = (int)p->arg[0];
     } break;
@@ -380,7 +404,7 @@ void handle_cmd(skode_t *p) {
       // need to handle showing... above
     } break;
     case 'Z': {
-      seq_state_all(p->pattern, p->arg[0]);
+      seq_state_all(p->arg[0]);
       // need to handle showing... above
     } break;
     case '%': break;
@@ -465,6 +489,23 @@ int main(int argc, char **argv) {
   ma_device synth_device;
   ma_device_init(NULL, &synth_config, &synth_device);
   ma_device_start(&synth_device);
+
+  // seq setup
+  // miniaudio's seq device setup
+  ma_device_config seq_config = ma_device_config_init(ma_device_type_playback);
+  seq_config.playback.format = ma_format_f32;
+  seq_config.playback.channels = AUDIO_CHANNELS;
+  seq_config.sampleRate = MAIN_SAMPLE_RATE;
+  seq_config.dataCallback = seq_callback;
+  seq_config.periodSizeInFrames = requested_seq_frames_per_callback;
+  seq_config.periodSizeInMilliseconds = 0;
+  seq_config.periods = 2; // examples say "3"... trying something different
+  seq_config.noClip = MA_TRUE;
+  ma_device seq_device;
+  ma_device_init(NULL, &seq_config, &seq_device);
+  ma_device_start(&seq_device);
+
+  //
 
   //
   const char *tests[] = {
