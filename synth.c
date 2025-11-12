@@ -1,3 +1,5 @@
+#include <string.h>
+
 #include "skred.h"
 
 #include "synth-types.h"
@@ -76,6 +78,8 @@ int requested_synth_frames_per_callback = SYNTH_FRAMES_PER_CALLBACK;
 int synth_frames_per_callback = 0;
 
 volatile uint64_t synth_sample_count = 0;
+
+#define SMOOTH_DEFAULT (0.02f)
 
 float volume_user = 1.0f;
 float volume_final = AMY_FACTOR;
@@ -507,8 +511,20 @@ int cmod_set(int voice, int o, float f) {
 
 // maybe these should be in wire.[ch]?
 
+static int voice_invalid(int voice) {
+  if (voice < 0 || voice >= VOICE_MAX) return 1;
+  return 0;
+}
+
+#define SYNTH_INVALID_VOICE (100)
+
+
 char *voice_format(int v, char *out, int verbose) {
   if (out == NULL) return "(NULL)";
+  if (voice_invalid(v)) {
+    out[0] = '\0';
+    return out;
+  }
   char *ptr = out;
   int n = 0;
   {
@@ -576,8 +592,10 @@ char *voice_format(int v, char *out, int verbose) {
     ptr += n;
   }
   if (voice_smoother_enable[v]) {
-    n = sprintf(ptr, " s%g", voice_smoother_smoothing[v]);
-    ptr += n;
+    if (voice_smoother_smoothing[v] != SMOOTH_DEFAULT) {
+      n = sprintf(ptr, " s%g", voice_smoother_smoothing[v]);
+      ptr += n;
+    }
   }
   if (voice_glissando_enable[v]) {
     n = sprintf(ptr, " g%g", voice_glissando_speed[v]);
@@ -626,7 +644,7 @@ void voice_show(int v, char c, int debug) {
   char e[8] = "";
   if (c != ' ') sprintf(e, " # *");
   voice_format(v, s, debug);
-  printf("; %s%s\n", s, e);
+  if (strlen(s)) printf("; %s%s\n", s, e);
 }
 
 int voice_show_all(int voice) {
@@ -692,10 +710,8 @@ int wave_dir(int voice, int state) {
   return 0;
 }
 
-
 int pan_mod_set(int voice, int o, float f) {
-  if (voice < 0 && voice >= VOICE_MAX) return 100; // LAZY ERR_INVALID_VOICE;
-  if (o < 0 && o >= VOICE_MAX) return 100; // LAZY ERR_INVALID_VOICE;
+  if (voice_invalid(voice) || voice_invalid(o)) return SYNTH_INVALID_VOICE;
   voice_pan_mod_osc[voice] = o;
   voice_pan_mod_depth[voice] = f;
   return 0;
@@ -711,16 +727,14 @@ int wave_set(int voice, int wave) {
 }
 
 int amp_mod_set(int voice, int o, float f) {
-  if (voice < 0 && voice >= VOICE_MAX) return 100; // <-- LAZY  ERR_INVALID_VOICE;
-  if (o < 0 && o >= VOICE_MAX) return 100; // <-- LAZY  ERR_INVALID_VOICE;
+  if (voice_invalid(voice) || voice_invalid(o)) return SYNTH_INVALID_VOICE;
   voice_amp_mod_osc[voice] = o;
   voice_amp_mod_depth[voice] = f;
   return 0;
 }
 
 int freq_mod_set(int voice, int o, float f) {
-  if (voice < 0 && voice >= VOICE_MAX) return 100; // <-- LAZY  ERR_INVALID_VOICE;
-  if (o < 0 || o >= VOICE_MAX) return 100; // <-- LAZY  ERR_INVALID_VOICE;
+  if (voice_invalid(voice) || voice_invalid(o)) return SYNTH_INVALID_VOICE;
   voice_freq_mod_osc[voice] = o;
   voice_freq_mod_depth[voice] = f;
   voice_freq_scale[voice] = voice_table_size[voice] / voice_table_size[o];
@@ -875,11 +889,9 @@ float midi2hz(float f) {
 }
 
 int voice_set(int n, int *old_voice) {
-  if (n >= 0 && n < VOICE_MAX) {
-    if (old_voice) *old_voice = n;
-    return 0;
-  }
-  return 100; // <-- LAZY  ERR_INVALID_VOICE;
+  if (voice_invalid(n)) return SYNTH_INVALID_VOICE;
+  if (old_voice) *old_voice = n;
+  return 0;
 }
 
 int voice_trigger(int voice) {
@@ -932,7 +944,7 @@ void voice_reset(int i) {
   //
   voice_smoother_enable[i] = 1;
   voice_smoother_gain[i] = 0.0f;
-  voice_smoother_smoothing[i] = 0.02f;
+  voice_smoother_smoothing[i] = SMOOTH_DEFAULT;
   //
   voice_glissando_enable[i] = 0;
   voice_glissando_speed[i] = 0.0f;
@@ -946,15 +958,13 @@ void voice_init(void) {
 }
 
 int wave_reset(int voice, int n) {
-  if (n >= 0 && n < VOICE_MAX) {
-    voice_reset(n);
-  } else {
-    voice_init();
-  }
+  if (voice_invalid(n)) voice_init();
+  else voice_reset(n);
   return 0;
 }
 
 int envelope_velocity(int voice, float f) {
+  if (voice_invalid(voice)) return SYNTH_INVALID_VOICE;
   if (f == 0) {
     amp_envelope_release(voice);
   } else {

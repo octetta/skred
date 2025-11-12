@@ -56,6 +56,13 @@ void seq(int frame_count) {
 #ifndef SKODE
   static wire_t w = WIRE();
 #else
+  static int skode_first = 1;
+  static skode_t w;
+  if (skode_first) {
+    skode_first = 0;
+    sparse_init(&w, NULL); 
+  }
+  
 #endif
 
   int advance = 0;
@@ -88,6 +95,10 @@ void seq(int frame_count) {
 #ifndef SKODE
       if (seq_pattern_mute[p][seq_pointer[p]] == 0) wire(seq_pattern[p][seq_pointer[p]], &w);
 #else
+      if (seq_pattern_mute[p][seq_pointer[p]] == 0) {
+        char *s = seq_pattern[p][seq_pointer[p]];
+        sparse(&w, s, strlen(s));
+      }
 #endif
       seq_pointer[p]++;
       switch (seq_pattern[p][seq_pointer[p]][0]) {

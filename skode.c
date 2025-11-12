@@ -79,9 +79,12 @@ void sparse_paren_resize(skode_t *p, int len) {
   p->nparen = 0;
 }
 
+void handle(skode_t *p);
+
 void sparse_init(skode_t *p, void (*fn)(skode_t *p)) {
   memset(p, 0, sizeof(skode_t));
-  p->fn = fn;
+  if (fn) p->fn = fn;
+  else p->fn = handle;
   p->voice = 0;
   p->pattern = 0;
   sparse_paren_resize(p, MAX_PAREN);
@@ -114,6 +117,10 @@ void sparse(skode_t *p, const char *s, int len) {
         }
         break;
         
+      case QUEUE:
+        puts("# still in QUEUE state");
+        break;
+
       case CMD:
         if (isalpha(c)) {
           p->cmd[1] = c;
@@ -177,6 +184,10 @@ void sparse(skode_t *p, const char *s, int len) {
         } else if (strchr("\\@?>![]:/+=~", c)) {
           pushnum(p, 0);
           finish(p);
+          if (c == '~') {
+            puts("# now in QUEUE state...");
+            p->state = QUEUE;
+          }
           i--;
         }
         break;
@@ -270,28 +281,54 @@ void seq_callback(ma_device* pDevice, void* output, const void* input, ma_uint32
     last_frame_count = (int)frame_count;
   }
 }
+
+void pattern_show(int pattern_pointer) {
+  int first = 1;
+  for (int s = 0; s < SEQ_STEPS_MAX; s++) {
+    char *line = seq_pattern[pattern_pointer][s];
+    if (strlen(line) == 0) break;
+    if (first) {
+      int state = seq_state[pattern_pointer];
+      printf("; M%g\n", tempo_bpm);
+      printf("; y%d z%d %%%d # [%d]\n",
+        pattern_pointer, state, seq_modulo[pattern_pointer], seq_pointer[pattern_pointer]);
+      first = 0;
+    }
+    printf("; {%s} x%d", line, s);
+    if (seq_pattern_mute[pattern_pointer][s]) printf(" .%d", pattern_pointer);
+    puts("");
+  }
+}
+
+void pattern_show_all(void) {
+  for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(p);
+}
+
 #endif
 
 //
 
 //
-void handle(skode_t *p);
-int patch_load(int voide, int n, int output) {
+int patch_load(int voice, int n, int output) {
   char file[1024];
   sprintf(file, "exp%d.patch", n);
   FILE *in = fopen(file, "r");
   int r = 0;
   if (in) {
     //wire_t w = WIRE();
-    skode_t p;
-    sparse_init(&p, handle);
+    skode_t w;
+    sparse_init(&w, NULL);
     char line[1024];
     while (fgets(line, sizeof(line), in) != NULL) {
       size_t len = strlen(line);
-      if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
-      if (output) printf("# %s\n", line);
+      if (output) {
+        char *copy = strdup(line);
+        if (len > 0 && line[len-1] == '\n') copy[len-1] = '\0';
+        printf("# %s\n", copy);
+        free(copy);
+      }
       //r = wire(line, &w);
-      sparse(&p, line, len);
+      sparse(&w, line, len);
       if (r != 0) {
         if (output) printf("# error in patch\n");
         break;
@@ -348,6 +385,15 @@ void handle_cmd(skode_t *p) {
     switch (p->major) {
       case '?': voice_show_all(p->voice); break;
       case 'T': voice_trigger(p->voice); break;
+      case 'x': break;
+      case 'y': break;
+      case 'z': pattern_show(p->pattern); break;
+      case 'Z': pattern_show_all(); break;
+      case '/': {
+        switch (p->minor) {
+          case 'W': wave_default(p->voice); break;
+        }
+      } break;
     }
   } else switch (p->major) {
     case 'a': amp_set(p->voice, p->arg[0]); break;
@@ -399,15 +445,9 @@ void handle_cmd(skode_t *p) {
     case 'y': {
       p->pattern = (int)p->arg[0];
     } break;
-    case 'z': {
-      seq_state_set(p->pattern, p->arg[0]);
-      // need to handle showing... above
-    } break;
-    case 'Z': {
-      seq_state_all(p->arg[0]);
-      // need to handle showing... above
-    } break;
-    case '%': break;
+    case 'z': seq_state_set(p->pattern, p->arg[0]); break;
+    case 'Z': seq_state_all(p->arg[0]); break;
+    case '%': seq_modulo_set(p->pattern, (int)p->arg[0]); break;
     case '!': break;
     case '@': break;
     case '+': break;
@@ -431,7 +471,7 @@ void handle_cmd(skode_t *p) {
         int where = 200;
         if (p->narg == 2) where = p->arg[1];
         wave_load(which, where); 
-      }break;
+      } break;
     } break;
     default: break;
   }
@@ -474,7 +514,7 @@ int main(int argc, char **argv) {
   synth_init();
   wave_table_init();
   voice_init();
-  //seq_init();
+  seq_init();
 
   // miniaudio's synth device setup
   ma_device_config synth_config = ma_device_config_init(ma_device_type_playback);
@@ -504,7 +544,6 @@ int main(int argc, char **argv) {
   ma_device seq_device;
   ma_device_init(NULL, &seq_config, &seq_device);
   ma_device_start(&seq_device);
-
   //
 
   //
@@ -520,7 +559,12 @@ int main(int argc, char **argv) {
     if (strcmp(name, "-") != 0) f = fopen(name, "r");
     if (f) {
       char line[1024];
-      while (fgets(line, 1024, f)) sparse(&p, line, strlen(line));
+      char *got = " ";
+      while (got) {
+        printf("# ");
+        got = fgets(line, 1024, f);
+        sparse(&p, line, strlen(line));
+      }
       fclose(f);
     }
   } else {

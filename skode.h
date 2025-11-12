@@ -6,6 +6,7 @@
 #define MAX_VARS 62 // 10 digits + 26 lowercase + 26 uppercase
 #define MAX_PAREN 128
 #define MAX_BRACE 65536
+#define MAX_QUEUE 65536
 #define MAX_NUMBUF 32
 
 typedef struct skode_s {
@@ -24,7 +25,9 @@ typedef struct skode_s {
   int nlen;
   char brace[MAX_BRACE];
   int blen;
-  enum { START, CMD, ARG, VAR, BRACE, PAREN, COMMENT } state;
+  char queue[MAX_QUEUE];
+  int qlen;
+  enum { START, CMD, ARG, VAR, BRACE, PAREN, QUEUE, COMMENT } state;
   //
   void (*fn)(struct skode_s *p);
   int voice;
@@ -42,6 +45,7 @@ typedef struct skode_s {
 int is_cmd(skode_t *p);
 int is_brace(skode_t *p);
 int is_paren(skode_t *p);
+int is_queue(skode_t *p);
 void sparse_init(skode_t *p, void (*fn)(skode_t *p));
 void sparse(skode_t *p, const char *s, int len);
 void sparse_complete(skode_t *p);
