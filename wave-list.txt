@@ -85,3 +85,39 @@
 164 = Harp D#4
 165 = Metronome Bell(L)
 166 = Trumpet C4
+
+
+a          wave200.wav
+airport    wave201.wav
+cute       wave202.wav
+dispensers wave203.wav
+ear        wave204.wav
+expensive  wave205.wav
+fish       wave206.wav
+frankfurt  wave207.wav
+got        wave208.wav
+had        wave209.wav
+in         wave210.wav
+it         wave211.wav
+i've       wave212.wav
+little     wave213.wav
+my         wave214.wav
+place      wave215.wav
+put        wave216.wav
+rear       wave217.wav
+sauce      wave218.wav
+serving    wave219.wav
+single     wave220.wav
+soy        wave221.wav
+sushi      wave222.wav
+teeny      wave223.wav
+that       wave224.wav
+the        wave225.wav
+there      wave226.wav
+these      wave227.wav
+tiny       wave228.wav
+too        wave229.wav
+was        wave230.wav
+your       wave231.wav
+
+

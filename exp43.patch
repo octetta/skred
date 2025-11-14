@@ -20,6 +20,7 @@ y0 # select pattern 0
 {v1T} x1
 
 y1
-{v2T+.5v2T} x0
+# {v2T+.5v2T} x0
+{v2T} x0
 
 Z1

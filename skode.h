@@ -25,9 +25,10 @@ typedef struct skode_s {
   int nlen;
   char brace[MAX_BRACE];
   int blen;
+  float queue_time;
   char queue[MAX_QUEUE];
   int qlen;
-  enum { START, CMD, ARG, VAR, BRACE, PAREN, QUEUE, COMMENT } state;
+  enum { START, CMD, ARG, VAR, BRACE, PAREN, QUEUE, QUEUE_TIME, QUEUE_STR, COMMENT } state;
   //
   void (*fn)(struct skode_s *p);
   int voice;

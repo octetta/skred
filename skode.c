@@ -27,6 +27,10 @@ int is_paren(skode_t *p) {
   return (p->nparen > 0);
 }
 
+int is_queue(skode_t *p) {
+  return (p->qlen > 0);
+}
+
 static void emit(skode_t *p) {
   if (p->fn) p->fn(p);
 }
@@ -58,6 +62,9 @@ static void finish(skode_t *p) {
       p->vars[i] = p->arg[0];
       p->vdef[i] = 1;
     }
+  }
+  if (p->cmd[0] == '~' || p->cmd[0] == '+') {
+    printf("# %c in finish\n", p->cmd[0]);
   }
   emit(p);
   memset(p->cmd, 0, MAX_CMD);
@@ -118,7 +125,20 @@ void sparse(skode_t *p, const char *s, int len) {
         break;
         
       case QUEUE:
-        puts("# still in QUEUE state");
+        if (c == '~' || c == '+') {
+          printf("# start another QUEUE %c\n", c);
+        } else if (c == '\n' || c == ';') {
+          printf("# QUEUE state got CR -> START\n");
+          p->state = START;
+        } else {
+          printf("# QUEUE state got '%c'\n", c);
+        }
+        break;
+
+      case QUEUE_TIME:
+        break;
+      
+      case QUEUE_STR:
         break;
 
       case CMD:
@@ -181,11 +201,15 @@ void sparse(skode_t *p, const char *s, int len) {
         } else if (c == '(') {
           finish(p);
           p->state = PAREN;
-        } else if (strchr("\\@?>![]:/+=~", c)) {
+        } else if (c == '~' || c == '+') {
+          printf("# ARG -> QUEUE via %c\n", c);
+          p->state = QUEUE;
+        // } else if (strchr("\\@?>![]:/+=~", c)) {
+        } else if (strchr("\\@?>![]:/=", c)) {
           pushnum(p, 0);
           finish(p);
-          if (c == '~') {
-            puts("# now in QUEUE state...");
+          if (c == '~' || c == '+') {
+            printf("# ARG -> QUEUE state via strchr (%c)...\n", c);
             p->state = QUEUE;
           }
           i--;
@@ -203,8 +227,12 @@ void sparse(skode_t *p, const char *s, int len) {
           p->cmd[0] = '=';
           p->cmd[1] = 0;
           p->state = VAR;
+        } else if (c == '+' || c == '~') {
+          printf("# START -> QUEUE via %c\n", c);
+          p->state = QUEUE;
         }
-        else if (isalpha(c) || strchr("\\@?>![]:/+~", c)) startcmd(p, c);
+        //else if (isalpha(c) || strchr("\\@?>![]:/+~", c)) startcmd(p, c);
+        else if (isalpha(c) || strchr("\\@?>![]:/", c)) startcmd(p, c);
         else if (c == '\n') {
           if (p->narg > 0 || p->nlen > 0 || p->cmd[0]) finish(p);
         }
@@ -450,8 +478,8 @@ void handle_cmd(skode_t *p) {
     case '%': seq_modulo_set(p->pattern, (int)p->arg[0]); break;
     case '!': break;
     case '@': break;
-    case '+': break;
-    case '~': break;
+    case '+': puts("# CMD +"); break;
+    case '~': puts("# CMD ~"); break;
 #endif
     case '?': voice_show(p->arg[0], ' ', 0); break;
     case '>': voice_copy(p->voice, p->arg[0]); break;
