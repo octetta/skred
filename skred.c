@@ -81,17 +81,36 @@ void seq_callback(ma_device* pDevice, void* output, const void* input, ma_uint32
   }
 }
 
+int rec_state = 0;
+long rec_ptr = 0;
+long rec_max = REC_IN_SEC * MAIN_SAMPLE_RATE * AUDIO_CHANNELS * VOICE_MAX;
+float one_skred_frame[ONE_FRAME_MAX * AUDIO_CHANNELS * VOICE_MAX];
+//float recording[REC_IN_SEC * MAIN_SAMPLE_RATE * AUDIO_CHANNELS * VOICE_MAX];
+float *recording = NULL;
+
 void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
   static int first = 1;
   static int num_channels = 1;
   if (first) {
+    recording = (float *)malloc(REC_IN_SEC * MAIN_SAMPLE_RATE * AUDIO_CHANNELS * VOICE_MAX * sizeof(float));
     util_set_thread_name("synth");
     if (scope_enable) scope->buffer_pointer = 0;
     num_channels = (int)pDevice->playback.channels;
     first = 0;
   }
-  synth((float *)output, (float *)input, (int)frame_count, (int)pDevice->playback.channels);
+  synth((float *)output, (float *)input, (int)frame_count, (int)pDevice->playback.channels, pDevice->pUserData);
   // copy frame buffer to shared memory?
+  if (rec_state) {
+    float *f = (float *)output;
+    for (int i = 0; i < frame_count * num_channels * VOICE_MAX; i++) {
+      if (rec_ptr < rec_max) {
+        recording[rec_ptr++] = f[i];
+      } else {
+        rec_state = 0;
+        break;
+      }
+    }
+  }
   if (scope_enable) {
     float *f = (float *)output;
     for (int i = 0; i < frame_count * num_channels; i+=2) {
@@ -202,6 +221,7 @@ int main(int argc, char *argv[]) {
   synth_config.periodSizeInMilliseconds = 0;
   synth_config.periods = 3;
   synth_config.noClip = MA_TRUE;
+  synth_config.pUserData = &one_skred_frame;
   ma_device synth_device;
   ma_device_init(NULL, &synth_config, &synth_device);
   ma_device_start(&synth_device);

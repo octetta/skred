@@ -5,7 +5,7 @@
 #include "synth.def"
 #undef ARRAY
 
-void synth(float *buffer, float *input, int num_frames, int num_channels);
+void synth(float *buffer, float *input, int num_frames, int num_channels, void *user);
 void synth_init(void);
 void synth_free(void);
 

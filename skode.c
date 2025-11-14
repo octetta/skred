@@ -276,7 +276,7 @@ void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint
 #endif
     first = 0;
   }
-  synth((float *)output, (float *)input, (int)frame_count, (int)pDevice->playback.channels);
+  synth((float *)output, (float *)input, (int)frame_count, (int)pDevice->playback.channels, pDevice->pUserData);
   // copy frame buffer to shared memory?
 #ifdef USE_SCOPE
   if (scope_enable) {
@@ -535,6 +535,9 @@ void handle(skode_t *p) {
   }
 }
 
+#define ONE_FRAME_MAX (256 * 1024)
+float one_skred_frame[ONE_FRAME_MAX * AUDIO_CHANNELS * VOICE_MAX];
+
 int main(int argc, char **argv) {
   skode_t p;
   sparse_init(&p, handle);
@@ -554,6 +557,7 @@ int main(int argc, char **argv) {
   synth_config.periodSizeInMilliseconds = 0;
   synth_config.periods = 3;
   synth_config.noClip = MA_TRUE;
+  synth_config.pUserData = &one_skred_frame;
   ma_device synth_device;
   ma_device_init(NULL, &synth_config, &synth_device);
   ma_device_start(&synth_device);

@@ -16,6 +16,67 @@ float voice_pop(voice_stack_t *s) {
   return n;
 }
 
+#include <stdio.h>
+#include <stdint.h>
+
+void save_wav(char *filename, float *samples, long num_samples) {
+  FILE *f = fopen(filename, "wb");
+  if (!f) return;
+
+  int sample_rate = 44100;
+  int num_channels = 64;  // 32 pairs = 64 channels
+  int bits_per_sample = 16;
+  int byte_rate = sample_rate * num_channels * bits_per_sample / 8;
+  int block_align = num_channels * bits_per_sample / 8;
+  int data_size = num_samples * block_align;
+    
+  // WAV header
+  fwrite("RIFF", 1, 4, f);
+  uint32_t chunk_size = 36 + data_size;
+  fwrite(&chunk_size, 4, 1, f);
+  fwrite("WAVE", 1, 4, f);
+    
+  // fmt subchunk
+  fwrite("fmt ", 1, 4, f);
+  uint32_t subchunk1_size = 16;
+  fwrite(&subchunk1_size, 4, 1, f);
+  uint16_t audio_format = 1;  // PCM
+  fwrite(&audio_format, 2, 1, f);
+  uint16_t channels = num_channels;
+  fwrite(&channels, 2, 1, f);
+  fwrite(&sample_rate, 4, 1, f);
+  fwrite(&byte_rate, 4, 1, f);
+  uint16_t align = block_align;
+  fwrite(&align, 2, 1, f);
+  uint16_t bps = bits_per_sample;
+  fwrite(&bps, 2, 1, f);
+
+  // data subchunk
+  fwrite("data", 1, 4, f);
+  fwrite(&data_size, 4, 1, f);
+
+  // Convert float samples to 16-bit PCM
+  for (int i = 0; i < num_samples * 64; i++) {
+    int16_t sample = (int16_t)(samples[i] * 32767.0f);
+    fwrite(&sample, 2, 1, f);
+  }
+
+  fclose(f);
+}
+
+#if 0
+// Example: 1000 sample periods, each with 64 values (32 L/R pairs)
+int main() {
+    int num_samples = 1000;
+    float samples[1000 * 64];  // 64000 floats total
+    
+    // Fill with data: L0,R0,L1,R1,...,L31,R31, L0,R0,L1,R1,...
+    
+    save_wav("output.wav", samples, num_samples/VOICE_NUM);
+    return 0;
+}
+#endif
+
 char *display_func_func_str[FUNC_UNKNOWN+1] = {
   [FUNC_NULL] = "-?-",
   [FUNC_ERR] = "err",
@@ -181,6 +242,7 @@ void system_show(void) {
 
 void show_stats(void) {
   // do something useful
+  printf("# rec_state : %d rec_ptr %ld\n", rec_state, rec_ptr);
   printf("# synth frames per callback %d : %gms\n",
     synth_frames_per_callback, (float)synth_frames_per_callback / (float)MAIN_SAMPLE_RATE * 1000.0f);
   printf("# seq frames per callback %d : %gms\n",
@@ -828,6 +890,37 @@ int wire(char *line, wire_t *w) {
             ptr += v.next;
           } else return ERR_PARSING;
           r = volume_set(v.args[0]);
+          break;
+        case '<': // record!
+          v = parse(ptr, FUNC_COPY, FUNC_NULL, 1, w);
+          if (v.argc == 1) {
+            ptr += v.next;
+            rec_state = 0;
+            long max_sec = (long)v.args[0];
+            if (max_sec > 0) {
+              max_sec *= (MAIN_SAMPLE_RATE * AUDIO_CHANNELS * VOICE_MAX);
+              if (max_sec > (REC_IN_SEC * MAIN_SAMPLE_RATE * VOICE_MAX)) {
+                max_sec = (REC_IN_SEC * MAIN_SAMPLE_RATE * VOICE_MAX);
+              }
+              rec_max = max_sec;
+            }
+            rec_ptr = 0;
+            rec_state = 1;
+          } else return ERR_PARSING;
+          break;
+        case '*': // write
+        #include <sys/time.h>
+        #include <unistd.h>
+          if (rec_ptr) {
+            pid_t pid = getpid();
+            struct timeval tv;
+            gettimeofday(&tv, NULL);
+            long long ms = (long long)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+            char name[1024];
+            sprintf(name, "skred-%d-%lld.wav", pid, ms);
+            printf("# file %s (%ld frames)\n", name, rec_ptr);
+            save_wav(name, recording, rec_ptr/VOICE_MAX);
+          }
           break;
         case '>':
           v = parse(ptr, FUNC_COPY, FUNC_NULL, 1, w);

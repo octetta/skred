@@ -384,14 +384,17 @@ float amp_envelope_step(int v) {
     return 0.0f;
 }
 
-void synth(float *buffer, float *input, int num_frames, int num_channels) {
+void synth(float *buffer, float *input, int num_frames, int num_channels, void *user) {
+  static float *one_skred_frame;
   static uint64_t synth_random;
   static int first = 1;
   if (first) {
     synth_frames_per_callback = num_frames;
     audio_rng_init(&synth_random, 1);
+    one_skred_frame = (float *)user;
     first = 0;
   }
+  int skred_ptr = 0;
   for (int i = 0; i < num_frames; i++) {
     synth_sample_count++;
     float sample_left = 0.0f;
@@ -401,10 +404,14 @@ void synth(float *buffer, float *input, int num_frames, int num_channels) {
     for (int n = 0; n < VOICE_MAX; n++) {
       if (voice_finished[n]) {
         voice_sample[n] = 0.0f;
+        one_skred_frame[skred_ptr++] = 0.0f;
+        one_skred_frame[skred_ptr++] = 0.0f;
         continue;
       }  
       if (voice_amp[n] == 0) {
         voice_sample[n] = 0.0f;
+        one_skred_frame[skred_ptr++] = 0.0f;
+        one_skred_frame[skred_ptr++] = 0.0f;
         continue;
       }
       if (voice_wave_table_index[n] == WAVE_TABLE_NOISE_ALT) {
@@ -471,6 +478,11 @@ void synth(float *buffer, float *input, int num_frames, int num_channels) {
         float right = voice_sample[n] * voice_pan_right[n];
         sample_left  += left;
         sample_right += right;
+        one_skred_frame[skred_ptr++] = left;
+        one_skred_frame[skred_ptr++] = right;
+      } else {
+        one_skred_frame[skred_ptr++] = 0.0f;
+        one_skred_frame[skred_ptr++] = 0.0f;
       }
     }
 

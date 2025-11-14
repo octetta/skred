@@ -62,7 +62,7 @@ udp.o: udp.c udp.h
 wire.o: wire.c wire.h
 	gcc $(COPTS) -c $<
 
-skred.o: skred.c
+skred.o: skred.c skred.h
 	gcc $(COPTS) -c $<
 
 OBJS = \

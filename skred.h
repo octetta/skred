@@ -12,6 +12,14 @@
 #define SYNTH_FRAMES_PER_CALLBACK (512)
 #define SEQ_FRAMES_PER_CALLBACK (128)
 
+#define REC_IN_SEC (5 * 60)
+#define ONE_FRAME_MAX (256 * 1024)
+extern int rec_state;
+extern long rec_max;
+extern long rec_ptr;
+extern float *recording;
+
+
 enum {
   WAVE_TABLE_SINE,     // 0
   WAVE_TABLE_SQR,      // 1
