@@ -14,9 +14,10 @@ v5 w209 f512.727 a92.7273 c1,0.5678 q5 h9 # tiny
 v10 w100 f605.818 a12.562 c1,0.2744 q12 h4 # perc-shk
 v11 w101 f282.182 a29.5041 c1,0.6066 # perc-bass
 v12 w102 f850.909 a65.2893 # perc-snare
-v15 m1 w1 f110 a8 J2 K126.604 Q5.5372 c1,0.5273 q10 C17,0.2 F1,0.25 P16,1 # synth
+v15 m1 w1 f110 a8 J2 K126.604 Q5.5372 c1,0.5273 q10 F17,1 P16,1 # synth
 v16 w0 f1.0661 a1 m1 # synth pan mod
-v17 w0 f3.4711 a1 m1 # synth cz mod
+v17 w0 f3.4711 a1 m1 # synth freq mod
+v18 w0 f1 a1 m1 # synth cz mod
 v20 w250 f391.995 a225 p0.75 m1 # put-it
 v21 w251 f440 a225 p-0.75 m1 # fish-in
 # v30 w0 f50 a5.6 m1
@@ -52,5 +53,5 @@ y6 %1
 
 
 # +1 Z1 v0m0 +2 v3m0 +2 v4m0 +2 v5m0 +9 v15a0 v15m0 # intro
-# +1 v20m0 +2 v21m0 # main
+# +1 v0m1 v3m1 v4m1 v5a200 +1 v20m0 +4 v21m0 # main
 # +1 v20m1 +4 v0m1 +1 v21m1 +1 v3m1 +2 v15m1 +3 v4m1 +4 v5m1 +5 Z0 # outro
