@@ -9,7 +9,7 @@ int main(int argc, char *argv[]) {
   if (argc > 1) {
     name = argv[1];
   }
-  float *table = mw_get(name, &len, &wav);
+  float *table = mw_get(name, &len, &wav, -1);
   if (table) {
     // printf("# table:%p len:%d\n", table, len);
     printf("D%d\n", len);

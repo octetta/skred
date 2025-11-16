@@ -433,13 +433,13 @@ int data_load(wire_t *w, int where) {
   return 0;
 }
 
-int wave_load(int which, int where) {
+int wave_load(int which, int where, int ch) {
   if (where < EXT_SAMPLE_00 || where >= EXT_SAMPLE_99) return ERR_INVALID_EXT_SAMPLE;
   char name[1024];
   sprintf(name, "wave%d.wav", which);
   wav_t wav;
   int len;
-  float *table = mw_get(name, &len, &wav);
+  float *table = mw_get(name, &len, &wav, ch);
   if (table == NULL) {
     printf("# can not read %s\n", name);
     return ERR_INVALID_EXT_SAMPLE;
@@ -801,16 +801,18 @@ int wire(char *line, wire_t *w) {
               {
                 int which;
                 int where;
-                if (v.argc == 2) {
+                int ch = -1;
+                if (v.argc >= 2) {
                   ptr += v.next;
                   which = (int)v.args[0];
                   where = (int)v.args[1];
+                  if (v.argc > 2) ch = (int)v.args[2];
                 } else if (v.argc == 1) {
                   ptr += v.next;
                   which = (int)v.args[0];
                   where = EXT_SAMPLE_00;
                 } else return ERR_PARSING;
-                r = wave_load(which, where);
+                r = wave_load(which, where, ch);
               }
               break;
             default: return 999;

@@ -46,6 +46,6 @@ typedef struct {
 
 FILE *mw_header(char *name, wav_t *wav);
 
-float *mw_get(char *name, int *frames_out, wav_t *w);
+float *mw_get(char *name, int *frames_out, wav_t *w, int ch);
 
 #endif

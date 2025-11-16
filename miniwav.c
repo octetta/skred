@@ -82,7 +82,7 @@ FILE *mw_header(char *name, wav_t *wav) {
   return NULL;
 }
 
-float *mw_get(char *name, int *frames_out, wav_t *w) {
+float *mw_get(char *name, int *frames_out, wav_t *w, int ch) {
     wav_t wav;
     wav_t *this = &wav;
     if (w) this = w;
@@ -99,8 +99,12 @@ float *mw_get(char *name, int *frames_out, wav_t *w) {
         if (n == 0) break;
         int32_t sample = frameBlock[0];
         if (this->Channels == 2) {
-          sample += frameBlock[1];
-          sample /= 2;
+          if (ch == -1) {
+            sample += frameBlock[1];
+            sample /= 2;
+          } else if (ch == 1) {
+            sample = frameBlock[1];
+          }
         }
         if (sample > 32767) sample = 32767;
         if (sample < -32767) sample = -32767;
