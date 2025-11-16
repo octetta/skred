@@ -1215,6 +1215,18 @@ int wire(char *line, wire_t *w) {
             }
           } else return ERR_PARSING;
           break;
+        case 'G': // link this freq/midi to an oscillator
+          v = parse(ptr, FUNC_LINKF, FUNC_NULL, 1, w);
+          if (v.argc == 1) {
+            ptr += v.next;
+          } else return ERR_PARSING;
+          break;
+        case 'H': // link this amp/velocity to an oscillator
+          v = parse(ptr, FUNC_LINKA, FUNC_NULL, 1, w);
+          if (v.argc == 1) {
+            ptr += v.next;
+          } else return ERR_PARSING;
+          break;
         case 'S':
           v = parse(ptr, FUNC_RESET, FUNC_NULL, 1, w);
           if (v.argc == 1) {

@@ -1,0 +1,3 @@
++2 Z1 v0m0 +2 v3m0 +2 v4m0 +2 v5m0 +9 v15a0 v15m0 # intro
++2 v0m1 v3m1 v4m1 v5a200 +1 v20m0 +4 v21m0 # main
++2 v20m1 +4 v0m1 +1 v21m1 +1 v3m1 +2 v15m1 +3 v4m1 +4 v5m1 +5 Z0 # outro

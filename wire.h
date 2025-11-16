@@ -110,6 +110,9 @@ enum {
   FUNC_CZ,
   FUNC_VOLUME_SET,
   //
+  FUNC_LINKF,
+  FUNC_LINKA,
+  //
   FUNC_UNKNOWN,
 };
 

@@ -1,0 +1,108 @@
+#!/usr/bin/env tclsh8
+
+package require Tk
+
+# Global variables
+set running 0
+set elapsed 0
+
+# Configure main window
+wm title . "Stopwatch"
+wm geometry . 900x350
+. configure -bg #2c3e50
+
+# Create time display label
+label .time -text "00:00:000" -font {Helvetica 60 bold} \
+    -fg #ecf0f1 -bg #2c3e50
+pack .time -pady 40
+
+# Create button frame
+frame .buttons -bg #2c3e50
+pack .buttons -pady 20
+
+# Create buttons
+button .buttons.start -text "start" -command start_timer \
+    -bg #27ae60 -fg white -activebackground #229954 \
+    -font {Helvetica 12 bold} -width 10 -height 1 -relief flat -bd 0 -highlightthickness 0
+grid .buttons.start -row 0 -column 0 -padx 5
+
+button .buttons.stop -text "stop" -command stop_timer \
+    -bg #e74c3c -fg white -activebackground #c0392b \
+    -font {Helvetica 12 bold} -width 10 -height 1 -relief flat -bd 0 -highlightthickness 0
+grid .buttons.stop -row 0 -column 1 -padx 5
+
+button .buttons.pause -text "pause" -command pause_timer \
+    -bg #f39c12 -fg white -activebackground #d68910 \
+    -font {Helvetica 12 bold} -width 10 -height 1 -relief flat -bd 0 -highlightthickness 0
+grid .buttons.pause -row 0 -column 2 -padx 5
+
+button .buttons.reset -text "reset" -command reset_timer \
+    -bg #3498db -fg white -activebackground #2980b9 \
+    -font {Helvetica 12 bold} -width 10 -height 1 -relief flat -bd 0 -highlightthickness 0
+grid .buttons.reset -row 0 -column 3 -padx 5
+
+# Procedures
+proc update_display {} {
+    global elapsed
+    
+    set minutes [expr {$elapsed / 60000}]
+    set seconds [expr {($elapsed % 60000) / 1000}]
+    set milliseconds [expr {$elapsed % 1000}]
+    
+    set time_str [format "%02d:%02d:%03d" $minutes $seconds $milliseconds]
+    .time configure -text $time_str
+}
+
+proc start_timer {} {
+    global running
+    
+    if {!$running} {
+        set running 1
+        .buttons.start configure -state disabled
+        .buttons.stop configure -state normal
+        .buttons.pause configure -state normal
+        update_time
+    }
+}
+
+proc stop_timer {} {
+    global running
+    
+    set running 0
+    .buttons.start configure -state normal
+    .buttons.stop configure -state disabled
+    .buttons.pause configure -state disabled
+}
+
+proc pause_timer {} {
+    global running
+    
+    set running 0
+    .buttons.start configure -state normal -text "resume"
+    .buttons.stop configure -state normal
+    .buttons.pause configure -state disabled
+}
+
+proc reset_timer {} {
+    global running elapsed
+    
+    set running 0
+    set elapsed 0
+    update_display
+    .buttons.start configure -state normal -text "start"
+    .buttons.stop configure -state disabled
+    .buttons.pause configure -state disabled
+}
+
+proc update_time {} {
+    global running elapsed
+    
+    if {$running} {
+        incr elapsed 10
+        update_display
+        after 10 update_time
+    }
+}
+
+# Initialize display
+update_display
