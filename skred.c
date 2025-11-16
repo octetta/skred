@@ -83,28 +83,45 @@ void seq_callback(ma_device* pDevice, void* output, const void* input, ma_uint32
 
 int rec_state = 0;
 long rec_ptr = 0;
+float rec_sec = (float)REC_IN_SEC;
 long rec_max = REC_IN_SEC * MAIN_SAMPLE_RATE * AUDIO_CHANNELS * VOICE_MAX;
 float one_skred_frame[ONE_FRAME_MAX * AUDIO_CHANNELS * VOICE_MAX];
 //float recording[REC_IN_SEC * MAIN_SAMPLE_RATE * AUDIO_CHANNELS * VOICE_MAX];
 float *recording = NULL;
 
+void synth_callback_init(float max_sec) {
+  if (recording) free(recording);
+  recording = NULL;
+  rec_sec = max_sec;
+  float max_samples = max_sec * (float)(MAIN_SAMPLE_RATE * AUDIO_CHANNELS * VOICE_MAX);
+  rec_max = max_samples;
+  recording = (float *)malloc(rec_max * sizeof(float));
+}
+
+void synth_callback_free(void) {
+  if (recording) free(recording);
+  recording = NULL;
+  rec_max = 0;
+}
+
 void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
   static int first = 1;
   static int num_channels = 1;
   if (first) {
-    recording = (float *)malloc(REC_IN_SEC * MAIN_SAMPLE_RATE * AUDIO_CHANNELS * VOICE_MAX * sizeof(float));
     util_set_thread_name("synth");
     if (scope_enable) scope->buffer_pointer = 0;
     num_channels = (int)pDevice->playback.channels;
     first = 0;
   }
   synth((float *)output, (float *)input, (int)frame_count, (int)pDevice->playback.channels, pDevice->pUserData);
+  sprintf(scope->debug_text, "%d %d %ld", frame_count, rec_state, rec_ptr);
   // copy frame buffer to shared memory?
   if (rec_state) {
-    float *f = (float *)output;
-    for (int i = 0; i < frame_count * num_channels * VOICE_MAX; i++) {
+    float *f = one_skred_frame;
+    for (int i = 0; i < frame_count * num_channels * VOICE_MAX; i+=2) {
       if (rec_ptr < rec_max) {
-        recording[rec_ptr++] = f[i];
+        recording[rec_ptr++] = f[i];   // left
+        recording[rec_ptr++] = f[i+1]; // right
       } else {
         rec_state = 0;
         break;
@@ -206,6 +223,8 @@ int main(int argc, char *argv[]) {
   linenoiseHistoryLoad(HISTORY_FILE);
 #endif
   
+
+  synth_callback_init(REC_IN_SEC);
   synth_init();
   wave_table_init();
   voice_init();
@@ -350,6 +369,7 @@ int main(int argc, char *argv[]) {
 
   wave_free();
   synth_free();
+  synth_callback_free();
 
   show_threads();
 

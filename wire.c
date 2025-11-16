@@ -19,6 +19,20 @@ float voice_pop(voice_stack_t *s) {
 #include <stdio.h>
 #include <stdint.h>
 
+// TODO, use the voice_record[] array to determine
+// which how many channels and voices to write to the
+// wave file (update the header too)
+
+// TODO at a minimum make cue notes for the voice number
+// and left/right designation to the wave file
+
+// MAYBE store the voice parameters in a cue note?
+// MAYBE store patterns in a cue note?
+// MAYBE store tempo in cue note?
+// MAYBE have a user note for each oscillator that's
+//       stored in a queue note
+// MAYBE have a user note for pattern that's stored in a queue note
+
 void save_wav(char *filename, float *samples, long num_samples) {
   FILE *f = fopen(filename, "wb");
   if (!f) return;
@@ -55,9 +69,37 @@ void save_wav(char *filename, float *samples, long num_samples) {
   fwrite("data", 1, 4, f);
   fwrite(&data_size, 4, 1, f);
 
-  // Convert float samples to 16-bit PCM
+  // since skred plays loose and wild with sample ranges,
+  // get the min/max of all the samples in the recorded range
+
+  float fbig = 0.0;
+  float fsmall = 0.0;
   for (int i = 0; i < num_samples * 64; i++) {
-    int16_t sample = (int16_t)(samples[i] * 32767.0f);
+    float g = samples[i];
+    if (g > fbig) fbig = g;
+    if (g < fsmall) fsmall = g;
+  }
+
+  // use the min/max to make a scale factor that keeps 0
+  // in the same relative place
+
+  #include <math.h>
+
+  float scale;
+  if (fabsf(fsmall) > fabsf(fbig)) {
+    scale = -1.0f / fsmall;
+  } else {
+    scale = 1.0f / fbig;
+  }
+  
+  // Convert scaled float samples to 16-bit PCM
+  
+  for (int i = 0; i < num_samples * 64; i++) {
+    float g = samples[i];
+    g *= scale;
+    if (g > 1.0f) g = 1.0f;
+    if (g < -1.0f) g = -1.0f;
+    int16_t sample = (int16_t)(g * 32767.0f);
     fwrite(&sample, 2, 1, f);
   }
 
@@ -896,22 +938,37 @@ int wire(char *line, wire_t *w) {
           if (v.argc == 1) {
             ptr += v.next;
             rec_state = 0;
-            long max_sec = (long)v.args[0];
-            if (max_sec > 0) {
-              max_sec *= (MAIN_SAMPLE_RATE * AUDIO_CHANNELS * VOICE_MAX);
-              if (max_sec > (REC_IN_SEC * MAIN_SAMPLE_RATE * VOICE_MAX)) {
-                max_sec = (REC_IN_SEC * MAIN_SAMPLE_RATE * VOICE_MAX);
+            float max_sec = v.args[0];
+            float max_samples;
+            if (max_sec > 0.0f) {
+              if (max_sec > rec_sec) {
+                max_sec = rec_sec;
               }
-              rec_max = max_sec;
+              max_samples = max_sec * (float)(MAIN_SAMPLE_RATE * AUDIO_CHANNELS * VOICE_MAX);
+              rec_max = max_samples;
             }
             rec_ptr = 0;
             rec_state = 1;
           } else return ERR_PARSING;
           break;
-        case '*': // write
+        case 'r': // mark voice for record
+          // don't allow if currently recording
+          v = parse(ptr, FUNC_COPY, FUNC_NULL, 1, w);
+          if (v.argc == 1) {
+            ptr += v.next;
+            if (rec_state == 0) {
+              int n = (int)v.args[0];
+              voice_record[voice] = n;
+            } else {
+              // ??
+            }
+          }
+          break;
+        case '*': // stop record and write to a file
         #include <sys/time.h>
         #include <unistd.h>
           if (rec_ptr) {
+            rec_state = 0;
             pid_t pid = getpid();
             struct timeval tv;
             gettimeofday(&tv, NULL);
@@ -919,7 +976,7 @@ int wire(char *line, wire_t *w) {
             char name[1024];
             sprintf(name, "skred-%d-%lld.wav", pid, ms);
             printf("# file %s (%ld frames)\n", name, rec_ptr);
-            save_wav(name, recording, rec_ptr/VOICE_MAX);
+            save_wav(name, recording, rec_ptr/VOICE_MAX/2);
           }
           break;
         case '>':

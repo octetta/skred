@@ -603,6 +603,10 @@ char *voice_format(int v, char *out, int verbose) {
     n = sprintf(ptr, " m%d", voice_disconnect[v]);
     ptr += n;
   }
+  if (voice_record[v]) {
+    n = sprintf(ptr, " r%d", voice_record[v]);
+    ptr += n;
+  }
   if (voice_smoother_enable[v]) {
     if (voice_smoother_smoothing[v] != SMOOTH_DEFAULT) {
       n = sprintf(ptr, " s%g", voice_smoother_smoothing[v]);

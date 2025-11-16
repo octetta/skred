@@ -48,6 +48,7 @@ ARRAY(int, voice_disconnect, VOICE_MAX, {})
 ARRAY(int, voice_quantize, VOICE_MAX, {})
 ARRAY(int, voice_direction, VOICE_MAX, {})
 ARRAY(int, voice_phase_reset, VOICE_MAX, {})
+ARRAY(int, voice_record, VOICE_MAX, {})
 
 ARRAY(int, voice_wave_table_index, VOICE_MAX, {})
 
