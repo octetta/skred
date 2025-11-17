@@ -965,6 +965,8 @@ void voice_reset(int i) {
   voice_glissando_enable[i] = 0;
   voice_glissando_speed[i] = 0.0f;
   voice_glissando_target[i] = voice_freq[i];
+
+  voice_record[i] = 0;
 }
 
 void voice_init(void) {

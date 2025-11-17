@@ -33,12 +33,31 @@ float voice_pop(voice_stack_t *s) {
 //       stored in a queue note
 // MAYBE have a user note for pattern that's stored in a queue note
 
-void save_wav(char *filename, float *samples, long num_samples) {
+void save_wav(char *filename, float *samples, long num_samples, int *record, int max) {
+  int *record_safe;
+
+  record_safe = (int *)malloc(sizeof(int)*max);
+  if (record_safe == NULL) { puts("OUCH"); return; } // nowhere to keep state
+  
+  int num_channels = 0;  // 32 pairs = 64 channels
+
+  for (int i = 0; i < max; i++) {
+    record_safe[i] = record[i];
+    if (record[i]) num_channels += 2;
+  }
+
+  if (num_channels == 0) {
+    free(record_safe);
+    return;
+  } // nothing to record
+
   FILE *f = fopen(filename, "wb");
-  if (!f) return;
+  if (!f) {
+    puts("# can't open file\n");
+    return;
+  }
 
   int sample_rate = 44100;
-  int num_channels = 64;  // 32 pairs = 64 channels
   int bits_per_sample = 16;
   int byte_rate = sample_rate * num_channels * bits_per_sample / 8;
   int block_align = num_channels * bits_per_sample / 8;
@@ -74,7 +93,7 @@ void save_wav(char *filename, float *samples, long num_samples) {
 
   float fbig = 0.0;
   float fsmall = 0.0;
-  for (int i = 0; i < num_samples * 64; i++) {
+  for (int i = 0; i < num_samples * VOICE_MAX * AUDIO_CHANNELS; i++) {
     float g = samples[i];
     if (g > fbig) fbig = g;
     if (g < fsmall) fsmall = g;
@@ -94,7 +113,9 @@ void save_wav(char *filename, float *samples, long num_samples) {
   
   // Convert scaled float samples to 16-bit PCM
   
-  for (int i = 0; i < num_samples * 64; i++) {
+  for (int i = 0; i < num_samples * VOICE_MAX * AUDIO_CHANNELS; i++) {
+    int ri = (i % (VOICE_MAX * AUDIO_CHANNELS)) >> 1;
+    if (record_safe[ri] == 0) continue; // skip things that aren't recorded
     float g = samples[i];
     g *= scale;
     if (g > 1.0f) g = 1.0f;
@@ -104,20 +125,8 @@ void save_wav(char *filename, float *samples, long num_samples) {
   }
 
   fclose(f);
+  free(record_safe);
 }
-
-#if 0
-// Example: 1000 sample periods, each with 64 values (32 L/R pairs)
-int main() {
-    int num_samples = 1000;
-    float samples[1000 * 64];  // 64000 floats total
-    
-    // Fill with data: L0,R0,L1,R1,...,L31,R31, L0,R0,L1,R1,...
-    
-    save_wav("output.wav", samples, num_samples/VOICE_NUM);
-    return 0;
-}
-#endif
 
 char *display_func_func_str[FUNC_UNKNOWN+1] = {
   [FUNC_NULL] = "-?-",
@@ -978,7 +987,7 @@ int wire(char *line, wire_t *w) {
             char name[1024];
             sprintf(name, "skred-%d-%lld.wav", pid, ms);
             printf("# file %s (%ld frames)\n", name, rec_ptr);
-            save_wav(name, recording, rec_ptr/VOICE_MAX/2);
+            save_wav(name, recording, rec_ptr/VOICE_MAX/AUDIO_CHANNELS, voice_record, VOICE_MAX);
           }
           break;
         case '>':
