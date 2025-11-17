@@ -371,13 +371,13 @@ int patch_load(int voice, int n, int output) {
 #define SAVE_WAVE_LEN (8)
 static float *save_wave_list[SAVE_WAVE_LEN]; // to keep from crashing the synth, have a place to store free-ed waves
 static int save_wave_ptr = 0;
-int wave_load(int which, int where) {
+int wave_load(int which, int where, int ch) {
   if (where < EXT_SAMPLE_00 || where >= EXT_SAMPLE_99) return ERR_INVALID_EXT_SAMPLE;
   char name[1024];
   sprintf(name, "wave%d.wav", which);
   wav_t wav;
   int len;
-  float *table = mw_get(name, &len, &wav);
+  float *table = mw_get(name, &len, &wav, ch);
   if (table == NULL) {
     printf("# can not read %s\n", name);
     return ERR_INVALID_EXT_SAMPLE;
@@ -497,8 +497,10 @@ void handle_cmd(skode_t *p) {
       case 'w': {
         int which = p->arg[0];
         int where = 200;
+        int ch = -1;
         if (p->narg == 2) where = p->arg[1];
-        wave_load(which, where); 
+        if (p->narg == 3) ch = p->arg[2];
+        wave_load(which, where, ch); 
       } break;
     } break;
     default: break;
