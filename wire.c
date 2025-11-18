@@ -485,17 +485,15 @@ int wave_load(int which, int where, int ch) {
 extern int scope_enable;
 extern scope_buffer_t *scope;
 
-
 void pattern_show(int pattern_pointer) {
   int first = 1;
   for (int s = 0; s < SEQ_STEPS_MAX; s++) {
     char *line = seq_pattern[pattern_pointer][s];
     if (strlen(line) == 0) break;
     if (first) {
-      int state = seq_state[pattern_pointer];
-      printf("; M%g\n", tempo_bpm);
-      printf("; y%d z%d %%%d # [%d]\n",
-        pattern_pointer, state, seq_modulo[pattern_pointer], seq_pointer[pattern_pointer]);
+      // printf("; M%g\n", tempo_bpm);
+      printf("; y%d %%%d\n",
+        pattern_pointer, seq_modulo[pattern_pointer]);
       first = 0;
     }
     printf("; {%s} x%d", line, s);
@@ -1071,11 +1069,18 @@ int wire(char *line, wire_t *w) {
           }
           break;
         case 'x':
-          v = parse(ptr, FUNC_STEP, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            int p = (int)v.args[0];
-            seq_step_set(w->pattern, p, w->scratch);
+          if (*ptr == '-') {
+            w->step++;
+            seq_step_set(w->pattern, w->step, w->scratch);
+            ptr++;
+          } else {
+            v = parse(ptr, FUNC_STEP, FUNC_NULL, 1, w);
+            if (v.argc == 1) {
+              ptr += v.next;
+              int step = (int)v.args[0];
+              w->step = step;
+              seq_step_set(w->pattern, step, w->scratch);
+            }
           }
           break;
         case 'Z':
@@ -1084,7 +1089,10 @@ int wire(char *line, wire_t *w) {
             ptr += v.next;
             seq_state_all((int)v.args[0]);
           } else {
-            if (w->output) for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(p);
+            if (w->output) {
+              printf("; M%g\n", tempo_bpm);
+              for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(p);
+            }
           }
           break;
         case 'z':
@@ -1120,12 +1128,22 @@ int wire(char *line, wire_t *w) {
             ptr++;
           } else wave_dir(voice, -1);
           break;
+        case 'N':
+          v = parse(ptr, FUNC_MIDI_TRANSPOSE, FUNC_NULL, 1, w);
+          if (v.argc == 1) {
+            ptr += v.next;
+            voice_midi_transpose[voice] = v.args[0];
+          } else return ERR_PARSING;
+          break;
         case 'n':
           v = parse(ptr, FUNC_MIDI, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
+            r = freq_midi(voice, v.args[0]);
+            if (voice_link_midi[voice] >= 0) {
+              r = freq_midi(voice_link_midi[voice], v.args[0]);
+            }
           } else return ERR_PARSING;
-          r = freq_midi(voice, v.args[0]);
           break;
         case 'A':
           v = parse(ptr, FUNC_AMP_MOD, FUNC_NULL, 2, w);
@@ -1173,6 +1191,9 @@ int wire(char *line, wire_t *w) {
             ptr += v.next;
           } else return ERR_PARSING;
           r = envelope_velocity(voice, v.args[0]);
+          if (voice_link_velo[voice] >= 0) {
+            r = envelope_velocity(voice_link_velo[voice], v.args[0]);
+          }
           break;
         case 'E':
           v = parse(ptr, FUNC_ENVELOPE, FUNC_NULL, 4, w);
@@ -1228,12 +1249,14 @@ int wire(char *line, wire_t *w) {
           v = parse(ptr, FUNC_LINKF, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
+            voice_link_midi[voice] = (int)v.args[0];
           } else return ERR_PARSING;
           break;
         case 'H': // link this amp/velocity to an oscillator
           v = parse(ptr, FUNC_LINKA, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
+            voice_link_velo[voice] = (int)v.args[0];
           } else return ERR_PARSING;
           break;
         case 'S':
@@ -1345,6 +1368,7 @@ void wire_init(wire_t *w) {
   w->state = W_PROTOCOL;
   w->last_func = FUNC_NULL;
   w->pattern = 0;
+  w->step = 0;
   w->data = NULL;
   w->data_len = 0;
   w->data_max = 0;

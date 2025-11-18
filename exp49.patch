@@ -1,0 +1,58 @@
+v0 w108 f440 a20 r1 # bass drum preset
+
+v1 w105 f440 a20 r1 # snare drum preset
+
+:w3,200 # load hihat from file to wave slot 200
+v2 w200 f440 a30 r1 # put hihat into v2 (unused in this example)
+
+v10 w1 f277.183 a4 b1 J1 K1000 Q5.9504 c0,0 F12,1 P11,1 r1 # synth
+v11 w0 f0.25 a1 m1 r1 # pan mod for synth
+v12 w0 f55 a1 m1 r1 # freq mod for synth
+
+:w500,201,0 # load nugget01 left channel to slot 201
+v20 w201 f440 a30 b1 B1 p-1 c0,0 r1 # put 201 into v20 pan full left
+
+:w500,202,1 # load nugget01 right channel to slot 202
+v21 w202 f440 a30 b1 B1 p1 c0,0 r1 # put 202 to v21 pan full right
+
+M360 # clock set to 360 "units" is it BPM? not sure
+
+y0 %2 # go to pattern 0 and step every 2nd clock
+{v0T} x0 # step 0 triggers bass
+{v1T} x1 # step 1 triggers snare
+
+y1 %2 # go to pattern 1 and step every 2nd clock
+{v10n30} x0 # voice 10 play midi note #30
+{v10n31} x1 # note #31
+{v10m1 +.9 +.1 v10m0} x2 # mute v10 for 90% of a clock, then unmute
+{v10n35} x3 # note #35
+{v10n50} x4 # #50
+{v10n45} x5 # 45
+{v10n51} x6 # 51
+{v10n61} x7 # 61
+
+y2 %16 i       # go to pattern 2 and step every 16th clock
+{v20Tv21T} x0  # trigger left and right nugget channels
+{#} x1         # skip a step
+{v20b v21b} x2 # reverse nugget play direction for both v20&21
+
+v10a0 v20a0 v21a0 # turn down the volume of v10,20,21
+
+# in 8 clocks, do some stuff to start things... this does
+
+# +8 waits 8 clocks
+# set v10 to volume 4
+# set v20,21 to volume 30 and triggers them
+# Z1 starts all patterns
+# waits 128 clocks
+# Z0 stops all patterns
+# set v10 to volume 0
+# on the 130th clock, set v20,21 to volume 0
+
++8 v10a4 v20Ta30 v21Ta30 Z1 +128 Z0 v10a0 +130 v20a0 v21a0
+
+# anything after a "#" is ignored, but the bottom line
+# is what i actually did to record stuff which allowed me to use
+# several gui programs to fart with parameters
+# "<44" means record 44 seconds of audio to an internal buffer
+# <44 v10a0 v20a0 v21a0 +8 v10a4 v20Ta30 v21Ta30 Z1 +128 Z0 v10a0 +130 v20a0 v21a0

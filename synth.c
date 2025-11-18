@@ -547,6 +547,18 @@ char *voice_format(int v, char *out, int verbose) {
       voice_user_amp[v]);
     ptr += n;
   }
+  if (voice_midi_transpose[v]) {
+    n = sprintf(ptr, " N%g", voice_midi_transpose[v]);
+    ptr += n;
+  }
+  if (voice_link_midi[v] >= 0) {
+    n = sprintf(ptr, " G%g", voice_link_midi[v]);
+    ptr += n;
+  }
+  if (voice_link_velo[v] >= 0) {
+    n = sprintf(ptr, " H%g", voice_link_velo[v]);
+    ptr += n;
+  }
   if (voice_direction[v]) {
     n = sprintf(ptr, " b%d", voice_direction[v]);
     ptr += n;
@@ -926,6 +938,7 @@ int wave_default(int voice) {
 
 int freq_midi(int voice, float f) {
   if (f >= 0.0 && f <= 127.0) {
+    if (voice_midi_transpose[voice]) f += voice_midi_transpose[voice];
     float g = midi2hz(f);
     return freq_set(voice, g);
   }
@@ -954,6 +967,10 @@ void voice_reset(int i) {
   voice_direction[i] = 0;
   envelope_init(i, 0.0f, 0.0f, 1.0f, 0.0f);
   voice_freq[i] = 440.0f;
+  voice_midi_note[i] = 69.0f;
+  voice_midi_transpose[i] = 0;
+  voice_link_midi[i] = -1;
+  voice_link_velo[i] = -1;
   osc_set_wave_table_index(i, WAVE_TABLE_SINE);
   voice_filter_mode[i] = 0;
   mmf_init(i, 8000.0f, 0.707f);

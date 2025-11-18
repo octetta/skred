@@ -44,6 +44,7 @@ typedef struct {
   int last_func;
   int last_sub_func;
   int pattern;
+  int step;
   int output;
   int debug;
   int trace;
@@ -66,6 +67,7 @@ enum {
   FUNC_FREQ_MOD,
   FUNC_PAN_MOD,
   FUNC_MIDI,
+  FUNC_MIDI_TRANSPOSE,
   FUNC_WAVE,
   FUNC_LOOP,
   FUNC_DIR,
