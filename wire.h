@@ -48,6 +48,7 @@ typedef struct {
   int output;
   int debug;
   int trace;
+  int events; // do incoming events go to the logger?
 } wire_t;
 
 enum {
@@ -81,6 +82,8 @@ enum {
   FUNC_FILTER_FREQ,
   FUNC_FILTER_RES,
   FUNC_COPY,
+  FUNC_RECORD,
+  FUNC_EVENTS,
   FUNC_SMOOTHER,
   FUNC_GLISSANDO,
   FUNC_DATA,

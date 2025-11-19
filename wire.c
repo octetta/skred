@@ -962,7 +962,7 @@ int wire(char *line, wire_t *w) {
           break;
         case 'r': // mark voice for record
           // don't allow if currently recording
-          v = parse(ptr, FUNC_COPY, FUNC_NULL, 1, w);
+          v = parse(ptr, FUNC_RECORD, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
             if (rec_state == 0) {
@@ -1257,6 +1257,13 @@ int wire(char *line, wire_t *w) {
           if (v.argc == 1) {
             ptr += v.next;
             voice_link_velo[voice] = (int)v.args[0];
+          } else return ERR_PARSING;
+          break;
+        case 'I': // send timestamp wire events to the event logger
+          v = parse(ptr, FUNC_EVENTS, FUNC_NULL, 1, w);
+          if (v.argc == 1) {
+            ptr += v.next;
+            w->events = (int)v.args[0];
           } else return ERR_PARSING;
           break;
         case 'S':

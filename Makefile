@@ -1,5 +1,8 @@
 EXE = \
 	skred \
+  #
+
+EXTRA = \
 	wav2data \
 	scope \
 	skode \
