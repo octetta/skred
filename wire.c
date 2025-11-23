@@ -17,8 +17,9 @@ static void *perf_main(void *arg) {
   char msg[65536];
   util_set_thread_name("perf");
   while (perf_running) {
-    bool r = mpsc_queue_receive(&mq, msg, sizeof(msg));
-    printf("# perf_main (%d) <%s>\n", r, msg);
+    mpsc_queue_receive(&mq, msg, sizeof(msg));
+    //bool r = mpsc_queue_receive(&mq, msg, sizeof(msg));
+    //printf("# perf_main (%d) <%s>\n", r, msg);
   }
   return NULL;
 }
@@ -296,6 +297,15 @@ value_t parse(const char *ptr, int func, int sub_func, int argc, wire_t *w) {
 #include "synth-types.h"
 #include "synth.h"
 
+#define WIRE_POINTER_MAX (100)
+static wire_t *wl[WIRE_POINTER_MAX];
+
+int wire_hash(wire_t *w) {
+  uintptr_t addr = (uintptr_t)w;
+  addr *= 2654435769u; // knuth's multiplicitive hash (based on golden thingy?)
+  return addr % WIRE_POINTER_MAX;
+}
+
 void wire_show(wire_t *w) {
   if (w != NULL) {
     printf("# voice %d\n", w->voice);
@@ -317,6 +327,16 @@ void wire_show(wire_t *w) {
       }
     }
     printf(")\n");
+  }
+  for (int i = 0; i < WIRE_POINTER_MAX; i++) {
+    if (wl[i]) {
+      printf("# wl[%d] {.voice=%d .pattern=%d .step=%d. .events=%d}\n",
+        wire_hash(wl[i]),
+        wl[i]->voice,
+        wl[i]->pattern,
+        wl[i]->step,
+        wl[i]->events);
+    }
   }
 }
 
@@ -424,7 +444,7 @@ int patch_load(int voice, int n, int output) {
   FILE *in = fopen(file, "r");
   int r = 0;
   if (in) {
-    wire_t w = WIRE();
+    static wire_t w = WIRE();
     char line[1024];
     while (fgets(line, sizeof(line), in) != NULL) {
       size_t len = strlen(line);
@@ -446,7 +466,7 @@ static float *save_wave_list[SAVE_WAVE_LEN]; // to keep from crashing the synth,
 static int save_wave_ptr = 0;
 
 int data_load(wire_t *w, int where) {
-  if (where < EXT_SAMPLE_00 || where >= EXT_SAMPLE_99) return ERR_INVALID_EXT_SAMPLE;
+  if (where < EXT_SAMPLE_000 || where >= EXT_SAMPLE_999) return ERR_INVALID_EXT_SAMPLE;
   if (w == NULL) return 100; // fix todo
   if (w->data == NULL) return 100; // fix todo
   float *table = w->data;
@@ -478,7 +498,7 @@ int data_load(wire_t *w, int where) {
 }
 
 int wave_load(int which, int where, int ch) {
-  if (where < EXT_SAMPLE_00 || where >= EXT_SAMPLE_99) return ERR_INVALID_EXT_SAMPLE;
+  if (where < EXT_SAMPLE_000 || where >= EXT_SAMPLE_999) return ERR_INVALID_EXT_SAMPLE;
   char name[1024];
   sprintf(name, "wave%d.wav", which);
   wav_t wav;
@@ -642,6 +662,7 @@ void wire_data_push(wire_t *w) {
 }
 
 int wire(char *line, wire_t *w) {
+  wl[wire_hash(w)] = w;
   wire_t safe = WIRE();
   if (w == NULL) w = &safe;
   size_t len = strlen(line);
@@ -856,7 +877,7 @@ int wire(char *line, wire_t *w) {
                 } else if (v.argc == 1) {
                   ptr += v.next;
                   which = (int)v.args[0];
-                  where = EXT_SAMPLE_00;
+                  where = EXT_SAMPLE_000;
                 } else return ERR_PARSING;
                 r = wave_load(which, where, ch);
               }
@@ -1045,6 +1066,9 @@ int wire(char *line, wire_t *w) {
         case 'T':
           v = parse_none(FUNC_TRIGGER, FUNC_NULL, w);
           voice_trigger(voice);
+          if (voice_link_trig[voice]) {
+            voice_trigger(voice_link_trig[voice]);
+          }
           break;
         case '/': // function-specific "set last thing to default" modifier
           switch (w->last_func) {
@@ -1298,6 +1322,13 @@ int wire(char *line, wire_t *w) {
             voice_link_velo[voice] = (int)v.args[0];
           } else return ERR_PARSING;
           break;
+        case 'L': // link this trigger to an oscillator
+          v = parse(ptr, FUNC_LINKT, FUNC_NULL, 1, w);
+          if (v.argc == 1) {
+            ptr += v.next;
+            voice_link_trig[voice] = (int)v.args[0];
+          } else return ERR_PARSING;
+          break;
         case 'I': // send timestamp wire events to the event logger
           v = parse(ptr, FUNC_EVENTS, FUNC_NULL, 1, w);
           if (v.argc == 1) {
@@ -1410,6 +1441,13 @@ char *wire_err_str(int n) {
 }
 
 void wire_init(wire_t *w) {
+  static int first = 1;
+  if (first) {
+    for (int i = 0; i < WIRE_POINTER_MAX; i++) {
+      wl[i] = NULL;
+    }
+    first = 0;
+  }
   w->voice = 0;
   w->state = W_PROTOCOL;
   w->last_func = FUNC_NULL;

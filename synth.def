@@ -22,6 +22,7 @@ ARRAY(float, voice_midi_note, VOICE_MAX, {})
 ARRAY(float, voice_midi_transpose, VOICE_MAX, {})
 ARRAY(float, voice_link_midi, VOICE_MAX, {})
 ARRAY(float, voice_link_velo, VOICE_MAX, {})
+ARRAY(float, voice_link_trig, VOICE_MAX, {})
 ARRAY(float, voice_offset_hz, VOICE_MAX, {})
 
 ARRAY(float, voice_freq, VOICE_MAX, {})

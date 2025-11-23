@@ -559,6 +559,10 @@ char *voice_format(int v, char *out, int verbose) {
     n = sprintf(ptr, " H%g", voice_link_velo[v]);
     ptr += n;
   }
+  if (voice_link_trig[v] >= 0) {
+    n = sprintf(ptr, " L%g", voice_link_trig[v]);
+    ptr += n;
+  }
   if (voice_direction[v]) {
     n = sprintf(ptr, " b%d", voice_direction[v]);
     ptr += n;

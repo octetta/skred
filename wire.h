@@ -117,6 +117,7 @@ enum {
   //
   FUNC_LINKF,
   FUNC_LINKA,
+  FUNC_LINKT,
   //
   FUNC_UNKNOWN,
 };

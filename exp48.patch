@@ -5,21 +5,22 @@
 :w228,209 # tiny -> v5
 :w300,250 # put-it -> v20
 :w301,251 # fish-in -> v21
-v0 w206 f292.364 a96.1157 J1891 K8000 Q82.6446 c1,0.3851 q5 h3 P1,1 # fish
+v0 w206 f292.364 a96.1157 J1891 K8000 Q82.6446 c1,0.3851 q5 h3 P1,1 r1 # fish
 v1 w0 f8 a1.8182 m1 # pan mod fish
 v2 w0 f2.9091 a0.1653 m1
-v3 w207 f358.546 a88.6777 h9 # soy
-v4 w208 f336 a100 # teeny
-v5 w209 f512.727 a92.7273 c1,0.5678 q5 h9 # tiny
-v10 w100 f605.818 a12.562 c1,0.2744 q12 h4 # perc-shk
-v11 w101 f282.182 a29.5041 c1,0.6066 # perc-bass
-v12 w102 f850.909 a65.2893 # perc-snare
-v15 m1 w1 f110 a8 J2 K126.604 Q5.5372 c1,0.5273 q10 F17,1 P16,1 # synth
+v3 w207 f358.546 a88.6777 h9 r1 # soy
+v4 w208 f336 a100 r1 # teeny
+v5 w209 f512.727 a92.7273 c1,0.5678 q5 h9 r1 # tiny
+v10 w100 f605.818 a12.562 c1,0.2744 q12 h4 r1 # perc-shk
+v11 w101 f282.182 a29.5041 c1,0.6066 r1 # perc-bass
+v12 w102 f850.909 a65.2893 r1 # perc-snare
+v15 m1 w1 f110 G8 a8 J2 K126.604 Q5.5372 c1,0.5273 q10 F17,1 P16,1 r1 # synth
+v8 m1 w1 N.2 a8 r1
 v16 w0 f1.0661 a1 m1 # synth pan mod
 v17 w0 f3.4711 a1 m1 # synth freq mod
 v18 w0 f1 a1 m1 # synth cz mod
-v20 w250 f391.995 a225 p0.75 m1 # put-it
-v21 w251 f440 a225 p-0.75 m1 # fish-in
+v20 w250 f391.995 a225 p0.75 m1 r1 # put-it
+v21 w251 f440 a225 p-0.75 m1 r1 # fish-in
 # v30 w0 f50 a5.6 m1
 # v31 w250 f440 a100
 
