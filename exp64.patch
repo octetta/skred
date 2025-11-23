@@ -2,13 +2,15 @@ v0 m1 w1 a4 J1 Q1 K1000 G1 H1 E.1,.2,0,.1 p-1
 v1 m1 w2 a4 E0,.4,0,.2 p1
 v2 m1 f1 a1
 
-M220
-y0
-{v1 m0 v0 m0 l1 n36}   x0
-{v0 l1 n43}   x-
-{v0 l1 n44}   x-
-{v0 l1 n46}   x-
-{v0 l1 n36}   x-
-{v0 l1 n43}   x-
-{v0 l1 n44 +.5 v0 v0 l1 n46}   x-
-{v0 l1 n48}   x-
+M300
+y0 %1
+{v1 m0 v0 m0 l1 n27} x0
+{#} x-
+{v0 l1 n27} x-
+{v0 l1 n27} x-
+{v0 l1 n27} x-
+{v0 l1 n34} x-
+{v0 l1 n34} x-
+{v0 l1 n43} x-
+{v0 l1 n41} x-
+{#} x-

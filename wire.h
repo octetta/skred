@@ -187,10 +187,19 @@ char *wire_err_str(int n);
   .output = 0, \
   .trace = 0, \
   .debug = 0, \
+  .events = 0, \
 }
               
 
 void wire_init(wire_t *w);
+
+#if 1
+
+int perf_start(void);
+void perf_stop(void);
+
+
+#endif
 
 #endif
 

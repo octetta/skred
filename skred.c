@@ -15,15 +15,15 @@
    phase distortion modulation source, phase distortion depth -> phase distortion amount
 */
 
-#include <errno.h>
-#include <pthread.h>
-#include <stdint.h>
+//#include <errno.h>
+//#include <pthread.h>
+//#include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/time.h>
-#include <time.h>
-#include <unistd.h>
+//#include <stdlib.h>
+//#include <string.h>
+//#include <sys/time.h>
+//#include <time.h>
+//#include <unistd.h>
 
 #ifdef _WIN32
 #include "winline.h"
@@ -224,6 +224,8 @@ int main(int argc, char *argv[]) {
 #endif
   
 
+  perf_start();
+
   synth_callback_init(REC_IN_SEC);
   synth_init();
   wave_table_init();
@@ -360,6 +362,7 @@ int main(int argc, char *argv[]) {
   sleep_float(.5); // give a bit of time for the smoothing to apply
 
   // Cleanup
+  perf_stop();
   if (udp_port != 0) udp_stop();
   ma_device_uninit(&seq_device);
   sleep_float(.5); // make sure we don't crash the callback b/c thread timing and wave_data

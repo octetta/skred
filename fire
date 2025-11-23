@@ -98,7 +98,7 @@ if {[lsearch $argv "-daemon"] != -1} {
   set wire_addr 127.0.0.1
   set wire_port 60440
 
-  set wire_check 1
+  set wire_check 0
 
   if {$argc > 1} {set min_val [lindex $argv 1]}
   if {$argc > 2} {set max_val [lindex $argv 2]}
@@ -229,6 +229,18 @@ proc toggle_button {num} {
   scale .slider -from $min_val -to $max_val -resolution $step_val \
     -orient horizontal -variable current_val -command {fire}
   pack .slider -in .sliderFrame -side top -fill x -pady 10
+
+  frame .srec
+  
+  button .srec.rec -text keep -bg #37BC7D -relief flat -bd 0 -activebackground #FFFF99 -command { wire I1 ; .srec.info configure -text I1 }
+  button .srec.stop -text drop -bg #F54927 -relief flat -bd 0 -activebackground #FFFF99 -command { wire I0 ; .srec.info configure -text I0 }
+  label .srec.info -text I0
+  
+  pack .srec.rec -side left
+  pack .srec.stop -side left
+  pack .srec.info -side left
+  pack .srec -anchor w
+
 } else {
   daemonize
 }

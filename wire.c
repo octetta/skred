@@ -3,6 +3,41 @@
 #include "seq.h"
 #include "miniwav.h"
 
+#define MPSC_QUEUE_IMPLEMENTATION
+#include "mpsc_queue.h"
+
+#if 1 // performance event listener
+#include <pthread.h>
+
+static mpsc_queue mq;
+static pthread_t perf_thread_handle;
+static int perf_running = 1;
+#include "util.h"
+static void *perf_main(void *arg) {
+  char msg[65536];
+  util_set_thread_name("perf");
+  while (perf_running) {
+    bool r = mpsc_queue_receive(&mq, msg, sizeof(msg));
+    printf("# perf_main (%d) <%s>\n", r, msg);
+  }
+  return NULL;
+}
+
+int perf_start(void) {
+  mpsc_queue_init(&mq);
+  perf_running = 1;
+  pthread_create(&perf_thread_handle, NULL, perf_main, NULL);
+  pthread_detach(perf_thread_handle);
+  return 0;
+}
+
+void perf_stop(void) {
+  perf_running = 0;
+  mpsc_queue_send(&mq, "#"); // tickle perf_main to make sure it sees the flag change
+}
+
+#endif
+
 void voice_push(voice_stack_t *s, float n) {
   s->ptr++;
   if (s->ptr >= VOICE_STACK_LEN) s->ptr = 0;
@@ -614,6 +649,10 @@ int wire(char *line, wire_t *w) {
 
   char *ptr = line;
   char *max = line + len;
+
+  if (w->events) {
+    mpsc_queue_send(&mq, line);
+  }
 
   value_t v;
   int voice = w->voice;
@@ -1383,4 +1422,5 @@ void wire_init(wire_t *w) {
   w->trace = 0;
   w->debug = 0;
   w->scratch[0] = '\0';
+  w->events = 0;
 }
