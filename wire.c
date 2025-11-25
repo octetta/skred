@@ -546,7 +546,6 @@ void pattern_show(int pattern_pointer) {
     char *line = seq_pattern[pattern_pointer][s];
     if (strlen(line) == 0) break;
     if (first) {
-      // printf("; M%g\n", tempo_bpm);
       printf("; y%d %%%d\n",
         pattern_pointer, seq_modulo[pattern_pointer]);
       first = 0;
@@ -907,7 +906,7 @@ int wire(char *line, wire_t *w) {
               } else if (t > 0) {
                 if (token == '+') {
                   // use t as a fraction multiplied by BPS time
-                  t *= tempo_time_per_step;
+                  t *= (tempo_time_per_step * 4.0f);
                 }
                 queue_float_acc += t;
                 uint64_t queue_new = (uint64_t)(queue_float_acc * (float)MAIN_SAMPLE_RATE);
@@ -1153,7 +1152,7 @@ int wire(char *line, wire_t *w) {
             seq_state_all((int)v.args[0]);
           } else {
             if (w->output) {
-              printf("; M%g\n", tempo_bpm);
+              printf("; M%g\n", tempo_bpm * 4.0f);
               for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(p);
             }
           }
@@ -1173,7 +1172,7 @@ int wire(char *line, wire_t *w) {
             ptr += v.next;
           } else return ERR_PARSING;
           tempo_set(v.args[0]);
-          if (scope_enable) sprintf(scope->status_text, "M%g", tempo_bpm);
+          if (scope_enable) sprintf(scope->status_text, "M%g", tempo_bpm * 4.0f);
           break;
         case 'm':
           v = parse_none(FUNC_MUTE, FUNC_NULL, w);

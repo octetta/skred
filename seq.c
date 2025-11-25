@@ -24,9 +24,10 @@ int seq_state[PATTERNS_MAX];
 int seq_modulo[PATTERNS_MAX];
 
 void tempo_set(float m) {
-  tempo_bpm = m;
+  tempo_base = m;
+  tempo_bpm = m / 4.0;
   float bps = m / 60.f;
-  float time_per_step = 1.0f / bps;
+  float time_per_step = 1.0f / bps / 4.0f;
   //printf("# BPM %g -> BPS %g -> time_per_step %g\n", m, bps, time_per_step);
   tempo_time_per_step = time_per_step;
 }
@@ -42,7 +43,7 @@ void seq(int frame_count) {
 #else
 #endif
   for (int q = 0; q < QUEUE_SIZE; q++) {
-    if ((work_queue[q].state == Q_READY) && (work_queue[q].when < synth_sample_count)) {
+    if ((work_queue[q].state == Q_READY) && (work_queue[q].when <= synth_sample_count)) {
       work_queue[q].state = Q_USING;
 #ifndef SKODE
       v.voice = work_queue[q].voice;
@@ -66,7 +67,7 @@ void seq(int frame_count) {
 #endif
 
   int advance = 0;
-  static float clock_sec = 0.0f;
+  static double clock_sec = 0.0f;
   float frame_time_sec = (float)frame_count / (float)MAIN_SAMPLE_RATE;
   clock_sec += frame_time_sec;
   if (clock_sec >= tempo_time_per_step) {
@@ -77,12 +78,7 @@ void seq(int frame_count) {
   }
 
   if (advance) {
-#if 0
-    // SIGH... poor little scope needs fixing...
-    sprintf(new_scope->debug_text, "%d:%d %s",
-      scope_pattern_pointer, seq_pointer[scope_pattern_pointer],
-      seq_pattern[scope_pattern_pointer][seq_pointer[scope_pattern_pointer]]);
-#endif
+
     for (int p = 0; p < PATTERNS_MAX; p++) {
       if (seq_state[p] != SEQ_RUNNING) continue;
       if (seq_modulo[p] > 1) {
@@ -114,7 +110,7 @@ void pattern_reset(int p) {
   seq_pointer[p] = 0;
   seq_state[p] = SEQ_STOPPED;
   seq_counter[p] = 0;
-  seq_modulo[p] = 1;
+  seq_modulo[p] = 4;
   for (int s = 0; s < SEQ_STEPS_MAX; s++) {
     seq_pattern[p][s][0] = '\0';
     seq_pattern_mute[p][s] = 0;
@@ -124,6 +120,7 @@ void pattern_reset(int p) {
 void seq_init(void) {
   for (int p = 0; p < PATTERNS_MAX; p++) {
     pattern_reset(p);
+ 
   }
 }
 

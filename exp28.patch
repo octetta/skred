@@ -11,9 +11,9 @@ Z0
 y0
 { v20 T +.04 v20 T } x0
 { v21 a20 T +.5 v21 a10 T } x1
-y1 %2
+y1 %8
 { v0l1 v1l0 } x0
 { v1l1 v0l0 } x1
-y2 %4
+y2 %16
 { v30 T } x0
 y0Z1 y1Z1 y2Z1

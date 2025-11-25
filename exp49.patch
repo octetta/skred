@@ -21,11 +21,11 @@ v21 w202 f440 a30 b1 B1 p1 c0,0 r1 # put 202 to v21 pan full right
 
 M360 # clock set to 360 "units" is it BPM? not sure
 
-y0 %2 # go to pattern 0 and step every 2nd clock
+y0 %8 # go to pattern 0 and step every 2nd clock
 {v0T} x0 # step 0 triggers bass
 {v1T} x- # step 1 triggers snare
 
-y1 %2 # go to pattern 1 and step every 2nd clock
+y1 %8 # go to pattern 1 and step every 2nd clock
 {v10 n30 l1} x0 # voice 10 play midi note #30
 {v10 n31 l1} x- # note #31
 {v10 m1 +.9 +.1 v10 m0 l1} x- # mute v10 for 90% of a step, then unmute
@@ -35,7 +35,7 @@ y1 %2 # go to pattern 1 and step every 2nd clock
 {v10 n51 l1} x- # 51
 {v10 n61 l1} x- # 61
 
-y2 %16         # go to pattern 2 and step every 16th clock
+y2 %64         # go to pattern 2 and step every 16th clock
 {v20Tv21T} x0  # trigger left and right nugget channels
 {#} x-         # skip a step
 {v20b v21b} x- # reverse nugget play direction for both v20&21

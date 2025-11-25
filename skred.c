@@ -47,8 +47,9 @@ scope_buffer_t *scope = &scope_safety;
 #include "synth-types.h"
 #include "synth.h"
 
-float tempo_time_per_step = 10.0f;
-float tempo_bpm = 0.0f;
+float tempo_time_per_step = 60.0f;
+float tempo_bpm = 120.0f / 4.0f;
+float tempo_base = 0.0f;
 
 void tempo_set(float);
 
@@ -66,6 +67,7 @@ int main_running = 1;
 
 #include "seq.h"
 
+#if 0
 void seq_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
   static int first = 1;
   static int last_frame_count = 0;
@@ -80,6 +82,7 @@ void seq_callback(ma_device* pDevice, void* output, const void* input, ma_uint32
     last_frame_count = (int)frame_count;
   }
 }
+#endif
 
 int rec_state = 0;
 long rec_ptr = 0;
@@ -116,6 +119,7 @@ void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint
   synth((float *)output, (float *)input, (int)frame_count, (int)pDevice->playback.channels, pDevice->pUserData);
   sprintf(scope->debug_text, "%d %d %ld", frame_count, rec_state, rec_ptr);
   // copy frame buffer to shared memory?
+  seq((int)frame_count);
   if (rec_state) {
     float *f = one_skred_frame;
     for (int i = 0; i < frame_count * num_channels * VOICE_MAX; i+=2) {
@@ -247,6 +251,7 @@ int main(int argc, char *argv[]) {
   ma_device_init(NULL, &synth_config, &synth_device);
   ma_device_start(&synth_device);
 
+#if 0
   // miniaudio's seq device setup
   ma_device_config seq_config = ma_device_config_init(ma_device_type_playback);
   seq_config.playback.format = ma_format_f32;
@@ -260,6 +265,7 @@ int main(int argc, char *argv[]) {
   ma_device seq_device;
   ma_device_init(NULL, &seq_config, &seq_device);
   ma_device_start(&seq_device);
+#endif
 
   if (audio_show() != 0) return 1;
 
@@ -364,7 +370,9 @@ int main(int argc, char *argv[]) {
   // Cleanup
   perf_stop();
   if (udp_port != 0) udp_stop();
+#if 0
   ma_device_uninit(&seq_device);
+#endif
   sleep_float(.5); // make sure we don't crash the callback b/c thread timing and wave_data
   ma_device_uninit(&synth_device);
   sleep_float(.5); // make sure we don't crash the callback b/c thread timing and wave_data

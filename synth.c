@@ -132,7 +132,7 @@ void osc_set_freq(int v, float f) {
   voice_phase_inc[v] = (g * (float)voice_table_size[v]) / voice_table_rate[v] * (voice_table_rate[v] / MAIN_SAMPLE_RATE);
 }
 
-float cz_phasor(int n, float p, float d, int table_size) {
+float old_cz_phasor(int n, float p, float d, int table_size) {
   float phase = p / (float)table_size;
   switch (n) {
     case 1: // 2 :: saw -> pulse
@@ -167,7 +167,232 @@ float cz_phasor(int n, float p, float d, int table_size) {
   return phase * (float)table_size;
 }
 
+// Fast power approximation using bit manipulation
+// About 10x faster than powf, ~1-2% max error for your use case
+static inline float fast_pow(float a, float b) {
+    // Clamp input to avoid undefined behavior
+    if (a <= 0.0f) return 0.0f;
+    
+    union { float f; int i; } u = { a };
+    u.i = (int)(b * (u.i - 1065353216) + 1065353216);
+    return u.f;
+}
+
+float cz_phasor(int n, float p, float d, int table_size) {
+    const float table_size_f = (float)table_size;
+    float phase = p / table_size_f;
+    
+    // Clamp d to safe range [0, 1)
+    d = (d < 0.0f) ? 0.0f : (d > 0.999f ? 0.999f : d);
+    
+    switch (n) {
+        case 1: { // saw -> pulse
+            const float inv_d = 0.5f / d;
+            const float inv_1_minus_d = 0.5f / (1.0f - d);
+            if (phase < d) {
+                phase *= inv_d;
+            } else {
+                phase = 0.5f + (phase - d) * inv_1_minus_d;
+            }
+            break;
+        }
+        case 2: { // square (folded sine)
+            const float half_d = d * 0.5f;
+            const float scale = 0.5f / (0.5f - half_d);
+            if (phase < 0.5f) {
+                phase *= scale;
+            } else {
+                phase = 1.0f - (1.0f - phase) * scale;
+            }
+            break;
+        }
+        case 3: { // triangle
+            const float half_d = d * 0.5f;
+            const float scale = 0.5f / (0.5f - half_d);
+            if (phase < 0.5f) {
+                phase *= scale;
+            } else {
+                phase = 0.5f + (phase - 0.5f) * scale;
+            }
+            break;
+        }
+        case 4: { // double sine
+            // phase *= 2.0f;
+            // if (phase >= 1.0f) phase -= 1.0f;
+            phase = fmodf(phase * 2.0f, 1.0f);
+            break;
+        }
+        case 5: { // saw -> triangle
+            const float half_d = d * 0.5f;
+            const float scale1 = 0.5f / (0.5f - half_d);
+            const float scale2 = 0.5f / (0.5f + half_d);
+            if (phase < 0.5f) {
+                phase *= scale1;
+            } else {
+                phase = 0.5f + (phase - 0.5f) * scale2;
+            }
+            break;
+        }
+        case 6: // resonant 1
+            phase = fast_pow(phase, 1.0f + 4.0f * d);
+            break;
+        case 7: // resonant 2
+            phase = fast_pow(phase, 1.0f + 8.0f * d);
+            break;
+        default:
+            return p;
+    }
+    
+    return phase * table_size_f;
+}
+
 float osc_next(int voice, float phase_inc) {
+    if (voice_finished[voice]) return 0.0f;
+    
+    const int table_size = voice_table_size[voice];
+    const bool one_shot = voice_one_shot[voice];
+    const bool loop_enabled = voice_loop_enabled[voice];
+    
+    if (voice_direction[voice]) phase_inc = -phase_inc;
+    
+    float phase = voice_phase[voice] + phase_inc;
+    
+    if (!isfinite(phase)) {
+        voice_phase[voice] = 0.0f;
+        voice_finished[voice] = one_shot;
+        return 0.0f;
+    }
+    
+    // Get loop boundaries (precomputed if available)
+    const float loop_start = loop_enabled && voice_loop_valid[voice] 
+        ? voice_loop_start_f[voice] : 0.0f;
+    const float loop_end = loop_enabled && voice_loop_valid[voice]
+        ? voice_loop_end_f[voice] : (float)table_size;
+    const float loop_length = loop_end - loop_start;
+    
+    // Wrap phase
+    if (phase >= loop_end) {
+        if (one_shot && !loop_enabled) {
+            phase = loop_end - 1e-6f;
+            voice_finished[voice] = 1;
+        } else {
+            phase = loop_start + fmodf(phase - loop_start, loop_length);
+        }
+    } else if (phase < loop_start) {
+        if (one_shot && !loop_enabled) {
+            phase = loop_start;
+            voice_finished[voice] = 1;
+        } else {
+            phase = loop_end - fmodf(loop_start - phase, loop_length);
+        }
+    }
+    
+    voice_phase[voice] = phase;
+    
+    // Get sample
+    int idx;
+    if (voice_cz_mode[voice]) {
+        int dv = voice_cz_mod_osc[voice];
+        float dm = (dv >= 0) ? voice_sample[dv] * voice_cz_mod_depth[voice] : 1.0f;
+        idx = (int)cz_phasor(voice_cz_mode[voice], phase, 
+                             voice_cz_distortion[voice] + dm, table_size);
+    } else {
+        idx = (int)phase;
+    }
+    
+    if (idx >= table_size) idx = table_size - 1;
+    if (idx < 0) idx = 0;
+    
+    return voice_table[voice][idx];
+}
+
+float alt_osc_next(int voice, float phase_inc) {
+    if (voice_finished[voice]) return 0.0f;
+    
+    // Cache frequently accessed values
+    const int table_size = voice_table_size[voice];
+    const float table_size_f = (float)table_size;
+    const bool one_shot = voice_one_shot[voice];
+    const bool loop_enabled = voice_loop_enabled[voice];
+    
+    if (voice_direction[voice]) phase_inc = -phase_inc;
+    
+    // Step phase
+    float phase = voice_phase[voice] + phase_inc;
+    
+    // NaN check
+    if (!isfinite(phase)) {
+        voice_phase[voice] = 0.0f;
+        voice_finished[voice] = one_shot;
+        return 0.0f;
+    }
+    
+    // Get precomputed loop boundaries
+    float loop_start, loop_end, loop_length;
+    
+    if (loop_enabled && voice_loop_valid[voice]) {
+        loop_start = voice_loop_start_f[voice];
+        loop_end = voice_loop_end_f[voice];
+        loop_length = voice_loop_length[voice];
+    } else {
+        loop_start = 0.0f;
+        loop_end = table_size_f;
+        loop_length = table_size_f;
+    }
+    
+    // Handle wrapping
+    if (phase >= loop_end) {
+        if (one_shot && !loop_enabled) {
+            phase = loop_end - 1e-6f;
+            voice_finished[voice] = 1;
+        } else if (loop_enabled) {
+            // Optimize for common case: single boundary crossing
+            phase -= loop_length;
+            if (phase >= loop_end) { // rare: multiple crossings
+                phase = loop_start + fmodf(phase - loop_start, loop_length);
+            }
+        } else {
+            // Full table wrap
+            phase = fmodf(phase, table_size_f);
+        }
+    } else if (phase < loop_start) {
+        if (one_shot && !loop_enabled) {
+            phase = loop_start;
+            voice_finished[voice] = 1;
+        } else if (loop_enabled) {
+            // Optimize for common case: single boundary crossing
+            phase += loop_length;
+            if (phase < loop_start) { // rare: multiple crossings
+                float undershoot = loop_start - phase;
+                phase = loop_end - fmodf(undershoot, loop_length);
+            }
+        } else {
+            // Full table wrap
+            while (phase < 0.0f) phase += table_size_f;
+        }
+    }
+    
+    voice_phase[voice] = phase;
+    
+    // Calculate index
+    int idx;
+    if (voice_cz_mode[voice]) {
+        int dv = voice_cz_mod_osc[voice];
+        float dm = (dv >= 0) ? voice_sample[dv] * voice_cz_mod_depth[voice] : 1.0f;
+        idx = (int)cz_phasor(voice_cz_mode[voice], phase, 
+                             voice_cz_distortion[voice] + dm, table_size);
+    } else {
+        idx = (int)phase;
+    }
+    
+    // Clamp index
+    if (idx >= table_size) idx = table_size - 1;
+    if (idx < 0) idx = 0;
+    
+    return voice_table[voice][idx];
+}
+
+float old_osc_next(int voice, float phase_inc) {
     if (voice_finished[voice]) return 0.0f;
     if (voice_direction[voice]) phase_inc *= -1.0f;
 
@@ -272,6 +497,19 @@ void osc_set_wave_table_index(int voice, int wave) {
     voice_loop_end[voice] = wave_loop_end[wave];
     voice_midi_note[voice] = wave_midi_note[wave];
     voice_offset_hz[voice] = wave_offset_hz[wave];
+    //
+    int start = voice_loop_start[voice];
+    int end = voice_loop_end[voice];
+    voice_loop_start_f[voice] = (float)start;
+    voice_loop_end_f[voice] = (float)end;
+    if (end > start) {
+      voice_loop_valid[voice] = 1;
+      voice_loop_length[voice] = (float)(end - start);
+    } else {
+      voice_loop_valid[voice] = 0;
+      voice_loop_length[voice] = (float)voice_table_size[voice];
+    }
+    //
     // voice_phase[voice] = 0; // need to decide how to sync/reset phase???
     if (update_freq) {
       osc_set_freq(voice, voice_freq[voice]);
@@ -279,7 +517,7 @@ void osc_set_wave_table_index(int voice, int wave) {
   }
 }
 
-void osc_trigger(int voice) {
+void old_osc_trigger(int voice) {
   if (voice_one_shot[voice]) {
     if (voice_direction[voice]) {
       voice_phase[voice] = (float)(voice_table_size[voice] - 1);
@@ -290,6 +528,31 @@ void osc_trigger(int voice) {
   } else {
     voice_phase[voice] = 0;
   }
+}
+
+void osc_trigger(int voice) {
+    voice_finished[voice] = 0;
+    
+    if (voice_one_shot[voice]) {
+        if (voice_direction[voice]) {
+            voice_phase[voice] = (float)(voice_table_size[voice] - 1);
+        } else {
+            voice_phase[voice] = 0.0f;
+        }
+    } else {
+        // Preserve direction, but start at appropriate boundary
+        if (voice_direction[voice]) {
+            // Backward playback: start at loop end
+            voice_phase[voice] = voice_loop_enabled[voice] 
+                ? (float)voice_loop_end[voice] - 1e-6f  // or voice_loop_end_f[voice]
+                : (float)(voice_table_size[voice] - 1);
+        } else {
+            // Forward playback: start at loop start
+            voice_phase[voice] = voice_loop_enabled[voice] 
+                ? (float)voice_loop_start[voice]  // or voice_loop_start_f[voice]
+                : 0.0f;
+        }
+    }
 }
 
 float quantize_bits_int(float v, int bits) {
@@ -975,6 +1238,7 @@ void voice_reset(int i) {
   voice_midi_transpose[i] = 0;
   voice_link_midi[i] = -1;
   voice_link_velo[i] = -1;
+  voice_link_trig[i] = -1;
   osc_set_wave_table_index(i, WAVE_TABLE_SINE);
   voice_filter_mode[i] = 0;
   mmf_init(i, 8000.0f, 0.707f);

@@ -10,7 +10,7 @@ v1 w105 f440 a20  # snare
 v2 w200 a20 # cymbal or hi-hat?
 
 y0 # select pattern 0
-%2 # every other beat
+%8 # every other beat
 
 {v0T} x0
 {v1T} x1

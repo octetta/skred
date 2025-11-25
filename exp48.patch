@@ -26,28 +26,28 @@ v21 w251 f440 a225 p-0.75 m1 r1 # fish-in
 
 # patterns
 M120
-y0 %1
+y0 %4
 {v3T} x0
 {v0T} x1
 {v4T} x2
 {v5T} x3
-y1 %1
+y1 %4
 {v10T+.25v10T+.25v10T} x0
-y2 %1
+y2 %4
 {v11T+.75v11T} x0
 {v12T} x1
-y3 %4
+y3 %16
 {v21T+1.75v21T} x0
 {#} x1
-y4 %4
+y4 %16
 {#} x0
 {v20T+.45v20T} x1
-y5 %1
+y5 %4
 {v15n50} x0
 {v15n45} x1
 {v15n45} x2
 {v15n44+.5v15n42+.25v15n51} x3
-y6 %1
+y6 %4
 {v15a0+.0625v15a8} x0
 
 # perform

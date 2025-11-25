@@ -12,7 +12,7 @@ v2 w200 a20 P20,1 # cymbal or hi-hat?
 v20 m1 f1 a1
 
 y0 # select pattern 0
-%2 # every other beat
+%8 # every other beat
 
 {v0T+.5v0T} x0
 {v1T} x1

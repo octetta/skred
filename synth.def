@@ -73,3 +73,8 @@ ARRAY(int, voice_filter_mode, VOICE_MAX, {})
 ARRAY(mmf_t, voice_filter, VOICE_MAX, {})
 
 ARRAY(envelope_t, voice_amp_envelope, VOICE_MAX, {})
+
+ARRAY(int, voice_loop_valid, VOICE_MAX, {})
+ARRAY(int, voice_loop_length, VOICE_MAX, {})
+ARRAY(float, voice_loop_start_f, VOICE_MAX, {})
+ARRAY(float, voice_loop_end_f, VOICE_MAX, {})
