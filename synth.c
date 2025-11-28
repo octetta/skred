@@ -665,6 +665,11 @@ void synth(float *buffer, float *input, int num_frames, int num_channels, void *
     float f = 0.0f;
     float whiteish = audio_rng_float(&synth_random);
     for (int n = 0; n < VOICE_MAX; n++) {
+      if (voice_mark_go[n]) {
+        clock_gettime(CLOCK_MONOTONIC_COARSE, &voice_mark_b[n]);
+        voice_mark_go[n] = 0;
+        voice_mark_go[n] = 0;
+      }
       if (voice_finished[n]) {
         voice_sample[n] = 0.0f;
         one_skred_frame[skred_ptr++] = 0.0f;
@@ -793,6 +798,11 @@ static int voice_invalid(int voice) {
 
 #define SYNTH_INVALID_VOICE (100)
 
+
+int64_t ts_diff_ns(const struct timespec *a, const struct timespec *b) {
+  return ((int64_t)b->tv_sec  - a->tv_sec)  * 1000000000LL +
+    ((int64_t)b->tv_nsec - a->tv_nsec);
+}
 
 char *voice_format(int v, char *out, int verbose) {
   if (out == NULL) return "(NULL)";
@@ -928,6 +938,11 @@ char *voice_format(int v, char *out, int verbose) {
   }
   if (verbose) {
     n = sprintf(ptr, " offset_hz:%g", voice_offset_hz[v]);
+    ptr += n;
+  }
+  if (verbose) {
+    //n = sprintf(ptr, " diff:%ld", ts_diff_ns(&voice_mark_a[v], &voice_mark_b[v]));
+    n = sprintf(ptr, " diff:%g", (double)ts_diff_ns(&voice_mark_a[v], &voice_mark_b[v])/1000000.0);
     ptr += n;
   }
   return out;

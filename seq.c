@@ -32,6 +32,154 @@ void tempo_set(float m) {
   tempo_time_per_step = time_per_step;
 }
 
+#if 0
+
+// Assumptions: these exist elsewhere in your codebase:
+// uint64_t synth_sample_count;            // global sample counter (samples)
+// #define MAIN_SAMPLE_RATE 44100
+// double tempo_time_per_step;             // seconds per step (set elsewhere)
+// char seq_pattern[PATTERNS_MAX][SEQ_STEPS_MAX][STEP_MAX];
+// int seq_pattern_mute[PATTERNS_MAX][SEQ_STEPS_MAX];
+// int seq_pointer[PATTERNS_MAX]; etc.
+// queued_t work_queue[QUEUE_SIZE];
+// wire() / sparse() signatures as before
+// WIRE() macro available
+
+void seq(int frame_count) {
+  // --- bounds & quick sanity
+  if (frame_count <= 0) return;
+
+  // Window for this callback: [start_sample, end_sample]
+  uint64_t start_sample = synth_sample_count;
+  uint64_t end_sample = synth_sample_count + (uint64_t)frame_count - 1ULL;
+
+  // --- 1) Process work_queue items that fall inside this buffer window
+  // (assumes work_queue[].when is expressed in samples)
+#ifndef SKODE
+  // local context per work item to avoid persistent mutation of a static `v`
+#endif
+  for (int q = 0; q < QUEUE_SIZE; q++) {
+    if (work_queue[q].state == Q_READY) {
+      uint64_t when = work_queue[q].when;
+      if (when <= end_sample) { // scheduled inside this buffer or earlier
+        work_queue[q].state = Q_USING;
+#ifndef SKODE
+        wire_t v_local = WIRE();
+        v_local.voice = work_queue[q].voice;
+        wire(work_queue[q].what, &v_local);
+#else
+        // adapt if .what isn't a C string
+        skode_t v_local;
+        sparse_init(&v_local, NULL);
+        sparse(&v_local, work_queue[q].what, strnlen(work_queue[q].what, STEP_MAX));
+#endif
+        work_queue[q].state = Q_FREE;
+      }
+    }
+  }
+
+  // --- 2) Prepare per-cell execution contexts (non-static, to avoid hidden state)
+  // We'll create local contexts when firing a cell below.
+
+  // --- 3) Timing: sample-accurate step scheduling
+  static uint64_t samples_per_step = 0;
+  static double last_tempo_time_per_step = 0.0;
+
+  // recompute samples_per_step if tempo changed (cheap)
+  if (tempo_time_per_step != last_tempo_time_per_step || samples_per_step == 0) {
+    double t = tempo_time_per_step;
+    if (t <= 0.0) t = 1.0 / 1000.0; // fallback tiny step to avoid zero
+    uint64_t sps = (uint64_t)(t * (double)MAIN_SAMPLE_RATE + 0.5);
+    if (sps == 0) sps = 1;
+    samples_per_step = sps;
+    last_tempo_time_per_step = tempo_time_per_step;
+  }
+
+  // We'll keep a static next_step_sample that denotes the sample index of the next step to fire.
+  // Initialize next_step_sample to the upcoming step if it isn't set yet.
+  static uint64_t next_step_sample = 0;
+  static int next_step_inited = 0;
+  if (!next_step_inited) {
+    // schedule first step at the next sample boundary (you can adjust if you want an offset)
+    next_step_sample = start_sample + samples_per_step;
+    next_step_inited = 1;
+  }
+
+  // If tempo changed drastically, ensure next_step_sample remains >= start_sample to avoid
+  // accidental firing of many steps in one callback due to a tempo jump.
+  if (next_step_sample < start_sample) next_step_sample = start_sample + samples_per_step;
+
+  // --- 4) Fire all steps that occur inside this callback window
+  // (A single callback may include 0..N steps)
+  while (next_step_sample <= end_sample) {
+    // It's time to run one sequencer step at sample position next_step_sample.
+
+    // For each pattern, run step logic
+    for (int p = 0; p < PATTERNS_MAX; p++) {
+      if (seq_state[p] != SEQ_RUNNING) continue;
+
+      // modulo handling (skip this pattern's step if modulo requires it)
+      if (seq_modulo[p] > 1) {
+        if ((seq_counter[p] % seq_modulo[p]) != 0) {
+          seq_counter[p]++;
+          continue;
+        }
+      }
+      seq_counter[p]++;
+
+      // Safe step index handling
+      int sp = seq_pointer[p];
+      if (sp < 0) sp = 0;
+      if (sp >= SEQ_STEPS_MAX) {
+        // corruption defense: wrap to 0
+        sp = 0;
+        seq_pointer[p] = 0;
+      }
+
+      // read cell (fixed-length char array)
+      char *cell = seq_pattern[p][sp];
+      int empty = (cell[0] == '\0');
+
+      if (!empty) {
+        int muted = 0;
+        if ((sp >= 0) && (sp < SEQ_STEPS_MAX)) muted = seq_pattern_mute[p][sp];
+
+        if (!muted) {
+#ifndef SKODE
+          wire_t w_local = WIRE(); // fresh context per fired cell
+          wire(cell, &w_local);
+#else
+          skode_t w_local;
+          sparse_init(&w_local, NULL);
+          sparse(&w_local, cell, strnlen(cell, STEP_MAX));
+#endif
+        }
+      }
+
+      // Advance the pointer safely and decide wrap
+      int next_sp = sp + 1;
+      if (next_sp >= SEQ_STEPS_MAX) {
+        seq_pointer[p] = 0;
+      } else {
+        if (seq_pattern[p][next_sp][0] == '\0') seq_pointer[p] = 0;
+        else seq_pointer[p] = next_sp;
+      }
+    } // end for each pattern
+
+    // schedule the next sequencer step
+    // (be careful if tempo changed drastically; this will step forward by samples_per_step)
+    next_step_sample += samples_per_step;
+  } // end while steps in this buffer
+
+  // --- 5) Advance global sample counter AFTER processing this buffer
+  // This keeps comparisons consistent: we used [start_sample, end_sample] above.
+  synth_sample_count += (uint64_t)frame_count;
+}
+
+
+
+#else
+
 void seq(int frame_count) {
   // static int voice = 0;
   // static voice_stack_t vs;
@@ -43,7 +191,7 @@ void seq(int frame_count) {
 #else
 #endif
   for (int q = 0; q < QUEUE_SIZE; q++) {
-    if ((work_queue[q].state == Q_READY) && (work_queue[q].when <= synth_sample_count)) {
+    if ((work_queue[q].state == Q_READY) && (work_queue[q].when <= (synth_sample_count + frame_count))) {
       work_queue[q].state = Q_USING;
 #ifndef SKODE
       v.voice = work_queue[q].voice;
@@ -106,6 +254,9 @@ void seq(int frame_count) {
   }
 }
 
+#endif
+
+
 void pattern_reset(int p) {
   seq_pointer[p] = 0;
   seq_state[p] = SEQ_STOPPED;
@@ -122,6 +273,11 @@ void seq_init(void) {
     pattern_reset(p);
  
   }
+#if 0
+  synth_sample_count = 0;
+  seq_next_step_sample = 0;
+  seq_samples_per_step = compute_samples_per_step(tempo_bpm, MAIN_SAMPLE_RATE);
+#endif
 }
 
 queued_t work_queue[QUEUE_SIZE];
@@ -154,6 +310,7 @@ void seq_step_set(int pattern, int step, char *scratch) {
   if (strlen(scratch) == 0) seq_pattern[pattern][step][0] = '\0';
   strcpy(seq_pattern[pattern][step], scratch);
 }
+
 
 void seq_state_set(int p, int state) {
   switch (state) {

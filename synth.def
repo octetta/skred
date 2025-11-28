@@ -78,3 +78,9 @@ ARRAY(int, voice_loop_valid, VOICE_MAX, {})
 ARRAY(int, voice_loop_length, VOICE_MAX, {})
 ARRAY(float, voice_loop_start_f, VOICE_MAX, {})
 ARRAY(float, voice_loop_end_f, VOICE_MAX, {})
+
+#include <time.h>
+
+ARRAY(int, voice_mark_go, VOICE_MAX, {})
+ARRAY(struct timespec, voice_mark_a, VOICE_MAX, {})
+ARRAY(struct timespec, voice_mark_b, VOICE_MAX, {})
