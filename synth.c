@@ -647,6 +647,65 @@ float amp_envelope_step(int v) {
     return 0.0f;
 }
 
+#include <time.h>
+
+typedef struct {
+  struct timespec a;
+  struct timespec b;
+  int64_t diff;
+  int state;
+  int order;
+  int frames;
+} sben_t;
+
+#define BENLEN (16)
+
+enum { BEN_0, BEN_A, BEN_B, BEN_D };
+
+static sben_t bench[BENLEN] = {};
+static int benchp = 0;
+static int64_t bencho = 0;
+
+int64_t ts_diff_ns(const struct timespec *a, const struct timespec *b) {
+  return ((int64_t)b->tv_sec  - a->tv_sec)  * 1000000000LL +
+    ((int64_t)b->tv_nsec - a->tv_nsec);
+}
+
+static char _stats[65536] = "";
+
+#define NS_TO_MS (1000000)
+#define S_TO_MS (1000)
+
+char *synth_stats(void) {
+  char *ptr = _stats;
+  *ptr = '\0';
+  int n = 0;
+  for (int i = 0; i < BENLEN; i++) {
+    if (bench[i].state != BEN_B) continue;
+    double maxcb = (double)bench[i].frames / (double)MAIN_SAMPLE_RATE * (double)S_TO_MS;
+    double dms = ts_diff_ns(&bench[i].a, &bench[i].b) / (double)NS_TO_MS;
+    n = sprintf(ptr,
+      "# %d %d %gms %gms\n",
+      bench[i].order,
+      bench[i].frames,
+      dms,
+      maxcb);
+    ptr += n;
+    bench[i].state = BEN_0;
+  }
+  return _stats;
+}
+
+#define BENCH_CLOCK CLOCK_MONOTONIC
+#define VOICE_CLOCK CLOCK_MONOTONIC_COARSE
+
+void synth_voice_bench(int voice) {
+  voice_mark_b[voice].tv_sec = 0;
+  voice_mark_b[voice].tv_nsec = 0;
+  clock_gettime(VOICE_CLOCK, &voice_mark_a[voice]);
+  voice_mark_go[voice] = 1;
+}
+
 void synth(float *buffer, float *input, int num_frames, int num_channels, void *user) {
   static float *one_skred_frame;
   static uint64_t synth_random;
@@ -658,6 +717,10 @@ void synth(float *buffer, float *input, int num_frames, int num_channels, void *
     first = 0;
   }
   int skred_ptr = 0;
+  clock_gettime(BENCH_CLOCK, &bench[benchp].a);
+  bench[benchp].frames = num_frames;
+  bench[benchp].order = bencho;
+  bench[benchp].state = BEN_A;
   for (int i = 0; i < num_frames; i++) {
     synth_sample_count++;
     float sample_left = 0.0f;
@@ -666,8 +729,7 @@ void synth(float *buffer, float *input, int num_frames, int num_channels, void *
     float whiteish = audio_rng_float(&synth_random);
     for (int n = 0; n < VOICE_MAX; n++) {
       if (voice_mark_go[n]) {
-        clock_gettime(CLOCK_MONOTONIC_COARSE, &voice_mark_b[n]);
-        voice_mark_go[n] = 0;
+        clock_gettime(VOICE_CLOCK, &voice_mark_b[n]);
         voice_mark_go[n] = 0;
       }
       if (voice_finished[n]) {
@@ -765,6 +827,10 @@ void synth(float *buffer, float *input, int num_frames, int num_channels, void *
     buffer[i * num_channels + 0] = sample_left;
     buffer[i * num_channels + 1] = sample_right;
   }
+  clock_gettime(BENCH_CLOCK, &bench[benchp].b);
+  bench[benchp].state = BEN_B;
+  bencho++;
+  benchp = ((bencho) % BENLEN);
 }
 
 int envelope_is_flat(int v) {
@@ -797,12 +863,6 @@ static int voice_invalid(int voice) {
 }
 
 #define SYNTH_INVALID_VOICE (100)
-
-
-int64_t ts_diff_ns(const struct timespec *a, const struct timespec *b) {
-  return ((int64_t)b->tv_sec  - a->tv_sec)  * 1000000000LL +
-    ((int64_t)b->tv_nsec - a->tv_nsec);
-}
 
 char *voice_format(int v, char *out, int verbose) {
   if (out == NULL) return "(NULL)";

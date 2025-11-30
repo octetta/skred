@@ -81,4 +81,7 @@ void wave_table_init(void);
 void wave_free(void);
 void voice_init(void);
 
+char *synth_stats(void);
+void synth_voice_bench(int voice);
+
 #endif

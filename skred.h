@@ -6,7 +6,7 @@
 #define MAIN_SAMPLE_RATE (44100)
 
 #define HISTORY_FILE ".skred_history"
-#define VOICE_MAX (32)
+#define VOICE_MAX (64)
 #define AUDIO_CHANNELS (2)
 #define AMY_FACTOR (0.025f)
 #define SYNTH_FRAMES_PER_CALLBACK (512)

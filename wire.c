@@ -795,10 +795,7 @@ int wire(char *line, wire_t *w) {
         case ':':
           switch (*ptr++) {
             case 'm':
-              voice_mark_b[voice].tv_sec = 0;
-              voice_mark_b[voice].tv_nsec = 0;
-              clock_gettime(CLOCK_MONOTONIC_COARSE, &voice_mark_a[voice]);
-              voice_mark_go[voice] = 1;
+              synth_voice_bench(voice);
               break;
             case '\0': return 100;
             case 'q': return -1;
@@ -826,6 +823,7 @@ int wire(char *line, wire_t *w) {
                 system_show();
                 show_threads();
                 audio_show();
+                printf("%s", synth_stats());
               }
               break;
             case 'd':

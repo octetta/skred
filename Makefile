@@ -50,7 +50,9 @@ amysamples.o : amysamples.c amysamples.h
 raylib-quickstart-main/Makefile :
 	sh make-raylib
   
-synth.o: synth.c synth.h synth-types.h
+synth.def: skred.h
+
+synth.o: synth.c synth.h synth-types.h synth.def
 	gcc $(COPTS) -c $<
 
 seq.o: seq.c seq.h
@@ -62,10 +64,10 @@ skode-seq.o: seq.c seq.h
 udp.o: udp.c udp.h
 	gcc $(COPTS) -c $<
 
-wire.o: wire.c wire.h
+wire.o: wire.c wire.h synth.def
 	gcc $(COPTS) -c $<
 
-skred.o: skred.c skred.h
+skred.o: skred.c skred.h synth.def
 	gcc $(COPTS) -c $<
 
 OBJS = \
