@@ -70,7 +70,7 @@ Now create a sine wave frequency modulator at 5 Hz with amplitude of 1
 
 Now modulate the frequency of v0 with v2 with a depth of 10
 
-  v0 F1,10
+  v0 F2,10
 
 At any time you can change the parameters via a few things typed from
 the keyboard, or any program that can send the same characters using
@@ -83,3 +83,33 @@ a skred parameter.
 
 My YT videos show a simple GUI that turns slider changes into skred
 messages. 
+
+Next... load a sample and play it
+
+Load the fish sample "wave206.wav" into slot 206
+
+  :w206,206
+
+Now attach slot 206 to voice 0 and set its amplitude to 20
+
+  v0 w206 a20
+
+Now play it
+
+  v0 T
+
+Now change its direction and play it
+
+  v0 b1 T
+
+Now change it back to forward and loop it
+
+Now use the GUI to change the frequency live...
+
+Now modulate the frequency like we did with the sine wave...
+
+And change the modulator frequency with the GUI...
+
+Now play it with a different frequency
+
+  v0 f220 T
