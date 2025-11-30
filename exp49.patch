@@ -6,12 +6,12 @@ v1 w105 f440 a20 r1 # snare drum preset
 v2 w200 f440 a30 r1 # put hihat into v2 (unused in this example)
 
 v10 w1 f277.183 a4 b1 J1 K1000 Q5.9504 c0,0 F12,1 P11,1 r1 # synth
-v10 E0,.5,.4,0 # add ASDR
+v10 t0,.5,.4,0 # add ASDR
 v10 G5 H5 # link midi and velocity to v5
 v11 w0 f0.25 a1 m1 r1 # pan mod for synth
 v12 w0 f55 a1 m1 r1 # freq mod for synth
 
-v5 w2 a2 E0,1,0,0 # setup linked voice
+v5 w2 a2 t0,1,0,0 # setup linked voice
 
 :w500,201,0 # load nugget01 left channel to slot 201
 v20 w201 f440 a30 b1 B1 p-1 c0,0 r1 # put 201 into v20 pan full left

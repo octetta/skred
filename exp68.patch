@@ -1,6 +1,10 @@
-v0 w49 n31 a4 c1,.5 C1,.2 E0,1,0,0 l1 H2 G2 p-.75
-v1 m1 w0 f1 a1 m1
-v2 w2 a2 N.5 E.1,.5,0,0 p.75
+v0 m1 # turn off during setup
+v2 m1 # "
+v0 w49 n31 a4 c1,.5 C1,.2 t0,1,0,0 l1 H2 G2 p-.75
+v1 m1 w0 f1 a1 m1 # modulator for v0
+v2 w2 a2 N.5 t.1,.5,0,0 p.75 l1
+
+v0 l0 v2 l0 ~1 v0 m0 v2 m0 # gymnastics to avoid sound during startup
 
 M100
 y0 %4
@@ -13,3 +17,31 @@ y0 %4
 {#} x-
 {#} x-
 {} x-
+
+v10 w108 a20 # bass drum
+v11 w105 a20 # snare drum
+
+y1 %4
+{v10 T} x0
+{v11 T} x-
+
+v12 w131 a20
+v13 w112 f440 a20
+
+
+v12 w131 a20
+v13 w112 f440 a20
+
+v12 w131 a20
+v13 w112 f440 a20
+
+v12 w131 a20
+v13 w112 f440 a20
+
+v12 w131 a20
+v13 w112 f440 a2
+
+
+y2 %16
+{+.5 v12T +3 v12T +.75 v12T +.75 v12T +.75 v12T} x0
+{v13T} x-

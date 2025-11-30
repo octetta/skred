@@ -716,11 +716,14 @@ void synth(float *buffer, float *input, int num_frames, int num_channels, void *
     one_skred_frame = (float *)user;
     first = 0;
   }
-  int skred_ptr = 0;
   clock_gettime(BENCH_CLOCK, &bench[benchp].a);
   bench[benchp].frames = num_frames;
   bench[benchp].order = bencho;
   bench[benchp].state = BEN_A;
+  if (benchp == (BENLEN-1)) {
+    // compute min max here
+  }
+  int skred_ptr = 0;
   for (int i = 0; i < num_frames; i++) {
     synth_sample_count++;
     float sample_left = 0.0f;
@@ -967,7 +970,7 @@ char *voice_format(int v, char *out, int verbose) {
     ptr += n;
   }
   if (!envelope_is_flat(v)) {
-    n = sprintf(ptr, " E%g,%g,%g,%g",
+    n = sprintf(ptr, " t%g,%g,%g,%g",
       voice_amp_envelope[v].a,
       voice_amp_envelope[v].d,
       voice_amp_envelope[v].s,
@@ -1001,8 +1004,7 @@ char *voice_format(int v, char *out, int verbose) {
     ptr += n;
   }
   if (verbose) {
-    //n = sprintf(ptr, " diff:%ld", ts_diff_ns(&voice_mark_a[v], &voice_mark_b[v]));
-    n = sprintf(ptr, " diff:%g", (double)ts_diff_ns(&voice_mark_a[v], &voice_mark_b[v])/1000000.0);
+    n = sprintf(ptr, " latency:%gms", (double)ts_diff_ns(&voice_mark_a[v], &voice_mark_b[v])/1000000.0);
     ptr += n;
   }
   return out;

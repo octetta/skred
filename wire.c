@@ -1126,7 +1126,7 @@ int wire(char *line, wire_t *w) {
             seq_mute_set(w->pattern, step, 0);
           }
           break;
-        case '.':
+        case '@':
           v = parse(ptr, FUNC_STEP_MUTE, FUNC_NULL, 1, w);
           if (v.argc == 1) {
             ptr += v.next;
@@ -1135,18 +1135,21 @@ int wire(char *line, wire_t *w) {
           }
           break;
         case 'x':
-          if (*ptr == '-') {
-            w->step++;
-            seq_step_set(w->pattern, w->step, w->scratch);
-            ptr++;
-          } else {
-            v = parse(ptr, FUNC_STEP, FUNC_NULL, 1, w);
-            if (v.argc == 1) {
-              ptr += v.next;
-              int step = (int)v.args[0];
-              w->step = step;
-              seq_step_set(w->pattern, step, w->scratch);
-            }
+          switch (*ptr) {
+            case '-':
+              w->step++;
+              seq_step_set(w->pattern, w->step, w->scratch);
+              ptr++;
+              break;
+            default:
+              v = parse(ptr, FUNC_STEP, FUNC_NULL, 1, w);
+              if (v.argc == 1) {
+                ptr += v.next;
+                int step = (int)v.args[0];
+                w->step = step;
+                seq_step_set(w->pattern, step, w->scratch);
+              }
+              break;
           }
           break;
         case 'Z':
@@ -1261,7 +1264,7 @@ int wire(char *line, wire_t *w) {
             r = envelope_velocity(voice_link_velo[voice], v.args[0]);
           }
           break;
-        case 'E':
+        case 't':
           v = parse(ptr, FUNC_ENVELOPE, FUNC_NULL, 4, w);
           if (v.argc == 4) {
             ptr += v.next;
@@ -1382,6 +1385,11 @@ int wire(char *line, wire_t *w) {
   if (w->queued_pointer) {
     queue_item(queue_now, w->queued, voice);
     w->queued_pointer = 0;
+  }
+  if (w->output) {
+    if (queue_float_acc > 0.0f) {
+      printf("# queue_float_acc %g\n", queue_float_acc);
+    }
   }
   w->voice = voice;
   return r;
