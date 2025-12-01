@@ -153,7 +153,7 @@ static CM_Context* cm_init_linux(const char* name, CM_Callback cb, void* ud)
         return NULL;
     }
 
-    snd_seq_set_client_name(ctx->seq, "crossmidi");
+    snd_seq_set_client_name(ctx->seq, name);
 
     ctx->port_id = snd_seq_create_simple_port(ctx->seq, name,
         SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SUBS_WRITE,
@@ -220,7 +220,7 @@ static CM_Context* cm_init_macos(const char* name, CM_Callback cb, void* ud)
 
     OSStatus err;
 
-    err = MIDIClientCreate(CFSTR("crossmidi"), NULL, NULL, &ctx->client);
+    err = MIDIClientCreate(CFSTR(name), NULL, NULL, &ctx->client);
     if (err) { free(ctx); return NULL; }
 
     CFStringRef portNameCF = CFStringCreateWithCString(NULL, name, kCFStringEncodingUTF8);

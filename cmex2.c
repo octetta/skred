@@ -47,19 +47,19 @@ void midi_callback(uint64_t timestamp_ms,
         if (size == 3 && message[2] > 0) {
           printf("  Note On  ch:%2d note:%3d vel:%3d", channel + 1, message[1], message[2]);
           sprintf(s, "v%d n%d l1", channel, message[1]);
-          printf(" %s -> skred\n", s);
+          printf(" %s -> skred", s);
           udp_send(skred, s, strlen(s));
         } else {
           printf("  Note Off ch:%2d note:%3d", channel + 1, message[1]);
           sprintf(s, "v%d l0", channel);
-          printf(" %s -> skred\n", s);
+          printf(" %s -> skred", s);
           udp_send(skred, s, strlen(s));
         }
         break;
       case 0x80:
         printf("  Note Off ch:%2d note:%3d vel:%3d", channel + 1, message[1], message[2]);
         sprintf(s, "v%d l0", channel);
-        printf(" %s -> skred\n", s);
+        printf(" %s -> skred", s);
         udp_send(skred, s, strlen(s));
         break;
       case 0xB0: printf("  CC     ch:%2d num:%3d val:%3d", channel + 1, message[1], message[2]); break;
@@ -67,7 +67,8 @@ void midi_callback(uint64_t timestamp_ms,
       case 0xE0: {
         int pitch = (message[2] << 7) | message[1];
         pitch -= 8192;
-        printf("  PitchBend ch:%2d val:%+d", channel + 1, pitch);
+        float f = (float)pitch / (float)8192.0f;
+        printf("  PitchBend ch:%2d val:%+d -> %g", channel + 1, pitch, f);
         break;
       }
       default:
@@ -91,10 +92,11 @@ int main(void) {
     printf("NOT opened!\n");
     return 1;
   }
+  char *skred = "skred-midi-bridge";
   printf("crossmidi virtual MIDI input example\n");
-  printf("Creating virtual port named 'crossmidi-example'...\n");
+  printf("Creating virtual port named '%s'...\n", skred);
 
-  CM_Context *ctx = CM_initialize("crossmidi-example", midi_callback, NULL);
+  CM_Context *ctx = CM_initialize(skred, midi_callback, NULL);
 
   if (!ctx) {
     fprintf(stderr, "Failed to create virtual MIDI input port!\n");
@@ -105,10 +107,10 @@ int main(void) {
   printf("SUCCESS! Virtual MIDI input port is now active.\n\n");
   printf("You can now send MIDI to it from any app:\n");
 #if defined(__linux__)
-  printf("   • In QjackCtl / Patchage / a2jmidid → connect something to 'crossmidi-example'\n");
-  printf("   • Or use: aconnect <sender> <crossmidi client>:0\n");
+  printf("   • In QjackCtl / Patchage / a2jmidid → connect something to '%s'\n", skred);
+  printf("   • Or use: aconnect <sender> <%s client>:0\n", skred);
 #elif defined(__APPLE__)
-  printf("   • Open 'Audio MIDI Setup' → MIDI Studio → double-click IAC Driver → enable 'crossmidi-example'\n");
+  printf("   • Open 'Audio MIDI Setup' → MIDI Studio → double-click IAC Driver → enable '%s'\n", skred);
   printf("   • Or use any DAW (Ableton, Logic, Reaper, etc.)\n");
 #endif
   printf("\nPress Enter to stop and exit...\n\n");
