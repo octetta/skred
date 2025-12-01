@@ -518,6 +518,7 @@ int wave_load(int which, int where, int ch) {
       }
       save_wave_list[save_wave_ptr++] = wave_table_data[where];
     }
+    wave_is_miniwav[where] = 1;
     wave_table_data[where] = table;
     wave_size[where] = len;
     wave_rate[where] = (float)wav.SamplesRate;

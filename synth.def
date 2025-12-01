@@ -7,6 +7,7 @@ ARRAY(int, wave_loop_start, WAVE_TABLE_MAX, {})
 ARRAY(int, wave_loop_end, WAVE_TABLE_MAX, {})
 ARRAY(float, wave_midi_note, WAVE_TABLE_MAX, {})
 ARRAY(float, wave_offset_hz, WAVE_TABLE_MAX, {})
+ARRAY(int, wave_is_miniwav, WAVE_TABLE_MAX, {})
 
 ARRAY(float, voice_phase, VOICE_MAX, {})
 ARRAY(float, voice_phase_inc, VOICE_MAX, {})

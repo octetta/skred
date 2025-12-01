@@ -366,6 +366,7 @@ int patch_load(int voice, int n, int output) {
   }
   return r;
 }
+#if 1
 #include "miniwav.h"
 #include "wire.h"
 #define SAVE_WAVE_LEN (8)
@@ -406,6 +407,7 @@ int wave_load(int which, int where, int ch) {
   }
   return 0;
 }
+#endif
 //
 
 void handle_cmd(skode_t *p) {

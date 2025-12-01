@@ -1403,6 +1403,7 @@ void wave_table_init(void) {
   for (int i = 0 ; i < WAVE_TABLE_MAX; i++) {
     wave_table_data[i] = NULL;
     wave_size[i] = 0;
+    wave_is_miniwav[i] = 0;
   }
 
   uint64_t white_noise;
@@ -1496,6 +1497,7 @@ void wave_table_init(void) {
 void wave_free(void) {
   for (int i = 0; i < WAVE_TABLE_MAX; i++) {
     if (wave_table_data[i]) {
+      if (wave_is_miniwav[i]) printf("# [%d] needs mw_free\n", i);
       free(wave_table_data[i]);
       wave_size[i] = 0;
     }
