@@ -1,9 +1,5 @@
 #include "skred.h"
-#ifndef SKODE
 #include "wire.h"
-#else
-#include "skode.h"
-#endif
 #include "synth-types.h"
 #include "synth.h"
 #include "seq.h"
@@ -55,24 +51,15 @@ void seq(int frame_count) {
 
   // --- 1) Process work_queue items that fall inside this buffer window
   // (assumes work_queue[].when is expressed in samples)
-#ifndef SKODE
   // local context per work item to avoid persistent mutation of a static `v`
-#endif
   for (int q = 0; q < QUEUE_SIZE; q++) {
     if (work_queue[q].state == Q_READY) {
       uint64_t when = work_queue[q].when;
       if (when <= end_sample) { // scheduled inside this buffer or earlier
         work_queue[q].state = Q_USING;
-#ifndef SKODE
         wire_t v_local = WIRE();
         v_local.voice = work_queue[q].voice;
         wire(work_queue[q].what, &v_local);
-#else
-        // adapt if .what isn't a C string
-        skode_t v_local;
-        sparse_init(&v_local, NULL);
-        sparse(&v_local, work_queue[q].what, strnlen(work_queue[q].what, STEP_MAX));
-#endif
         work_queue[q].state = Q_FREE;
       }
     }
@@ -145,14 +132,8 @@ void seq(int frame_count) {
         if ((sp >= 0) && (sp < SEQ_STEPS_MAX)) muted = seq_pattern_mute[p][sp];
 
         if (!muted) {
-#ifndef SKODE
           wire_t w_local = WIRE(); // fresh context per fired cell
           wire(cell, &w_local);
-#else
-          skode_t w_local;
-          sparse_init(&w_local, NULL);
-          sparse(&w_local, cell, strnlen(cell, STEP_MAX));
-#endif
         }
       }
 
@@ -186,33 +167,17 @@ void seq(int frame_count) {
   // static int state = 0;
   
   // run expired (ready) queued things...
-#ifndef SKODE
   static wire_t v = WIRE();
-#else
-#endif
   for (int q = 0; q < QUEUE_SIZE; q++) {
     if ((work_queue[q].state == Q_READY) && (work_queue[q].when <= (synth_sample_count + frame_count))) {
       work_queue[q].state = Q_USING;
-#ifndef SKODE
       v.voice = work_queue[q].voice;
       wire(work_queue[q].what, &v);
-#else
-#endif
       work_queue[q].state = Q_FREE;
     }
   }
 
-#ifndef SKODE
   static wire_t w = WIRE();
-#else
-  static int skode_first = 1;
-  static skode_t w;
-  if (skode_first) {
-    skode_first = 0;
-    sparse_init(&w, NULL); 
-  }
-  
-#endif
 
   int advance = 0;
   static double clock_sec = 0.0f;
@@ -236,14 +201,7 @@ void seq(int frame_count) {
         }
       }
       seq_counter[p]++;
-#ifndef SKODE
       if (seq_pattern_mute[p][seq_pointer[p]] == 0) wire(seq_pattern[p][seq_pointer[p]], &w);
-#else
-      if (seq_pattern_mute[p][seq_pointer[p]] == 0) {
-        char *s = seq_pattern[p][seq_pointer[p]];
-        sparse(&w, s, strlen(s));
-      }
-#endif
       seq_pointer[p]++;
       switch (seq_pattern[p][seq_pointer[p]][0]) {
         case '\0':

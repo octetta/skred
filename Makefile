@@ -5,7 +5,6 @@ EXE = \
 EXTRA = \
 	wav2data \
 	scope \
-	skode \
   #
 
 all : $(EXE)
@@ -35,9 +34,6 @@ skred-mem.o : skred-mem.c
 scope : scope.c skred-mem.o # raylib-quickstart-main/Makefile
 	gcc -g -D_GNU_SOURCE -DUSE_RAYLIB $(RLINC) $(RLLIB) $^ -o $@ -lraylib -lm
 
-skode.o : skode.c
-	gcc -DUSE_SEQ -DMAIN $(COPTS) -c $<
-
 wav2data : wav2data.c miniwav.o
 	gcc -g -D_GNU_SOURCE $^ -o $@
 
@@ -60,9 +56,6 @@ synth.o: synth.c synth.h synth-types.h synth.def
 
 seq.o: seq.c seq.h
 	gcc $(COPTS) -c $<
-
-skode-seq.o: seq.c seq.h
-	gcc -DSKODE -DUSE_SEQ $(COPTS) -c $< -o $@
 
 udp.o: udp.c udp.h
 	gcc $(COPTS) -c $<
@@ -88,11 +81,9 @@ OBJS = \
   #
 
 SOBJS = \
-  skode.o \
   miniwav.o \
   amysamples.o \
   synth.o \
-  skode-seq.o \
   miniaudio.o \
 	linenoise.o \
 	skred-mem.o \
@@ -101,9 +92,6 @@ SOBJS = \
 
 skred : $(OBJS)
 	gcc $(COPTS) $^ -o $@ $(LIB)
-
-skode : $(SOBJS)
-	gcc -DUSE_SEQ -DMAIN -g $^ -o $@ $(LIB)
 
 linenoise.o: linenoise.c linenoise.h
 	gcc -c $<
