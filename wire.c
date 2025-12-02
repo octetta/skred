@@ -1210,9 +1210,8 @@ int wire(char *line, wire_t *w) {
           if (v.argc == 1) {
             ptr += v.next;
             r = freq_midi(voice, v.args[0]);
-            if (voice_link_midi[voice] >= 0) {
-              r = freq_midi(voice_link_midi[voice], v.args[0]);
-            }
+            if (voice_link_midi_a[voice] >= 0) freq_midi(voice_link_midi_a[voice], v.args[0]);
+            if (voice_link_midi_b[voice] >= 0) freq_midi(voice_link_midi_b[voice], v.args[0]);
           } else return ERR_PARSING;
           break;
         case 'A':
@@ -1261,9 +1260,8 @@ int wire(char *line, wire_t *w) {
             ptr += v.next;
           } else return ERR_PARSING;
           r = envelope_velocity(voice, v.args[0]);
-          if (voice_link_velo[voice] >= 0) {
-            r = envelope_velocity(voice_link_velo[voice], v.args[0]);
-          }
+          if (voice_link_velo_a[voice] >= 0) r = envelope_velocity(voice_link_velo_a[voice], v.args[0]);
+          if (voice_link_velo_b[voice] >= 0) r = envelope_velocity(voice_link_velo_b[voice], v.args[0]);
           break;
         case 't':
           v = parse(ptr, FUNC_ENVELOPE, FUNC_NULL, 4, w);
@@ -1316,17 +1314,19 @@ int wire(char *line, wire_t *w) {
           } else return ERR_PARSING;
           break;
         case 'G': // link this freq/midi to an oscillator
-          v = parse(ptr, FUNC_LINKF, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
+          v = parse(ptr, FUNC_LINKF, FUNC_NULL, 2, w);
+          if (v.argc >= 1) {
             ptr += v.next;
-            voice_link_midi[voice] = (int)v.args[0];
+            voice_link_midi_a[voice] = (int)v.args[0];
+            if (v.argc > 1) voice_link_midi_b[voice] = (int)v.args[1];
           } else return ERR_PARSING;
           break;
         case 'H': // link this amp/velocity to an oscillator
-          v = parse(ptr, FUNC_LINKA, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
+          v = parse(ptr, FUNC_LINKA, FUNC_NULL, 2, w);
+          if (v.argc >= 1) {
             ptr += v.next;
-            voice_link_velo[voice] = (int)v.args[0];
+            voice_link_velo_a[voice] = (int)v.args[0];
+            if (v.argc > 1) voice_link_velo_b[voice] = (int)v.args[1];
           } else return ERR_PARSING;
           break;
         case 'L': // link this trigger to an oscillator

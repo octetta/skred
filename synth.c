@@ -119,6 +119,8 @@ float audio_rng_float(uint64_t *rng) {
 }
 
 float osc_get_phase_inc(int v, float f) {
+  // Compute the frequency in "table samples per system sample"
+  // This works even if table_rate ≠ system rate
   float g = f;
   if (voice_one_shot[v]) g /= voice_offset_hz[v];
   float phase_inc = (g * (float)voice_table_size[v]) / voice_table_rate[v] * (voice_table_rate[v] / MAIN_SAMPLE_RATE);
@@ -126,46 +128,7 @@ float osc_get_phase_inc(int v, float f) {
 }
 
 void osc_set_freq(int v, float f) {
-  // Compute the frequency in "table samples per system sample"
-  // This works even if table_rate ≠ system rate
-  float g = f;
-  if (voice_one_shot[v]) g /= voice_offset_hz[v];
-  voice_phase_inc[v] = (g * (float)voice_table_size[v]) / voice_table_rate[v] * (voice_table_rate[v] / MAIN_SAMPLE_RATE);
-}
-
-float old_cz_phasor(int n, float p, float d, int table_size) {
-  float phase = p / (float)table_size;
-  switch (n) {
-    case 1: // 2 :: saw -> pulse
-      if (phase < d) phase *= (0.5f / d);
-      else phase = 0.5f + (phase - d) * (0.5f / (1.0f - d));
-      break;
-    case 2: // 3 :: square (folded sine)
-      if (phase < 0.5) phase *= 0.5f / (0.5f - d * 0.5f);
-      else phase = 1.0f - (1.0f - phase) * (0.5f / (0.5f - d * 0.5f));
-      break;
-    case 3: // 4 :: triangle
-      if (phase < 0.5f) phase *= (0.5f / (0.5f - d * 0.5f));
-      else phase = 0.5f + (phase - 0.5f) * (0.5f / (0.5f - d * 0.5f));
-      break;
-    case 4: // 5 :: double sine
-      phase = fmodf(phase * 2.0f, 1.0f);
-      break;
-    case 5: // 6 :: saw -> triangle
-      if (phase < 0.5f) phase *= (0.5f / (0.5f - d * 0.5f));
-      else phase = 0.5f + (phase - 0.5f) * (0.5f / (0.5f + d * 0.5f));
-      break;
-    case 6: // 7 :: resonant 1
-      phase = powf(phase, 1.0f + 4.0f * d);
-      break;
-    case 7: // 8 :: resonant 2
-      phase = powf(phase, 1.0f + 8.0f * d);
-      break;
-    default:
-      return p;
-  }
-  return fmodf(phase * (float)table_size, (float)table_size);
-  return phase * (float)table_size;
+  voice_phase_inc[v] = osc_get_phase_inc(v, f);
 }
 
 // Fast power approximation using bit manipulation
@@ -307,178 +270,6 @@ float osc_next(int voice, float phase_inc) {
     return voice_table[voice][idx];
 }
 
-float alt_osc_next(int voice, float phase_inc) {
-    if (voice_finished[voice]) return 0.0f;
-    
-    // Cache frequently accessed values
-    const int table_size = voice_table_size[voice];
-    const float table_size_f = (float)table_size;
-    const bool one_shot = voice_one_shot[voice];
-    const bool loop_enabled = voice_loop_enabled[voice];
-    
-    if (voice_direction[voice]) phase_inc = -phase_inc;
-    
-    // Step phase
-    float phase = voice_phase[voice] + phase_inc;
-    
-    // NaN check
-    if (!isfinite(phase)) {
-        voice_phase[voice] = 0.0f;
-        voice_finished[voice] = one_shot;
-        return 0.0f;
-    }
-    
-    // Get precomputed loop boundaries
-    float loop_start, loop_end, loop_length;
-    
-    if (loop_enabled && voice_loop_valid[voice]) {
-        loop_start = voice_loop_start_f[voice];
-        loop_end = voice_loop_end_f[voice];
-        loop_length = voice_loop_length[voice];
-    } else {
-        loop_start = 0.0f;
-        loop_end = table_size_f;
-        loop_length = table_size_f;
-    }
-    
-    // Handle wrapping
-    if (phase >= loop_end) {
-        if (one_shot && !loop_enabled) {
-            phase = loop_end - 1e-6f;
-            voice_finished[voice] = 1;
-        } else if (loop_enabled) {
-            // Optimize for common case: single boundary crossing
-            phase -= loop_length;
-            if (phase >= loop_end) { // rare: multiple crossings
-                phase = loop_start + fmodf(phase - loop_start, loop_length);
-            }
-        } else {
-            // Full table wrap
-            phase = fmodf(phase, table_size_f);
-        }
-    } else if (phase < loop_start) {
-        if (one_shot && !loop_enabled) {
-            phase = loop_start;
-            voice_finished[voice] = 1;
-        } else if (loop_enabled) {
-            // Optimize for common case: single boundary crossing
-            phase += loop_length;
-            if (phase < loop_start) { // rare: multiple crossings
-                float undershoot = loop_start - phase;
-                phase = loop_end - fmodf(undershoot, loop_length);
-            }
-        } else {
-            // Full table wrap
-            while (phase < 0.0f) phase += table_size_f;
-        }
-    }
-    
-    voice_phase[voice] = phase;
-    
-    // Calculate index
-    int idx;
-    if (voice_cz_mode[voice]) {
-        int dv = voice_cz_mod_osc[voice];
-        float dm = (dv >= 0) ? voice_sample[dv] * voice_cz_mod_depth[voice] : 1.0f;
-        idx = (int)cz_phasor(voice_cz_mode[voice], phase, 
-                             voice_cz_distortion[voice] + dm, table_size);
-    } else {
-        idx = (int)phase;
-    }
-    
-    // Clamp index
-    if (idx >= table_size) idx = table_size - 1;
-    if (idx < 0) idx = 0;
-    
-    return voice_table[voice][idx];
-}
-
-float old_osc_next(int voice, float phase_inc) {
-    if (voice_finished[voice]) return 0.0f;
-    if (voice_direction[voice]) phase_inc *= -1.0f;
-
-    // Step phase
-    voice_phase[voice] += phase_inc;
-
-    // NaN check
-    if (!isfinite(voice_phase[voice])) {
-      voice_phase[voice] = 0.0f;
-      voice_finished[voice] = voice_one_shot[voice];
-      return 0.0f;
-    }
-
-    int table_size = voice_table_size[voice];
-
-    // Clamp loop boundaries to valid range
-    float loop_start = voice_loop_enabled[voice] ? (float)voice_loop_start[voice] : 0.0f;
-    float loop_end   = voice_loop_enabled[voice] ? (float)voice_loop_end[voice]   : (float)table_size;
-    if (loop_end <= loop_start) {
-      loop_start = 0.0f;
-      loop_end = (float)table_size;
-    }
-
-    // Handle forward playback
-    if (phase_inc >= 0.0f) {
-        // One-shot forward
-        if (voice_one_shot[voice] && voice_phase[voice] >= loop_end) {
-          if (voice_loop_enabled[voice]) {
-            voice_phase[voice] = voice_loop_start[voice];
-            // puts("##3a");
-          } else {
-            voice_phase[voice] = loop_end - 1e-6f;
-            voice_finished[voice] = 1;
-            // puts("##3b"); // make work for loop points
-          }
-        }
-        // Loop forward
-        else if (voice_loop_enabled[voice] && voice_phase[voice] >= loop_end) {
-            voice_phase[voice] = loop_start + fmodf(voice_phase[voice] - loop_start, loop_end - loop_start);
-            //puts("##4");
-        }
-        // Wrap full table
-        else if (!voice_loop_enabled[voice] && voice_phase[voice] >= (float)table_size) {
-            voice_phase[voice] -= (float)table_size;
-        }
-    }
-    // Handle backward playback
-    else {
-        // One-shot backward
-        if (voice_one_shot[voice] && voice_phase[voice] < loop_start) {
-          if (voice_loop_enabled[voice]) {
-            voice_phase[voice] = loop_end;
-            //puts("##5a");
-          } else {
-            voice_phase[voice] = loop_start;
-            voice_finished[voice] = 1;
-            //puts("##5b"); // make work for loop points
-          }
-        }
-        // Loop backward
-        else if (voice_loop_enabled[voice] && voice_phase[voice] < loop_start) {
-            voice_phase[voice] = loop_end - fmodf(loop_start - voice_phase[voice], loop_end - loop_start);
-            //puts("##6");
-        }
-        // Wrap full table
-        else if (!voice_loop_enabled[voice] && voice_phase[voice] < 0.0f) {
-            voice_phase[voice] += (float)voice_table_size[voice];
-        }
-    }
-
-    int idx;
-    if (voice_cz_mode[voice]) {
-      int dv = voice_cz_mod_osc[voice];
-      float dm = 1.0f;
-      if (dv >= 0) dm = voice_sample[dv] * voice_cz_mod_depth[voice];
-      idx = (int)cz_phasor(voice_cz_mode[voice], voice_phase[voice], voice_cz_distortion[voice] + dm, table_size);
-      //idx = (int)cz_phasor(cz[voice], voice_phase[voice], czd[voice], table_size);
-    } else {
-      idx = (int)voice_phase[voice];
-    }
-    if (idx >= table_size) idx = table_size - 1;
-    if (idx < 0) idx = 0;
-    return voice_table[voice][idx];
-}
-
 void osc_set_wave_table_index(int voice, int wave) {
   if (wave_table_data[wave] && wave_size[wave] && wave_rate[wave] > 0.0) {
     voice_wave_table_index[voice] = wave;
@@ -515,19 +306,6 @@ void osc_set_wave_table_index(int voice, int wave) {
     if (update_freq) {
       osc_set_freq(voice, voice_freq[voice]);
     }
-  }
-}
-
-void old_osc_trigger(int voice) {
-  if (voice_one_shot[voice]) {
-    if (voice_direction[voice]) {
-      voice_phase[voice] = (float)(voice_table_size[voice] - 1);
-    } else {
-      voice_phase[voice] = 0;
-    }
-    voice_finished[voice] = 0;
-  } else {
-    voice_phase[voice] = 0;
   }
 }
 
@@ -888,12 +666,12 @@ char *voice_format(int v, char *out, int verbose) {
     n = sprintf(ptr, " N%g", voice_midi_transpose[v]);
     ptr += n;
   }
-  if (voice_link_midi[v] >= 0) {
-    n = sprintf(ptr, " G%g", voice_link_midi[v]);
+  if (voice_link_midi_a[v] >= 0 || voice_link_midi_b[v] >= 0) {
+    n = sprintf(ptr, " G%g,%g", voice_link_midi_a[v], voice_link_midi_b[v]);
     ptr += n;
   }
-  if (voice_link_velo[v] >= 0) {
-    n = sprintf(ptr, " H%g", voice_link_velo[v]);
+  if (voice_link_velo_a[v] >= 0 || voice_link_velo_b[v] >= 0) {
+    n = sprintf(ptr, " H%g,%g", voice_link_velo_a[v], voice_link_velo_b[v]);
     ptr += n;
   }
   if (voice_link_trig[v] >= 0) {
@@ -1314,8 +1092,10 @@ void voice_reset(int i) {
   voice_freq[i] = 440.0f;
   voice_midi_note[i] = 69.0f;
   voice_midi_transpose[i] = 0;
-  voice_link_midi[i] = -1;
-  voice_link_velo[i] = -1;
+  voice_link_midi_a[i] = -1;
+  voice_link_midi_b[i] = -1;
+  voice_link_velo_a[i] = -1;
+  voice_link_velo_b[i] = -1;
   voice_link_trig[i] = -1;
   osc_set_wave_table_index(i, WAVE_TABLE_SINE);
   voice_filter_mode[i] = 0;
