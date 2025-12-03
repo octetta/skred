@@ -9,8 +9,6 @@
 #define HISTORY_FILE ".skode_history"
 
 #define IS_NUMBER(c) (isdigit(c) || strchr("-.", c))
-#define IS_NUMBER_EX(c) (isdigit(c) || strchr("-.eE", c))
-#define IS_ATOM(c) (isalpha(c) || strchr("!@%^&*_=:\"'<>[]?/", c))
 #define IS_SEPARATOR(c) (isspace(c) || c == ',')
 #define IS_STRING(c) (c == '{')
 #define IS_STRING_END(c) (c == '}')
@@ -20,6 +18,11 @@
 #define IS_COMMENT(c) (c == '#')
 #define IS_CHUNK_END(c) (c == ';' || c == 0x04) // 0x04 ASCII EOT / end of xmit
 #define IS_DEFER(c) (c == '+' || c == '~')
+// used above 0-9 - . , { } ( ) $ # ; + ~
+#define IS_ATOM(c) (isalpha(c) || strchr("!@%^&*_=:\"'<>[]?/", c))
+// used by array
+//#define IS_NUMBER_EX(c) (isdigit(c) || strchr("-.eE", c))
+#define IS_NUMBER_EX(c) (isxdigit(c) || strchr("-.eExX", c))
 
 enum {
   START = 0, // 0
@@ -257,7 +260,6 @@ int parse(char *line, int *entry_state) {
         else if (IS_DEFER(*ptr))     { decide(CHUNK_END); defer_mode = *ptr; state = GET_DEFER_NUMBER; }
         else if (iscntrl(*ptr)) { puts("# iscntrl !!!!"); }
         else {
-          //printf("-> GET_ATOM '%c'\n", *ptr);
           // i hope this is at the right catch point...
           atom_clear();
           atom_push(*ptr);
