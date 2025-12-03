@@ -13,7 +13,9 @@
 #define IS_ATOM(c) (isalpha(c) || strchr("!@%^&*_=:\"'<>[]?/", c))
 #define IS_SEPARATOR(c) (isspace(c) || c == ',')
 #define IS_STRING(c) (c == '{')
+#define IS_STRING_END(c) (c == '}')
 #define IS_ARRAY(c) (c == '(')
+#define IS_ARRAY_END(c) (c == ')')
 #define IS_VARIABLE(c) (c == '$')
 #define IS_COMMENT(c) (c == '#')
 #define IS_CHUNK_END(c) (c == ';' || c == 0x04) // 0x04 ASCII EOT / end of xmit
@@ -36,7 +38,7 @@ enum {
 
 #define GET_STRING_MAX (1024)
 
-double sk8_strtod(char *s) {
+double skode_strtod(char *s) {
   double d = NAN;
   if (s[1] == '\0' && (s[0] == '-' || s[0] == 'e' || s[0] == '.')) return d;
   d = strtod(s, NULL);
@@ -53,8 +55,21 @@ char scr_acc[1024] = {};
 int scr_len = 0;
 int scr_cap = 1024;
 
+void string_clear(void) {
+  scr_len = 0;
+  scr_acc[scr_len] = '\0';
+}
+
+void string_push(char c) {
+  if (scr_len < scr_cap) {
+    scr_acc[scr_len++] = c;
+    scr_acc[scr_len] = '\0';
+  }
+}
+
 char num_acc[1024] = {};
 int num_len = 0;
+int num_cap = 1024;
 
 void num_clear(void) {
   num_len = 0;
@@ -62,17 +77,28 @@ void num_clear(void) {
 }
 
 void num_push(char c) {
-  num_acc[num_len++] = c;
-  num_acc[num_len] = '\0';
+  if (num_len < num_cap) {
+    num_acc[num_len++] = c;
+    num_acc[num_len] = '\0';
+  }
 }
 
 double num_get(void) {
-  return sk8_strtod(num_acc);
+  return skode_strtod(num_acc);
 }
 
 double data[1024];
 int data_len = 0;
 int data_cap = 1024;
+
+void array_clear(void) {
+  data_len = 0;
+}
+
+void array_push(void) {
+  if (num_len) data[data_len++] = num_get();
+  num_clear();
+}
 
 #define ARG_MAX (8)
 double arg[ARG_MAX];
@@ -87,6 +113,18 @@ int defer_len = 0;
 int defer_cap = 1024;
 double defer_num = 0;
 char defer_mode = '?';
+
+void defer_clear(void) {
+  defer_len = 0;
+  defer_acc[defer_len] = '\0';
+}
+
+void defer_push(char c) {
+  if (defer_len < defer_cap) {
+    defer_acc[defer_len++] = c;
+    defer_acc[defer_len] = '\0';
+  }
+}
 
 #define ATOM_NIL (0x5f5f5f5f)
 
@@ -141,6 +179,13 @@ int decide(int state) {
           for (int n=0; n<arg_len; n++) printf(" %g", arg[n]);
         }
         printf(" ]\n");
+        
+          printf("{%s}\n", scr_acc);
+
+          printf("(");
+          for (int i=0; i<data_len; i++) printf(" %g", data[i]);
+          printf(" )\n");
+
         atom_reset();
         arg_clear();
       }
@@ -154,8 +199,7 @@ int decide(int state) {
       break;
     case GET_DEFER_STRING:
       printf("DEFER %c %g '%s'\n", defer_mode, defer_num, defer_acc);
-      defer_len = 0;
-      defer_acc[defer_len] = '\0';
+      defer_clear();
       break;
   }
   return START;
@@ -200,82 +244,79 @@ int parse(char *line, int *entry_state) {
     switch (state) {
       case START:
         if (IS_NUMBER(*ptr)) {
-          num_len = 0;
-          num_acc[num_len++] = *ptr;
-          num_acc[num_len] = '\0';
+          num_clear();
+          num_push(*ptr);
           state = GET_NUMBER;
         }
         else if (IS_SEPARATOR(*ptr)) { /* skip whitespace and , */ }
-        else if (IS_STRING(*ptr))    { scr_len = 0; state = GET_STRING; }
-        else if (IS_ARRAY(*ptr))     { data_len = 0; state = GET_ARRAY; }
+        else if (IS_STRING(*ptr))    { string_clear(); state = GET_STRING; }
+        else if (IS_ARRAY(*ptr))     { num_clear(); array_clear(); state = GET_ARRAY; }
         else if (IS_VARIABLE(*ptr))  { state = GET_VARIABLE; }
         else if (IS_COMMENT(*ptr))   { state = GET_COMMENT; }
         else if (IS_CHUNK_END(*ptr)) { decide(CHUNK_END); state = START; }
-        else if (IS_DEFER(*ptr))     { defer_mode = *ptr; state = GET_DEFER_NUMBER; }
+        else if (IS_DEFER(*ptr))     { decide(CHUNK_END); defer_mode = *ptr; state = GET_DEFER_NUMBER; }
         else if (iscntrl(*ptr)) { puts("# iscntrl !!!!"); }
         else {
           //printf("-> GET_ATOM '%c'\n", *ptr);
           // i hope this is at the right catch point...
-          atom_len = 0;
-          atom_acc[atom_len++] = *ptr;
-          atom_acc[atom_len] = '\0';
+          atom_clear();
+          atom_push(*ptr);
           state = GET_ATOM;
         }
         break;
       case GET_NUMBER:
         if (IS_NUMBER(*ptr)) {
-          num_acc[num_len++] = *ptr;
-          num_acc[num_len] = '\0';
-        }
-        else if (*ptr == '$') {
+          num_push(*ptr);
+        } else if (*ptr == '$') {
           printf("VAR?");
-        }
-        else {
+        } else {
           state = decide(state);
           // we got a character we need to process
           goto reprocess;
         }
         break;
       case GET_STRING:
-        if (*ptr == '}') {
-          printf("SCR %s\n", scr_acc);
+        if (IS_STRING_END(*ptr)) {
           decide(state);
           state = START;
         } else {
-          scr_acc[scr_len++] = *ptr;
-          scr_acc[scr_len] = '\0';
+          string_push(*ptr);
         }
         break;
       case GET_ARRAY:
-        puts("# GET_ARRAY");
-        if (*ptr == ')') {
+        if (IS_ARRAY_END(*ptr)) {
+          array_push();
           decide(state);
           state = START;
+        } else if (IS_NUMBER_EX(*ptr)) {
+          num_push(*ptr);
+        } else if (IS_SEPARATOR(*ptr)) {
+          array_push();
+        } else {
+          //printf("# ignore %c\n", *ptr);
+          // ignore stuff we don't know
         }
         break;
       case GET_COMMENT:
         if (IS_CHUNK_END(*ptr)) {
           decide(CHUNK_END);
           state = START;
-        }
-        else if (*ptr == '\n') {
+        } else if (*ptr == '\n') {
           decide(state);
           state = START;
         }
         break;
       case GET_VARIABLE:
-        //puts("# GET_VARIABLE");
         if (isalpha(*ptr)) {
-          printf("? $%c == WHAT TO DO HERE\n", *ptr);
           int i;
           double d;
           if (islower(*ptr)) {
             // a-z
-            i = 'a' - (*ptr);
+            i = (*ptr) - 'a';
             d = local_var[i];
           } else {
             // A-Z
-            i = 'A' - (*ptr);
+            i = (*ptr) - 'A';
             d = global_var[i];
           }
           arg_push(d);
@@ -301,24 +342,20 @@ int parse(char *line, int *entry_state) {
           defer_mode = *ptr;
           decide(GET_DEFER_STRING);
           state = GET_DEFER_NUMBER;
-        }
-        else if (IS_CHUNK_END(*ptr)) {
+        } else if (IS_CHUNK_END(*ptr)) {
           decide(GET_DEFER_STRING);
           state = START;
-        }
-        else {
-          defer_acc[defer_len++] = *ptr;
-          defer_acc[defer_len] = '\0';
+        } else {
+          defer_push(*ptr);
         }
         break;
       case GET_ATOM:
         if (IS_ATOM(*ptr)) {
-          //printf("yes GET_ATOM '%c'\n", *ptr);
           atom_push(*ptr);
         } else {
-          //printf("no GET_ATOM '%c'\n", *ptr);
           decide(state);
-          state = START; goto reprocess;
+          state = START;
+          goto reprocess;
         }
         break;
       default:
@@ -331,6 +368,7 @@ int parse(char *line, int *entry_state) {
   }
   *entry_state = state;
 }
+
 int main(int argc, char *arg[]) {
   linenoiseHistoryLoad(HISTORY_FILE);
   int state = START;
