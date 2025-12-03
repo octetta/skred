@@ -355,14 +355,14 @@ int parse(char *line, int *entry_state) {
         if (IS_ATOM(*ptr)) {
           atom_push(*ptr);
         } else {
-          decide(state);
+          decide(state, fn);
           state = START;
           goto reprocess;
         }
         break;
       default:
         puts("default ->START");
-        decide(state);
+        decide(state, fn);
         state = START;
         break;
     } 
@@ -371,6 +371,26 @@ int parse(char *line, int *entry_state) {
   *entry_state = state;
 }
 
+#ifdef DEMO
+int demo(void) {
+  printf("DO %s WITH [", atom_string(atom_num));
+  // run the callback here
+  if (arg_len) {
+    for (int n=0; n<arg_len; n++) printf(" %g", arg[n]);
+  }
+  printf(" ]\n");
+  if (scr_len) printf("{%s}\n", scr_acc);
+  if (data_len) {
+    printf("(");
+    for (int i=0; i<data_len; i++) printf(" %g", data[i]);
+    printf(" )\n");
+  }
+  switch (atom_num) {
+    case '=a__':
+      local_var[0] = arg[0];
+      break;
+  }
+}
 int main(int argc, char *arg[]) {
   linenoiseHistoryLoad(HISTORY_FILE);
   int state = START;
@@ -379,9 +399,10 @@ int main(int argc, char *arg[]) {
     line = linenoise("# ");
     if (line == NULL) break;
     linenoiseHistoryAdd(line);
-    int r = parse(line, &state);
+    int r = parse(line, &state, demo);
     linenoiseFree(line);
   }
   linenoiseHistorySave(HISTORY_FILE);
   return 0;
 }
+#endif

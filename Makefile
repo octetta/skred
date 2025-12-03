@@ -39,7 +39,7 @@ wav2data : wav2data.c miniwav.o
 	gcc -g -D_GNU_SOURCE $^ -o $@
 
 skode : skode.c linenoise.o
-	gcc skode.c linenoise.o -o $@
+	gcc -DDEMO skode.c linenoise.o -o $@
 
 smidi : cmex2.c crossmidi.c crossmidi.h udpmini.c udpmini.h
 	gcc cmex2.c crossmidi.c udpmini.c -o smidi -lasound
