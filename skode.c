@@ -48,118 +48,169 @@ double skode_strtod(char *s) {
   return d;
 }
 
-typedef struct sk8_s {
-  char *string;
-  int string_len;
-  int string_max;
-} sk8_t;
-
-char scr_acc[1024] = {};
-int scr_len = 0;
-int scr_cap = 1024;
-
-void string_clear(void) {
-  scr_len = 0;
-  scr_acc[scr_len] = '\0';
-}
-
-void string_push(char c) {
-  if (scr_len < scr_cap) {
-    scr_acc[scr_len++] = c;
-    scr_acc[scr_len] = '\0';
-  }
-}
-
-char num_acc[1024] = {};
-int num_len = 0;
-int num_cap = 1024;
-
-void num_clear(void) {
-  num_len = 0;
-  num_acc[num_len] = '\0';
-}
-
-void num_push(char c) {
-  if (num_len < num_cap) {
-    num_acc[num_len++] = c;
-    num_acc[num_len] = '\0';
-  }
-}
-
-double num_get(void) {
-  return skode_strtod(num_acc);
-}
-
-double data[1024];
-int data_len = 0;
-int data_cap = 1024;
-
-void array_clear(void) {
-  data_len = 0;
-}
-
-void array_push(void) {
-  if (num_len) data[data_len++] = num_get();
-  num_clear();
-}
-
 #define ARG_MAX (8)
-double arg[ARG_MAX];
-int arg_len = 0;
-int arg_cap = ARG_MAX;
-
-void arg_clear(void)  { arg_len = 0; }
-void arg_push(double d) { if (arg_len < arg_cap) arg[arg_len++] = d; }
-
-char defer_acc[1024];
-int defer_len = 0;
-int defer_cap = 1024;
-double defer_num = 0;
-char defer_mode = '?';
-
-void defer_clear(void) {
-  defer_len = 0;
-  defer_acc[defer_len] = '\0';
-}
-
-void defer_push(char c) {
-  if (defer_len < defer_cap) {
-    defer_acc[defer_len++] = c;
-    defer_acc[defer_len] = '\0';
-  }
-}
-
+#define NUM_ACC_MAX (1024)
+#define ATOM_MAX (4)
 #define ATOM_NIL (0x5f5f5f5f)
 
-char atom_acc[1024];
-int atom_cap = 4;
-int atom_len = 0;
-int atom_num = ATOM_NIL;
+typedef struct skode_s {
+  // scratch string
+  char *scr_acc;
+  int scr_len;
+  int scr_cap;
+  // number keeper
+  char num_acc[NUM_ACC_MAX];
+  int num_len;
+  int num_cap;
+  // data array
+  double *data;
+  int data_len;
+  int data_cap;
+  // defer stuff
+  char *defer_acc;
+  int defer_len;
+  int defer_cap;
+  double defer_num;
+  char defer_mode;
+  //
+  double arg[ARG_MAX];
+  int arg_len;
+  int arg_cap;
+  //
+  char atom_acc[ATOM_MAX + 1];
+  int atom_cap;
+  int atom_len;
+  int atom_num;
+  //
+  int state;
+  void *user;
+} skode_t;
 
-void atom_clear(void) {
-  atom_len = 0;
-  atom_acc[atom_len] = '\0';
+skode_t *skode_new(void *user) {
+  skode_t *s = (skode_t*)malloc(sizeof(skode_t));
+  s->scr_cap = 1024;
+  s->scr_len = 0;
+  s->scr_acc = (char *)malloc(s->scr_cap * sizeof(char));
+  //
+  s->num_cap = 1024;
+  s->num_len = 0;
+  //
+  s->data_cap = 1024;
+  s->data_len = 0;
+  s->data = (double *)malloc(s->data_cap * sizeof(double));
+  //
+  s->defer_cap = 1024;
+  s->defer_len = 0;
+  s->defer_acc = (char *)malloc(s->defer_cap * sizeof(char));
+  s->defer_num = 0;
+  s->defer_mode = '?';
+  //
+  s->arg_cap = ARG_MAX;
+  s->arg_len = 0;
+  //
+  s->atom_cap = ATOM_MAX;
+  s->atom_len = 0;
+  s->atom_num = ATOM_NIL;
+  //
+  s->user = user;
+  return s;
 }
 
-void atom_push(char c) {
-  if (atom_len < atom_cap) {
-    atom_acc[atom_len++] = c;
-    atom_acc[atom_len] = '\0';
+void skode_free(skode_t *s) {
+  if (s->scr_acc) free(s->scr_acc);
+  s->scr_acc = NULL;
+  s->scr_cap = 0;
+  s->scr_len = 0;
+  //
+  if (s->data) free(s->data);
+  s->data = NULL;
+  s->data_cap = 0;
+  s->data_len = 0;
+  //
+  if (s->defer_acc) free(s->defer_acc);
+  s->defer_acc = NULL;
+  s->defer_cap = 0;
+  s->defer_len = 0;
+}
+
+//
+
+void string_clear(skode_t *s) {
+  s->scr_len = 0;
+  s->scr_acc[s->scr_len] = '\0';
+}
+
+void string_push(skode_t *s, char c) {
+  if (s->scr_len < s->scr_cap) {
+    s->scr_acc[s->scr_len++] = c;
+    s->scr_acc[s->scr_len] = '\0';
+  }
+}
+
+void num_clear(skode_t *s) {
+  s->num_len = 0;
+  s->num_acc[s->num_len] = '\0';
+}
+
+void num_push(skode_t *s, char c) {
+  if (s->num_len < s->num_cap) {
+    s->num_acc[s->num_len++] = c;
+    s->num_acc[s->num_len] = '\0';
+  }
+}
+
+double num_get(skode_t *s) {
+  return skode_strtod(s->num_acc);
+}
+
+void array_clear(skode_t *s) {
+  s->data_len = 0;
+}
+
+void array_push(skode_t *s) {
+  if (s->num_len) s->data[s->data_len++] = num_get(s);
+  num_clear(s);
+}
+
+void arg_clear(skode_t *s)  { s->arg_len = 0; }
+void arg_push(skode_t *s, double d) { if (s->arg_len < s->arg_cap) s->arg[s->arg_len++] = d; }
+
+void defer_clear(skode_t *s) {
+  s->defer_len = 0;
+  s->defer_acc[s->defer_len] = '\0';
+}
+
+void defer_push(skode_t *s, char c) {
+  if (s->defer_len < s->defer_cap) {
+    s->defer_acc[s->defer_len++] = c;
+    s->defer_acc[s->defer_len] = '\0';
+  }
+}
+
+void atom_clear(skode_t *s) {
+  s->atom_len = 0;
+  s->atom_acc[s->atom_len] = '\0';
+}
+
+void atom_push(skode_t *s, char c) {
+  if (s->atom_len < s->atom_cap) {
+    s->atom_acc[s->atom_len++] = c;
+    s->atom_acc[s->atom_len] = '\0';
   }
 }
 
 #include <stdint.h>
 #include <arpa/inet.h>
 
-void atom_finish(void) {
+void atom_finish(skode_t *s) {
   int i = ATOM_NIL;
   char *p = (char *)&i;
-  for (int n = 0; n < atom_len; n++) p[n] = atom_acc[n];
-  atom_num = ntohl(i);
+  for (int n = 0; n < s->atom_len; n++) p[n] = s->atom_acc[n];
+  s->atom_num = ntohl(i);
 }
 
-void atom_reset(void) {
-  atom_num = ATOM_NIL;
+void atom_reset(skode_t *s) {
+  s->atom_num = ATOM_NIL;
 }
 
 char *atom_string(int i) {
@@ -169,7 +220,7 @@ char *atom_string(int i) {
   return s;
 }
 
-int decide(int state, int (*fn)(void)) {
+int decide(skode_t *s, int state, int (*fn)(skode_t *s)) {
   double d;
   float f;
   int i;
@@ -178,34 +229,22 @@ int decide(int state, int (*fn)(void)) {
   switch (state) {
     case CHUNK_END:
     case GET_ATOM:
-      if (atom_num != ATOM_NIL) {
-        fn();
-#if 0
-        printf("DO %s WITH [", atom_string(atom_num));
-        // run the callback here
-        if (arg_len) {
-          for (int n=0; n<arg_len; n++) printf(" %g", arg[n]);
-        }
-        printf(" ]\n");
-        printf("{%s}\n", scr_acc);
-        printf("(");
-        for (int i=0; i<data_len; i++) printf(" %g", data[i]);
-        printf(" )\n");
-#endif
-        atom_reset();
-        arg_clear();
+      if (s->atom_num != ATOM_NIL) {
+        fn(s);
+        atom_reset(s);
+        arg_clear(s);
       }
-      atom_finish();
-      atom_clear();
+      atom_finish(s);
+      atom_clear(s);
       break;
     case GET_NUMBER:
-      arg_push(num_get());
-      num_clear();
+      arg_push(s, num_get(s));
+      num_clear(s);
       return START;
       break;
     case GET_DEFER_STRING:
-      printf("DEFER %c %g '%s'\n", defer_mode, defer_num, defer_acc);
-      defer_clear();
+      printf("DEFER %c %g '%s'\n", s->defer_mode, s->defer_num, s->defer_acc);
+      defer_clear(s);
       break;
   }
   return START;
@@ -215,7 +254,7 @@ int decide(int state, int (*fn)(void)) {
 double local_var[VAR_MAX];
 double global_var[VAR_MAX];
 
-int parse(char *line, int *entry_state, int (*fn)(void)) {
+int parse(skode_t *s, char *line, int *entry_state, int (*fn)(skode_t *s)) {
   static int first = 1;
   if (first) {
     for (int i=0; i<VAR_MAX; i++) {
@@ -233,11 +272,11 @@ int parse(char *line, int *entry_state, int (*fn)(void)) {
     if (ptr >= end) {
       switch (state) {
         case GET_ATOM:
-          decide(state, fn);
+          decide(s, state, fn);
           state = START;
           break;
         case GET_NUMBER:
-          decide(state, fn);
+          decide(s, state, fn);
           state = START;
           break;
         default:
@@ -250,53 +289,53 @@ int parse(char *line, int *entry_state, int (*fn)(void)) {
     switch (state) {
       case START:
         if (IS_NUMBER(*ptr)) {
-          num_clear();
-          num_push(*ptr);
+          num_clear(s);
+          num_push(s, *ptr);
           state = GET_NUMBER;
         }
         else if (IS_SEPARATOR(*ptr)) { /* skip whitespace and , */ }
-        else if (IS_STRING(*ptr))    { string_clear(); state = GET_STRING; }
-        else if (IS_ARRAY(*ptr))     { num_clear(); array_clear(); state = GET_ARRAY; }
+        else if (IS_STRING(*ptr))    { string_clear(s); state = GET_STRING; }
+        else if (IS_ARRAY(*ptr))     { num_clear(s); array_clear(s); state = GET_ARRAY; }
         else if (IS_VARIABLE(*ptr))  { state = GET_VARIABLE; }
         else if (IS_COMMENT(*ptr))   { state = GET_COMMENT; }
-        else if (IS_CHUNK_END(*ptr)) { decide(CHUNK_END, fn); state = START; }
-        else if (IS_DEFER(*ptr))     { decide(CHUNK_END, fn); defer_mode = *ptr; state = GET_DEFER_NUMBER; }
+        else if (IS_CHUNK_END(*ptr)) { decide(s, CHUNK_END, fn); state = START; }
+        else if (IS_DEFER(*ptr))     { decide(s, CHUNK_END, fn); s->defer_mode = *ptr; state = GET_DEFER_NUMBER; }
         else if (iscntrl(*ptr)) { puts("# iscntrl !!!!"); }
         else {
           // i hope this is at the right catch point...
-          atom_clear();
-          atom_push(*ptr);
+          atom_clear(s);
+          atom_push(s, *ptr);
           state = GET_ATOM;
         }
         break;
       case GET_NUMBER:
         if (IS_NUMBER(*ptr)) {
-          num_push(*ptr);
+          num_push(s, *ptr);
         } else if (*ptr == '$') {
           printf("VAR?");
         } else {
-          state = decide(state, fn);
+          state = decide(s, state, fn);
           // we got a character we need to process
           goto reprocess;
         }
         break;
       case GET_STRING:
         if (IS_STRING_END(*ptr)) {
-          decide(state, fn);
+          decide(s, state, fn);
           state = START;
         } else {
-          string_push(*ptr);
+          string_push(s, *ptr);
         }
         break;
       case GET_ARRAY:
         if (IS_ARRAY_END(*ptr)) {
-          array_push();
-          decide(state, fn);
+          array_push(s);
+          decide(s, state, fn);
           state = START;
         } else if (IS_NUMBER_EX(*ptr)) {
-          num_push(*ptr);
+          num_push(s, *ptr);
         } else if (IS_SEPARATOR(*ptr)) {
-          array_push();
+          array_push(s);
         } else {
           //printf("# ignore %c\n", *ptr);
           // ignore stuff we don't know
@@ -304,10 +343,10 @@ int parse(char *line, int *entry_state, int (*fn)(void)) {
         break;
       case GET_COMMENT:
         if (IS_CHUNK_END(*ptr)) {
-          decide(CHUNK_END, fn);
+          decide(s, CHUNK_END, fn);
           state = START;
         } else if (*ptr == '\n') {
-          decide(state, fn);
+          decide(s, state, fn);
           state = START;
         }
         break;
@@ -324,7 +363,7 @@ int parse(char *line, int *entry_state, int (*fn)(void)) {
             i = (*ptr) - 'A';
             d = global_var[i];
           }
-          arg_push(d);
+          arg_push(s, d);
         } else {
           // not a var, so ignore and hope the next this is valid
           state = START;
@@ -334,38 +373,38 @@ int parse(char *line, int *entry_state, int (*fn)(void)) {
         break;
       case GET_DEFER_NUMBER:
         if (IS_NUMBER(*ptr)) {
-          num_push(*ptr);
+          num_push(s, *ptr);
         } else {
-          defer_num = num_get();
-          num_clear();
+          s->defer_num = num_get(s);
+          num_clear(s);
           state = GET_DEFER_STRING;
           goto reprocess;
         }
         break;
       case GET_DEFER_STRING:
         if (IS_DEFER(*ptr)) {
-          defer_mode = *ptr;
-          decide(GET_DEFER_STRING, fn);
+          s->defer_mode = *ptr;
+          decide(s, GET_DEFER_STRING, fn);
           state = GET_DEFER_NUMBER;
         } else if (IS_CHUNK_END(*ptr)) {
-          decide(GET_DEFER_STRING, fn);
+          decide(s, GET_DEFER_STRING, fn);
           state = START;
         } else {
-          defer_push(*ptr);
+          defer_push(s, *ptr);
         }
         break;
       case GET_ATOM:
         if (IS_ATOM(*ptr)) {
-          atom_push(*ptr);
+          atom_push(s, *ptr);
         } else {
-          decide(state, fn);
+          decide(s, state, fn);
           state = START;
           goto reprocess;
         }
         break;
       default:
         puts("default ->START");
-        decide(state, fn);
+        decide(s, state, fn);
         state = START;
         break;
     } 
@@ -375,26 +414,33 @@ int parse(char *line, int *entry_state, int (*fn)(void)) {
 }
 
 #ifdef DEMO
-int demo(void) {
-  printf("DO %s WITH [", atom_string(atom_num));
+int demo(skode_t *s) {
+  int *user = (int*)s->user;
+  printf("DO %s WITH [", atom_string(s->atom_num));
   // run the callback here
-  if (arg_len) {
-    for (int n=0; n<arg_len; n++) printf(" %g", arg[n]);
+  if (s->arg_len) {
+    for (int n=0; n<s->arg_len; n++) printf(" %g", s->arg[n]);
   }
   printf(" ]\n");
-  if (scr_len) printf("{%s}\n", scr_acc);
-  if (data_len) {
+  if (s->scr_len) printf("{%s}\n", s->scr_acc);
+  if (s->data_len) {
     printf("(");
-    for (int i=0; i<data_len; i++) printf(" %g", data[i]);
+    for (int i=0; i<s->data_len; i++) printf(" %g", s->data[i]);
     printf(" )\n");
   }
-  switch (atom_num) {
+  switch (s->atom_num) {
     case '=a__':
-      local_var[0] = arg[0];
+      local_var[0] = s->arg[0];
+      break;
+    case ':q__':
+      printf("QUIT\n");
+      *user = -1;
       break;
   }
 }
 int main(int argc, char *arg[]) {
+  int user = 0;
+  skode_t *s = skode_new(&user);
   linenoiseHistoryLoad(HISTORY_FILE);
   int state = START;
   while (1) {
@@ -402,10 +448,15 @@ int main(int argc, char *arg[]) {
     line = linenoise("# ");
     if (line == NULL) break;
     linenoiseHistoryAdd(line);
-    int r = parse(line, &state, demo);
+    int r = parse(s, line, &state, demo);
     linenoiseFree(line);
+    if (user == -1) {
+      printf("must quit\n");
+      break;
+    }
   }
   linenoiseHistorySave(HISTORY_FILE);
+  skode_free(s);
   return 0;
 }
 #endif
