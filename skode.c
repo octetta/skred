@@ -251,7 +251,7 @@ static int action(skode_t *s, int state) {
   return START;
 }
 
-int parse(skode_t *s, char *line, int (*go)(skode_t *s, int info)) {
+int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
   char *ptr = line;
   char *end = ptr + strlen(ptr);
   while (1) {
@@ -399,9 +399,31 @@ int parse(skode_t *s, char *line, int (*go)(skode_t *s, int info)) {
 }
 
 #ifdef DEMO
-#include "linenoise.h"
-#define HISTORY_FILE ".skode_history"
-int demo(skode_t *s, int info) {
+
+int wire(skode_t *s, int info);
+
+int patch_load(int which) {
+  char file[1024];
+  sprintf(file, "exp%d.patch", which);
+  FILE *in = fopen(file, "r");
+  int r = 0;
+  if (in) {
+    int user = 0;
+    skode_t *s = skode_new(wire, &user);
+    char line[1024];
+    while (fgets(line, sizeof(line), in) != NULL) {
+      size_t len = strlen(line);
+      if (len > 0 && line[len-1] == '\n') line[len-1] = ';';
+      printf("# %s\n", line);
+      skode(s, line, wire);
+    }
+    fclose(in);
+    skode_free(s);
+  }
+  return r;
+}
+
+int wire(skode_t *s, int info) {
   int *user = (int*)s->user;
   if (info == FUNCTION) {
     printf("FUNCTION %s [", atom_string(s->atom_num));
@@ -428,15 +450,25 @@ int demo(skode_t *s, int info) {
         printf("QUIT\n");
         *user = -1;
         break;
+      case ':l__':
+        if (s->arg_len) {
+          printf("patch_load %d\n", (int)s->arg[0]);
+          patch_load((int)s->arg[0]);
+        }
+        break;
     }
   } else if (info == DEFER) {
     printf("DEFER %c %g '%s'\n", s->defer_mode, s->defer_num, s->defer_acc);
   }
   return 0;
 }
+
+#include "linenoise.h"
+#define HISTORY_FILE ".skode_history"
+
 int main(int argc, char *arg[]) {
   int user = 0;
-  skode_t *s = skode_new(demo, &user);
+  skode_t *s = skode_new(wire, &user);
   for (int i=0; i<VAR_MAX; i++) {
     s->local_var[i] = i+1000;
     s->global_var[i] = i+2000;
@@ -447,7 +479,7 @@ int main(int argc, char *arg[]) {
     line = linenoise("# ");
     if (line == NULL) break;
     linenoiseHistoryAdd(line);
-    parse(s, line, demo);
+    skode(s, line, wire);
     linenoiseFree(line);
     if (user == -1) {
       printf("must quit\n");
