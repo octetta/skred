@@ -148,11 +148,14 @@ void atom_push(char c) {
   }
 }
 
+#include <stdint.h>
+#include <arpa/inet.h>
+
 void atom_finish(void) {
   int i = ATOM_NIL;
   char *p = (char *)&i;
   for (int n = 0; n < atom_len; n++) p[n] = atom_acc[n];
-  atom_num = i;
+  atom_num = ntohl(i);
 }
 
 void atom_reset(void) {
@@ -166,7 +169,7 @@ char *atom_string(int i) {
   return s;
 }
 
-int decide(int state) {
+int decide(int state, int (*fn)(void)) {
   double d;
   float f;
   int i;
@@ -176,19 +179,19 @@ int decide(int state) {
     case CHUNK_END:
     case GET_ATOM:
       if (atom_num != ATOM_NIL) {
+        fn();
+#if 0
         printf("DO %s WITH [", atom_string(atom_num));
         // run the callback here
         if (arg_len) {
           for (int n=0; n<arg_len; n++) printf(" %g", arg[n]);
         }
         printf(" ]\n");
-        
-          printf("{%s}\n", scr_acc);
-
-          printf("(");
-          for (int i=0; i<data_len; i++) printf(" %g", data[i]);
-          printf(" )\n");
-
+        printf("{%s}\n", scr_acc);
+        printf("(");
+        for (int i=0; i<data_len; i++) printf(" %g", data[i]);
+        printf(" )\n");
+#endif
         atom_reset();
         arg_clear();
       }
@@ -212,7 +215,7 @@ int decide(int state) {
 double local_var[VAR_MAX];
 double global_var[VAR_MAX];
 
-int parse(char *line, int *entry_state) {
+int parse(char *line, int *entry_state, int (*fn)(void)) {
   static int first = 1;
   if (first) {
     for (int i=0; i<VAR_MAX; i++) {
@@ -230,11 +233,11 @@ int parse(char *line, int *entry_state) {
     if (ptr >= end) {
       switch (state) {
         case GET_ATOM:
-          decide(state);
+          decide(state, fn);
           state = START;
           break;
         case GET_NUMBER:
-          decide(state);
+          decide(state, fn);
           state = START;
           break;
         default:
@@ -256,8 +259,8 @@ int parse(char *line, int *entry_state) {
         else if (IS_ARRAY(*ptr))     { num_clear(); array_clear(); state = GET_ARRAY; }
         else if (IS_VARIABLE(*ptr))  { state = GET_VARIABLE; }
         else if (IS_COMMENT(*ptr))   { state = GET_COMMENT; }
-        else if (IS_CHUNK_END(*ptr)) { decide(CHUNK_END); state = START; }
-        else if (IS_DEFER(*ptr))     { decide(CHUNK_END); defer_mode = *ptr; state = GET_DEFER_NUMBER; }
+        else if (IS_CHUNK_END(*ptr)) { decide(CHUNK_END, fn); state = START; }
+        else if (IS_DEFER(*ptr))     { decide(CHUNK_END, fn); defer_mode = *ptr; state = GET_DEFER_NUMBER; }
         else if (iscntrl(*ptr)) { puts("# iscntrl !!!!"); }
         else {
           // i hope this is at the right catch point...
@@ -272,14 +275,14 @@ int parse(char *line, int *entry_state) {
         } else if (*ptr == '$') {
           printf("VAR?");
         } else {
-          state = decide(state);
+          state = decide(state, fn);
           // we got a character we need to process
           goto reprocess;
         }
         break;
       case GET_STRING:
         if (IS_STRING_END(*ptr)) {
-          decide(state);
+          decide(state, fn);
           state = START;
         } else {
           string_push(*ptr);
@@ -288,7 +291,7 @@ int parse(char *line, int *entry_state) {
       case GET_ARRAY:
         if (IS_ARRAY_END(*ptr)) {
           array_push();
-          decide(state);
+          decide(state, fn);
           state = START;
         } else if (IS_NUMBER_EX(*ptr)) {
           num_push(*ptr);
@@ -301,10 +304,10 @@ int parse(char *line, int *entry_state) {
         break;
       case GET_COMMENT:
         if (IS_CHUNK_END(*ptr)) {
-          decide(CHUNK_END);
+          decide(CHUNK_END, fn);
           state = START;
         } else if (*ptr == '\n') {
-          decide(state);
+          decide(state, fn);
           state = START;
         }
         break;
@@ -342,10 +345,10 @@ int parse(char *line, int *entry_state) {
       case GET_DEFER_STRING:
         if (IS_DEFER(*ptr)) {
           defer_mode = *ptr;
-          decide(GET_DEFER_STRING);
+          decide(GET_DEFER_STRING, fn);
           state = GET_DEFER_NUMBER;
         } else if (IS_CHUNK_END(*ptr)) {
-          decide(GET_DEFER_STRING);
+          decide(GET_DEFER_STRING, fn);
           state = START;
         } else {
           defer_push(*ptr);
