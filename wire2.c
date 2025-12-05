@@ -691,7 +691,7 @@ int wire_cb(skode_t *s, int info) {
   } else if (info == DEFER) {
     printf("DEFER(%d)\n", info);
   } else {
-    printf("???(%d)\n", info);
+    printf("*UNKNOWN*(%d)\n", info);
   }
   return 0;
 }

@@ -71,7 +71,7 @@ skode.o: skode.c skode.h
 	gcc $(COPTS) -c $<
 
 wire2.o: wire2.c wire.h synth.def skode.h skode.o
-	gcc $(COPTS) -c $<
+	gcc $(COPTS) -Wno-multichar -c $<
 
 skred.o: skred.c skred.h synth.def
 	gcc $(COPTS) -c $<
