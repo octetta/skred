@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "skode.h"
+
 #define IS_NUMBER(c) (isdigit(c) || strchr("-.", c))
 #define IS_SEPARATOR(c) (isspace(c) || c == ',')
 #define IS_STRING(c) (c == '{')
@@ -20,6 +22,7 @@
 //#define IS_NUMBER_EX(c) (isdigit(c) || strchr("-.eE", c))
 #define IS_NUMBER_EX(c) (isxdigit(c) || strchr("-.eExX", c))
 
+#if 0
 enum {
   START = 0, // 0
   GET_NUMBER,
@@ -35,6 +38,7 @@ enum {
   FUNCTION,
   DEFER,
 };
+#endif
 
 static double skode_strtod(char *s) {
   double d = NAN;
@@ -87,6 +91,10 @@ typedef struct skode_s {
   void *user;
 } skode_t;
 
+int skode_atom_num(skode_t *s) { return s->atom_num; }
+int skode_arg_len(skode_t *s) { return s->arg_len; }
+double *skode_arg(skode_t *s) { return s->arg; }
+void *skode_user(skode_t *s) { return s->user; }
 skode_t *skode_new(int (*fn)(skode_t *s, int info), void *user) {
   skode_t *s = (skode_t*)malloc(sizeof(skode_t));
   s->scr_cap = 1024;
@@ -400,7 +408,7 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
 
 #ifdef DEMO
 
-int wire(skode_t *s, int info);
+int wire_cb(skode_t *s, int info);
 
 int patch_load(int which) {
   char file[1024];
@@ -409,13 +417,13 @@ int patch_load(int which) {
   int r = 0;
   if (in) {
     int user = 0;
-    skode_t *s = skode_new(wire, &user);
+    skode_t *s = skode_new(wire_cb, &user);
     char line[1024];
     while (fgets(line, sizeof(line), in) != NULL) {
       size_t len = strlen(line);
       if (len > 0 && line[len-1] == '\n') line[len-1] = ';';
       printf("# %s\n", line);
-      skode(s, line, wire);
+      skode(s, line, wire_cb);
     }
     fclose(in);
     skode_free(s);
@@ -423,7 +431,7 @@ int patch_load(int which) {
   return r;
 }
 
-int wire(skode_t *s, int info) {
+int wire_cb(skode_t *s, int info) {
   int *user = (int*)s->user;
   if (info == FUNCTION) {
     printf("FUNCTION %s [", atom_string(s->atom_num));
@@ -468,7 +476,7 @@ int wire(skode_t *s, int info) {
 
 int main(int argc, char *arg[]) {
   int user = 0;
-  skode_t *s = skode_new(wire, &user);
+  skode_t *s = skode_new(wire_cb, &user);
   for (int i=0; i<VAR_MAX; i++) {
     s->local_var[i] = i+1000;
     s->global_var[i] = i+2000;
@@ -479,7 +487,7 @@ int main(int argc, char *arg[]) {
     line = linenoise("# ");
     if (line == NULL) break;
     linenoiseHistoryAdd(line);
-    skode(s, line, wire);
+    skode(s, line, wire_cb);
     linenoiseFree(line);
     if (user == -1) {
       printf("must quit\n");

@@ -27,6 +27,8 @@ typedef struct {
 
 #define WIRE_SCRATCH_MAX (1024)
 
+#include "skode.h"
+
 typedef struct {
   int voice;
   voice_stack_t stack;
@@ -49,6 +51,7 @@ typedef struct {
   int debug;
   int trace;
   int events; // do incoming events go to the logger?
+  skode_t *sk;
 } wire_t;
 
 enum {

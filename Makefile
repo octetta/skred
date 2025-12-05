@@ -67,8 +67,17 @@ udp.o: udp.c udp.h
 wire.o: wire.c wire.h synth.def
 	gcc $(COPTS) -c $<
 
+skode.o: skode.c skode.h
+	gcc $(COPTS) -c $<
+
+wire2.o: wire2.c wire.h synth.def skode.h skode.o
+	gcc $(COPTS) -c $<
+
 skred.o: skred.c skred.h synth.def
 	gcc $(COPTS) -c $<
+
+# WIRE_O = wire.o
+WIRE_O = wire2.o skode.o
 
 OBJS = \
   skred.o \
@@ -76,7 +85,7 @@ OBJS = \
   amysamples.o \
   synth.o \
   seq.o \
-  wire.o \
+  $(WIRE_O) \
   udp.o \
   miniaudio.o \
 	linenoise.o \
