@@ -26,6 +26,8 @@ int skode_atom_num(skode_t *s);
 int skode_arg_len(skode_t *s);
 double *skode_arg(skode_t *s);
 void *skode_user(skode_t *s);
+char *skode_string(skode_t *s);
+void skode_chunk_mode(skode_t *s, int mode);
 
 #endif
 

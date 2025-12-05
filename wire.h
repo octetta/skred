@@ -52,6 +52,7 @@ typedef struct {
   int trace;
   int events; // do incoming events go to the logger?
   skode_t *sk;
+  int quit;
 } wire_t;
 
 enum {

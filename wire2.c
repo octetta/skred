@@ -552,7 +552,7 @@ void pattern_show(int pattern_pointer) {
       first = 0;
     }
     printf("; {%s} x%d", line, s);
-    if (seq_pattern_mute[pattern_pointer][s]) printf(" .%d", pattern_pointer);
+    if (seq_pattern_mute[pattern_pointer][s]) printf(" @%d", pattern_pointer);
     puts("");
   }
 }
@@ -772,10 +772,37 @@ int wire_function(skode_t *s, int info) {
         if (scope_enable) sprintf(scope->wave_text, "w%d", x);
       }
       break;
+    case 'W___': if (argc) {
+        wavetable_show(x);
+        if (scope_enable) sprintf(scope->wave_text, "w%d", x);
+      }
+      break;
+    case 'x___': if (argc) {
+        if (arg[0] == NAN) w->step++;
+        else w->step = x;
+        seq_step_set(w->pattern, w->step, skode_string(w->sk));
+      }
+      break;
+    case 'y___': if (argc) {
+        w->pattern = x;
+        scope_pattern_pointer = x;
+      }
+      break;
+    case 'z___': if (argc) {
+        seq_state_set(w->pattern, x);
+      } else if (w->output) pattern_show(w->pattern);
+      break;
+    case 'Z___': if (argc) {
+        seq_state_all(x);
+      } else if (w->output) {
+        printf("; M%g\n", tempo_bpm * 4.0f);
+        for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(p);
+      }
+      break;
     case '?___': voice_show(voice, ' ', 1); break;
     case '??__': voice_show_all(voice); break;
     case '/m__': case ':m__': synth_voice_bench(voice); break;
-    case '/q__': case ':q__': return -1; // QUIT NOT HANDLED ANYWHERE YET WITH SKODE
+    case '/q__': case ':q__': w->quit = -1; return 0;
     case '/d__': case ':d__': if (argc == 0) {
         if (w->debug) w->debug = 0; else w->debug = 1;
       } else {
@@ -829,6 +856,42 @@ int wire_function(skode_t *s, int info) {
       break;
     case '[___': voice_push(&w->stack, (float)voice); break;
     case ']___': w->voice = (int)voice_pop(&w->stack); break;
+    case '<___': if (arg) {
+        rec_state = 0;
+        float max_sec = arg[0];
+        float max_samples;
+        if (max_sec > 0.0f) {
+          if (max_sec > rec_sec) {
+            max_sec = rec_sec;
+          }
+          max_samples = max_sec * (float)(MAIN_SAMPLE_RATE * AUDIO_CHANNELS * VOICE_MAX);
+          rec_max = max_samples;
+        }
+        rec_ptr = 0;
+        rec_state = 1;
+      }
+      break;
+    case '*___': {
+        #include <sys/time.h>
+        #include <unistd.h>
+        if (rec_ptr) {
+          rec_state = 0;
+          pid_t pid = getpid();
+          struct timeval tv;
+          gettimeofday(&tv, NULL);
+          long long ms = (long long)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+          char name[1024];
+          sprintf(name, "skred-%d-%lld.wav", pid, ms);
+          printf("# file %s (%ld frames)\n", name, rec_ptr);
+          save_wav(name, recording, rec_ptr/VOICE_MAX/AUDIO_CHANNELS, voice_record, VOICE_MAX);
+        }
+      }
+      break;
+    case '>___': if (arg) voice_copy(voice, x); break;
+    case '/___': wave_default(voice); break;
+    case '%___': if (arg) seq_modulo_set(w->pattern, x); break;
+    case '!___': if (arg) seq_mute_set(w->pattern, x, 0); break;
+    case '@___': if (arg) seq_mute_set(w->pattern, x, 1); break;
     default:
       printf("FUNCTION(%d) [%x] :: %d", info, atom, argc);
       printf(" v%d", w->voice);
@@ -865,13 +928,8 @@ int wire(char *line, wire_t *w) {
 #endif
 
 #if 1
-  // force a ; to the end of every line to mimic old wire's behavior...
-  // revisit - maybe when a line ends with \ then it's continued on the next line?
-  // THIS IS UNSAFE, as the string might not have enough room for the ; !!!
-  int len = strlen(line);
-  line[len] = ';';
-  line[len+1] = '\0';
   skode(w->sk, line, wire_cb);
+  return w->quit;
 #else
 #ifdef _WIN32
       if (w->debug) printf("# [%lld] '%c' (%d)\n", ptr-line, *ptr, *ptr);
@@ -954,138 +1012,6 @@ int wire(char *line, wire_t *w) {
         case '\\':
           verbose = 1;
           break;
-        case '<': // record!
-          v = parse(ptr, FUNC_COPY, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            rec_state = 0;
-            float max_sec = v.args[0];
-            float max_samples;
-            if (max_sec > 0.0f) {
-              if (max_sec > rec_sec) {
-                max_sec = rec_sec;
-              }
-              max_samples = max_sec * (float)(MAIN_SAMPLE_RATE * AUDIO_CHANNELS * VOICE_MAX);
-              rec_max = max_samples;
-            }
-            rec_ptr = 0;
-            rec_state = 1;
-          } else return ERR_PARSING;
-          break;
-        case '*': // stop record and write to a file
-        #include <sys/time.h>
-        #include <unistd.h>
-          if (rec_ptr) {
-            rec_state = 0;
-            pid_t pid = getpid();
-            struct timeval tv;
-            gettimeofday(&tv, NULL);
-            long long ms = (long long)tv.tv_sec * 1000 + tv.tv_usec / 1000;
-            char name[1024];
-            sprintf(name, "skred-%d-%lld.wav", pid, ms);
-            printf("# file %s (%ld frames)\n", name, rec_ptr);
-            save_wav(name, recording, rec_ptr/VOICE_MAX/AUDIO_CHANNELS, voice_record, VOICE_MAX);
-          }
-          break;
-        case '>':
-          v = parse(ptr, FUNC_COPY, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-          } else return ERR_PARSING;
-          r = voice_copy(voice, (int)v.args[0]);
-          break;
-        case '/': // function-specific "set last thing to default" modifier
-          switch (w->last_func) {
-            case FUNC_WAVE:
-              v = parse_none(FUNC_WAVE_DEFAULT, FUNC_NULL, w);
-              wave_default(voice);
-              break;
-            default:
-              break;
-          }
-          break;
-        case 'W':
-          v = parse(ptr, FUNC_WAVE_SHOW, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-          } else return ERR_PARSING;
-          r = wavetable_show((int)v.args[0]);
-          if (scope_enable) {
-            sprintf(scope->wave_text, "w%d", (int)v.args[0]);
-          }
-          break;
-        case 'y':
-          v = parse(ptr, FUNC_PATTERN, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            int p = (int)v.args[0];
-            scope_pattern_pointer = p;
-            w->pattern = p;
-          }
-          break;
-        case '%':
-          v = parse(ptr, FUNC_STEP, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            int m = (int)v.args[0];
-            seq_modulo_set(w->pattern, m);
-          }
-          break;
-        case '!':
-          v = parse(ptr, FUNC_STEP_UNMUTE, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            int step = (int)v.args[0];
-            seq_mute_set(w->pattern, step, 0);
-          }
-          break;
-        case '@':
-          v = parse(ptr, FUNC_STEP_MUTE, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            int step = (int)v.args[0];
-            seq_mute_set(w->pattern, step, 1);
-          }
-          break;
-        case 'x':
-          switch (*ptr) {
-            case '-':
-              w->step++;
-              seq_step_set(w->pattern, w->step, w->scratch);
-              ptr++;
-              break;
-            default:
-              v = parse(ptr, FUNC_STEP, FUNC_NULL, 1, w);
-              if (v.argc == 1) {
-                ptr += v.next;
-                int step = (int)v.args[0];
-                w->step = step;
-                seq_step_set(w->pattern, step, w->scratch);
-              }
-              break;
-          }
-          break;
-        case 'Z':
-          v = parse(ptr, FUNC_MAIN_SEQ, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            seq_state_all((int)v.args[0]);
-          } else {
-            if (w->output) {
-              printf("; M%g\n", tempo_bpm * 4.0f);
-              for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(p);
-            }
-          }
-          break;
-        case 'z':
-          v = parse(ptr, FUNC_SEQ, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            seq_state_set(w->pattern, (int)v.args[0]);
-          } else {
-            if (w->output) pattern_show(w->pattern);
-          }
-          break;
         case 'D':
           v = parse(ptr, FUNC_DATA, FUNC_NULL, 1, w);
           if (v.argc == 1) {
@@ -1120,11 +1046,6 @@ int wire(char *line, wire_t *w) {
           } else return ERR_PARSING;
           break;
         //
-        default:
-          if (w->output) printf("# not sure\n");
-          return ERR_UNKNOWN_FUNC;
-          more = 0;
-          break;
       }
     }
     if (r != 0) break;
@@ -1225,4 +1146,6 @@ void wire_init(wire_t *w) {
   w->debug = 0;
   w->scratch[0] = '\0';
   w->events = 0;
+  w->sk = NULL;
+  w->quit = 0;
 }

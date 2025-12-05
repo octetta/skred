@@ -22,24 +22,6 @@
 //#define IS_NUMBER_EX(c) (isdigit(c) || strchr("-.eE", c))
 #define IS_NUMBER_EX(c) (isxdigit(c) || strchr("-.eExX", c))
 
-#if 0
-enum {
-  START = 0, // 0
-  GET_NUMBER,
-  GET_VARIABLE,
-  GET_DEFER_NUMBER,
-  GET_DEFER_STRING,
-  GET_ATOM,
-  GET_STRING,
-  GET_ARRAY,
-  GET_COMMENT,
-  CHUNK_END,
-  //
-  FUNCTION,
-  DEFER,
-};
-#endif
-
 static double skode_strtod(char *s) {
   double d = NAN;
   if (s[1] == '\0' && (s[0] == '-' || s[0] == 'e' || s[0] == '.')) return d;
@@ -89,12 +71,18 @@ typedef struct skode_s {
   //
   int (*fn)(struct skode_s *s, int info);
   void *user;
+  //
+  int mode;
 } skode_t;
 
 int skode_atom_num(skode_t *s) { return s->atom_num; }
 int skode_arg_len(skode_t *s) { return s->arg_len; }
 double *skode_arg(skode_t *s) { return s->arg; }
 void *skode_user(skode_t *s) { return s->user; }
+char *skode_string(skode_t *s) { return s->scr_acc; }
+void skode_chunk_mode(skode_t *s, int mode) {
+  s->mode = mode;
+}
 skode_t *skode_new(int (*fn)(skode_t *s, int info), void *user) {
   skode_t *s = (skode_t*)malloc(sizeof(skode_t));
   s->scr_cap = 1024;
@@ -125,6 +113,8 @@ skode_t *skode_new(int (*fn)(skode_t *s, int info), void *user) {
   s->user = user;
   //
   s->state = START;
+  //
+  s->mode = 0;
   return s;
 }
 
@@ -403,6 +393,7 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
     } 
     ptr++;
   }
+  if (s->mode == 0) { action(s, CHUNK_END); s->state = START; }
   return 0;
 }
 
