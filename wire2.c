@@ -854,8 +854,10 @@ int wire_function(skode_t *s, int info) {
         wave_load(which, where, ch);
       }
       break;
-    case '[___': voice_push(&w->stack, (float)voice); break;
-    case ']___': w->voice = (int)voice_pop(&w->stack); break;
+    // push and pop do not work with wire 2... need to put this into skode
+    // as save context or something special
+    // case '[___': voice_push(&w->stack, (float)voice); break;
+    // case ']___': w->voice = (int)voice_pop(&w->stack); break;
     case '<___': if (arg) {
         rec_state = 0;
         float max_sec = arg[0];
@@ -948,12 +950,6 @@ int wire(char *line, wire_t *w) {
           continue;
         }
       }
-        case '[':
-          voice_push(&w->stack, (float)voice);
-          continue;
-        case ']':
-          voice = (int)voice_pop(&w->stack);
-          continue;
         case ':':
           switch (*ptr++) {
             case 'D':

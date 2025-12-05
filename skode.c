@@ -17,7 +17,9 @@
 #define IS_CHUNK_END(c) (c == ';' || c == 0x04) // 0x04 ASCII EOT / end of xmit
 #define IS_DEFER(c) (c == '+' || c == '~')
 // used above 0-9 - . , { } ( ) $ # ; + ~
-#define IS_ATOM(c) (isalpha(c) || strchr("!@%^&*_=:\"'<>[]?/", c))
+// hide [ and ] because they can't work as ATOM
+//#define IS_ATOM(c) (isalpha(c) || strchr("!@%^&*_=:\"'<>[]?/", c))
+#define IS_ATOM(c) (isalpha(c) || strchr("!@%^&*_=:\"'<>?/", c))
 // used by array
 //#define IS_NUMBER_EX(c) (isdigit(c) || strchr("-.eE", c))
 #define IS_NUMBER_EX(c) (isxdigit(c) || strchr("-.eExX", c))
