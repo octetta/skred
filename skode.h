@@ -13,6 +13,9 @@ enum {
   GET_COMMENT,
   CHUNK_END,
   //
+  GOT_NUMBER,
+  GOT_ATOM,
+  //
   FUNCTION,
   DEFER,
 };
@@ -28,6 +31,8 @@ double *skode_arg(skode_t *s);
 void *skode_user(skode_t *s);
 char *skode_string(skode_t *s);
 void skode_chunk_mode(skode_t *s, int mode);
+double skode_defer_num(skode_t *s);
+char *skode_defer_string(skode_t *s);
 
 #endif
 

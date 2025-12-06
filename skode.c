@@ -227,6 +227,9 @@ char *atom_string(int i) {
   return s;
 }
 
+double skode_defer_num(skode_t *s) { return s->defer_num; }
+char *skode_defer_string(skode_t *s) { return s->defer_acc; }
+
 static int action(skode_t *s, int state) {
   switch (state) {
     case CHUNK_END:

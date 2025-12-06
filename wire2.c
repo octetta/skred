@@ -903,14 +903,20 @@ int wire_function(skode_t *s, int info) {
   return 0;
 }
 
+int wire_defer(skode_t *s, int info) {
+  printf("DEFER(%d) %g '%s'\n", info, skode_defer_num(s), skode_defer_string(s));
+  return 0;
+}
+
+int wire_unknown(skode_t *s, int info) {
+  printf("*UNKNOWN*(%d)\n", info);
+  return 0;
+}
+
 int wire_cb(skode_t *s, int info) {
-  if (info == FUNCTION) {
-    wire_function(s, info);
-  } else if (info == DEFER) {
-    printf("DEFER(%d)\n", info);
-  } else {
-    printf("*UNKNOWN*(%d)\n", info);
-  }
+  if (info == FUNCTION) wire_function(s, info);
+  else if (info == DEFER) wire_defer(s, info);
+  else wire_unknown(s, info);
   return 0;
 }
 
