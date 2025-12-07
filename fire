@@ -211,7 +211,7 @@ proc toggle_button {num} {
   frame .content.buttonGrid
   set ::voice -1
 
-  for {set i 0} {$i < 32} {incr i} {
+  for {set i 0} {$i < 64} {incr i} {
     button .content.buttonGrid.b$i -text " v$i " -padx 1 -pady 1 -font {Arial 10} -bd 0 \
       -command "toggle_button $i" -bg lightblue
     grid .content.buttonGrid.b$i -row [expr {$i / 16}] -column [expr {$i % 16}] \
