@@ -75,16 +75,10 @@ typedef struct skode_s {
   void *user;
   //
   int mode;
+  //
+  int trace;
 } skode_t;
 
-int skode_atom_num(skode_t *s) { return s->atom_num; }
-int skode_arg_len(skode_t *s) { return s->arg_len; }
-double *skode_arg(skode_t *s) { return s->arg; }
-void *skode_user(skode_t *s) { return s->user; }
-char *skode_string(skode_t *s) { return s->scr_acc; }
-void skode_chunk_mode(skode_t *s, int mode) {
-  s->mode = mode;
-}
 skode_t *skode_new(int (*fn)(skode_t *s, int info), void *user) {
   skode_t *s = (skode_t*)malloc(sizeof(skode_t));
   s->scr_cap = 1024;
@@ -117,6 +111,8 @@ skode_t *skode_new(int (*fn)(skode_t *s, int info), void *user) {
   s->state = START;
   //
   s->mode = 0;
+  //
+  s->trace = 0;
   return s;
 }
 
@@ -227,15 +223,28 @@ char *atom_string(int i) {
   return s;
 }
 
-double skode_defer_num(skode_t *s) { return s->defer_num; }
-char *skode_defer_string(skode_t *s) { return s->defer_acc; }
-
 static int action(skode_t *s, int state) {
+  if (state == CHUNK_END) {
+    if (s->atom_num != ATOM_NIL) {
+      if (s->trace) printf("# left-over ATOM\n");
+      s->fn(s, FUNCTION);
+      atom_reset(s);
+      arg_clear(s);
+    }
+    if (s->defer_len) {
+        if (s->trace) printf("# left-over DEFER\n");
+        s->fn(s, DEFER);
+        defer_clear(s);
+    }
+    //return 0;
+  }
+  ////
   switch (state) {
-    case CHUNK_END:
     case GET_ATOM:
+      if (s->trace) printf("# ATOM\n");
       if (s->atom_num != ATOM_NIL) {
         s->fn(s, FUNCTION);
+        // how much of the following should the called function do?
         atom_reset(s);
         arg_clear(s);
       }
@@ -243,11 +252,14 @@ static int action(skode_t *s, int state) {
       atom_clear(s);
       break;
     case GET_NUMBER:
+      if (s->trace) printf("# ARG_PUSH\n");
       arg_push(s, num_get(s));
       num_clear(s);
       break;
     case GET_DEFER_STRING:
+      if (s->trace) printf("# DEFER\n");
       s->fn(s, DEFER);
+      // how much of the following should the called function do?
       defer_clear(s);
       break;
   }
@@ -401,6 +413,18 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
   if (s->mode == 0) { action(s, CHUNK_END); s->state = START; }
   return 0;
 }
+
+int skode_atom_num(skode_t *s) { return s->atom_num; }
+int skode_arg_len(skode_t *s) { return s->arg_len; }
+double *skode_arg(skode_t *s) { return s->arg; }
+void *skode_user(skode_t *s) { return s->user; }
+char *skode_string(skode_t *s) { return s->scr_acc; }
+void skode_chunk_mode(skode_t *s, int mode) { s->mode = mode; }
+void skode_trace_set(skode_t *s, int n) { s->trace = n; }
+double skode_defer_num(skode_t *s) { return s->defer_num; }
+char *skode_defer_string(skode_t *s) { return s->defer_acc; }
+char skode_defer_mode(skode_t *s) { return s->defer_mode; }
+char *skode_atom_string(skode_t *s) { return atom_string(s->atom_num); }
 
 #ifdef DEMO
 

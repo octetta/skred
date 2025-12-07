@@ -100,7 +100,6 @@ typedef struct {
 } queued_t;
 
 extern int debug;
-extern int trace;
 extern int scope_enable;
 extern float tempo_time_per_step;
 extern float tempo_bpm;

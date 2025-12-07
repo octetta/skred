@@ -39,6 +39,10 @@ void perf_stop(void) {
 
 #endif
 
+char *wire_err_str(int n) {
+  return "ERR:";
+}
+
 void voice_push(voice_stack_t *s, float n) {
   s->ptr++;
   if (s->ptr >= VOICE_STACK_LEN) s->ptr = 0;
@@ -162,135 +166,6 @@ void save_wav(char *filename, float *samples, long num_samples, int *record, int
 
   fclose(f);
   free(record_safe);
-}
-
-char *display_func_func_str[FUNC_UNKNOWN+1] = {
-  [FUNC_NULL] = "-?-",
-  [FUNC_ERR] = "err",
-  [FUNC_SYS] = "sys",
-  [FUNC_IMM] = "imm",
-  [FUNC_VOICE] = "voice",
-  [FUNC_FREQ] = "freq",
-  [FUNC_AMP] = "amp",
-  [FUNC_TRIGGER] = "trigger",
-  [FUNC_VELOCITY] = "velocity",
-  [FUNC_MUTE] = "mute",
-  [FUNC_AMP_MOD] = "amp-mod",
-  [FUNC_CZ_MOD] = "cz-mod",
-  [FUNC_FREQ_MOD] = "freq-mod",
-  [FUNC_PAN_MOD] = "pan-mod",
-  [FUNC_MIDI] = "midi",
-  [FUNC_WAVE] = "wave",
-  [FUNC_LOOP] = "loop",
-  [FUNC_DIR] = "dir",
-  [FUNC_INTER] = "inter",
-  [FUNC_PAN] = "pan",
-  [FUNC_ENVELOPE] = "envelope",
-  [FUNC_QUANT] = "quant",
-  [FUNC_HOLD] = "hold",
-  [FUNC_RESET] = "reset",
-  [FUNC_FILTER_MODE] = "filter-mode",
-  [FUNC_FILTER_FREQ] = "filter-freq",
-  [FUNC_FILTER_RES] = "filter-q",
-  [FUNC_COPY] = "copy-voice",
-  [FUNC_WAVE_DEFAULT] = "wave-get-default",
-  [FUNC_UNKNOWN] = "unknown",
-  [FUNC_SMOOTHER] = "smoother",
-  [FUNC_GLISSANDO] = "glissando",
-  [FUNC_DATA] = "data",
-  //
-  [FUNC_HELP] = "help",
-  [FUNC_SEQ] = "seq",
-  [FUNC_MAIN_SEQ] = "main-seq",
-  [FUNC_STEP] = "step",
-  [FUNC_PATTERN] = "pattern",
-  [FUNC_QUIT] = "quit",
-  [FUNC_STATS0] = "stats-0",
-  [FUNC_STATS1] = "stats-1",
-  [FUNC_TRACE] = "trace",
-  [FUNC_DEBUG] = "debug",
-  [FUNC_SCOPE] = "scope",
-  [FUNC_LOAD] = "load",
-  [FUNC_SAVE] = "save",
-  [FUNC_WAVE_SHOW] = "show-wave",
-  [FUNC_DELAY] = "delay",
-  [FUNC_COMMENT] = "comment",
-  [FUNC_WHITESPACE] = "white-space",
-  [FUNC_METRO] = "metro",
-  [FUNC_WAVE_READ] = "wave-read",
-  [FUNC_DATA_READ] = "data-read",
-  [FUNC_CZ] = "cz",
-  [FUNC_VOLUME_SET] = "volume",
-};
-
-char *func_func_str(int n) {
-  if (n >= 0 && n <= FUNC_UNKNOWN) {
-    if (display_func_func_str[n]) {
-      return display_func_func_str[n];
-    }
-  }
-  return "no-string";
-}
-
-void dump(value_t v) {
-  printf("# %s", func_func_str(v.func));
-  if (v.sub_func != FUNC_NULL) printf(" %s", func_func_str(v.sub_func));
-  printf(" [");
-  for (int i=0; i<v.argc; i++) {
-    if (i) printf(" ");
-    printf("%g", v.args[i]);
-  }
-  puts("]");
-}
-
-value_t parse_none(int func, int sub_func, wire_t *w) {
-  value_t v;
-  v.func = func;
-  v.sub_func = sub_func;
-  v.argc = 0;
-  v.next = 0;
-  if (w->trace) dump(v);
-  return v;
-}
-
-value_t parse(const char *ptr, int func, int sub_func, int argc, wire_t *w) {
-  if (w) {
-    w->last_func = func;
-    w->last_sub_func = sub_func;
-  }
-  value_t v;
-  v.func = func;
-  v.sub_func = sub_func;
-  v.next = 0;
-  int next[8];
-  switch (argc) {
-    case 1:
-      v.argc = sscanf(ptr, "%g%n", &v.args[0], &next[0]);
-      if (v.argc == 1) v.next = next[0];
-      break;
-    case 2:
-      v.argc = sscanf(ptr, "%g%n,%g%n", &v.args[0], &next[0], &v.args[1], &next[1]);
-      if (v.argc > 0) v.next = next[v.argc-1];
-    case 4:
-      v.argc = sscanf(ptr, "%g%n,%g%n,%g%n,%g%n",
-        &v.args[0], &next[0],
-        &v.args[1], &next[1],
-        &v.args[2], &next[2],
-        &v.args[3], &next[3]);
-      if (v.argc > 0) v.next = next[v.argc-1];
-      break;
-    default:
-      v.argc = 0;
-      v.next = 0;
-      break;
-  }
-  if (w->debug) {
-    printf("# argc:%d next:%d", v.argc, v.next);
-    puts("");
-  }
-  if (w->trace) dump(v);
-
-  return v;
 }
 
 #include "skred.h"
@@ -669,6 +544,14 @@ int wire_function(skode_t *s, int info) {
   double *arg = skode_arg(s);
   int voice = w->voice;
   int x = (int)arg[0];
+  if (w->trace) {
+    printf("# WIRE_FUNCTION ");
+    printf("%s", skode_atom_string(s));
+    if (argc) {
+      for (int i=0; i<argc; i++) printf(" %g", arg[i]);
+    }
+    puts("");
+  }
   switch (atom) {
     case 'a___': if (argc) amp_set(voice, arg[0]); break;
     case 'A___': if (argc == 1) {
@@ -815,11 +698,9 @@ int wire_function(skode_t *s, int info) {
         w->output = x;
       }
       break;
-    case '/t__': case ':t__': if (argc == 0) {
-        if (w->trace) w->trace = 0; else w->trace = 1;
-      } else {
-        w->trace = x;
-      }
+    case '/t__': case ':t__': if (argc == 0) x = (w->trace) ? 0 : 1;
+      w->trace = x;
+      skode_trace_set(s, x > 1);
       break;
     case '/s__': case ':s__': if (w->output) {
         system_show();
@@ -895,21 +776,31 @@ int wire_function(skode_t *s, int info) {
     case '!___': if (arg) seq_mute_set(w->pattern, x, 0); break;
     case '@___': if (arg) seq_mute_set(w->pattern, x, 1); break;
     default:
-      printf("FUNCTION(%d) [%x] :: %d", info, atom, argc);
-      printf(" v%d", w->voice);
-      puts("");
+      if (w->trace) {
+        printf("# WIRE_UNKNOWN_FUNCTION %d [%x] :: %d", info, atom, argc);
+        printf(" v%d", w->voice);
+        puts("");
+      }
       break;
   }
   return 0;
 }
 
 int wire_defer(skode_t *s, int info) {
-  printf("DEFER(%d) %g '%s'\n", info, skode_defer_num(s), skode_defer_string(s));
+  wire_t *w = (wire_t*)skode_user(s);
+  if (w->trace) {
+    printf("# WIRE_DEFER %c %g '%s' (%g)\n",
+      skode_defer_mode(s),
+      skode_defer_num(s),
+      skode_defer_string(s),
+      w->defer_last);
+  }
+  w->defer_last += skode_defer_num(s);
   return 0;
 }
 
 int wire_unknown(skode_t *s, int info) {
-  printf("*UNKNOWN*(%d)\n", info);
+  printf("# WIRE_UNKNOWN %d\n", info);
   return 0;
 }
 
@@ -1083,48 +974,6 @@ int audio_show(void) {
   printf("# synth sample count %ld\n", synth_sample_count);
 #endif
   return 0;
-}
-
-char *all_err_str[ERR_UNKNOWN+1] = {
-  [ERR_EXPECTED_INT] = "expected int",
-  [ERR_EXPECTED_FLOAT] = "expected float",
-  [ERR_INVALID_VOICE] = "invalid voice",
-  [ERR_FREQUENCY_OUT_OF_RANGE] = "frequency out of range",
-  [ERR_AMPLITUDE_OUT_OF_RANGE] = "amplitude out-of-range",
-  [ERR_INVALID_WAVE] = "invalid wave",
-  [ERR_EMPTY_WAVE] = "empty wave",
-  [ERR_INVALID_DIRECTION] = "invalid direction",
-  [ERR_INVALID_LOOPING] = "invalid looping",
-  [ERR_PAN_OUT_OF_RANGE] = "pan out-of-range",
-  [ERR_INVALID_DELAY] = "invalid delay",
-  [ERR_INVALID_MODULATOR] = "invalid modulator",
-  [ERR_UNKNOWN_FUNC] = "unknown func",
-  [ERR_UNKNOWN_SYS] = "unknown sys",
-  [ERR_INVALID_TRACE] = "invalid trace",
-  [ERR_INVALID_DEBUG] = "invalid debug",
-  [ERR_INVALID_MUTE] = "invalid mute",
-  [ERR_INVALID_EXT_SAMPLE] = "invalid external sample",
-  [ERR_PARSING] = "parsing error",
-  [ERR_INVALID_PATCH] = "invalid patch",
-  [ERR_INVALID_MIDI_NOTE] = "invalid midi note",
-  [ERR_INVALID_MOD] = "invalid mod",
-  //
-  [ERR_INVALID_AMP] = "invalid amp",
-  [ERR_INVALID_PAN] = "invalid pan",
-  [ERR_INVALID_QUANT] = "invalid quant",
-  [ERR_INVALID_FREQ] = "invalid freq",
-  [ERR_INVALID_WAVETABLE] = "invalid wave table",
-  // add new stuff before here...
-  [ERR_UNKNOWN] = "x",
-};
-
-char *wire_err_str(int n) {
-  if (n >= 0 && n <= ERR_UNKNOWN) {
-    if (all_err_str[n]) {
-      return all_err_str[n];
-    }
-  }
-  return "no-string";
 }
 
 void wire_init(wire_t *w) {

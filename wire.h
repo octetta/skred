@@ -43,6 +43,7 @@ typedef struct {
   int data_acc_ptr;
   char queued[QUEUED_MAX];
   int queued_pointer;
+  float defer_last;
   int last_func;
   int last_sub_func;
   int pattern;

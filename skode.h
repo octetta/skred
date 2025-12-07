@@ -33,6 +33,9 @@ char *skode_string(skode_t *s);
 void skode_chunk_mode(skode_t *s, int mode);
 double skode_defer_num(skode_t *s);
 char *skode_defer_string(skode_t *s);
+char skode_defer_mode(skode_t *s);
+char *skode_atom_string(skode_t *s);
+void skode_trace_set(skode_t *s, int n);
 
 #endif
 
