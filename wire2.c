@@ -788,14 +788,30 @@ int wire_function(skode_t *s, int info) {
 
 int wire_defer(skode_t *s, int info) {
   wire_t *w = (wire_t*)skode_user(s);
+  if (w->defer_sample_time == 0) w->defer_sample_time = synth_sample_count;
+  uint64_t dst = w->defer_sample_time;
+  char mode = skode_defer_mode(s);
+  float t = skode_defer_num(s) + w->defer_last;
+  if (mode == '+') t *= (tempo_time_per_step * 4.0f);
+  t += w->defer_last;
+  uint64_t qt = (uint64_t)(t * (float)MAIN_SAMPLE_RATE) + dst;
   if (w->trace) {
-    printf("# WIRE_DEFER %c %g '%s' (%g)\n",
-      skode_defer_mode(s),
-      skode_defer_num(s),
+    printf("# WIRE_DEFER %c %g(%ld/%ld) '%s' (%g)\n",
+      mode,
+      t, qt, dst,
       skode_defer_string(s),
       w->defer_last);
   }
+  queue_item(qt, skode_defer_string(s), w->voice);
   w->defer_last += skode_defer_num(s);
+  return 0;
+}
+
+int wire_chunk_end(skode_t *s, int info) {
+  wire_t *w = (wire_t*)skode_user(s);
+  if (w->trace) printf("# CHUNK_END %d\n", info);
+  w->defer_last = 0;
+  w->defer_sample_time = 0;
   return 0;
 }
 
@@ -805,9 +821,12 @@ int wire_unknown(skode_t *s, int info) {
 }
 
 int wire_cb(skode_t *s, int info) {
-  if (info == FUNCTION) wire_function(s, info);
-  else if (info == DEFER) wire_defer(s, info);
-  else wire_unknown(s, info);
+  switch (info) {
+    case FUNCTION: return wire_function(s, info);
+    case DEFER: return wire_defer(s, info);
+    case CHUNK_END: return wire_chunk_end(s, info);
+    default: return wire_unknown(s, info);
+  }
   return 0;
 }
 

@@ -44,6 +44,7 @@ typedef struct {
   char queued[QUEUED_MAX];
   int queued_pointer;
   float defer_last;
+  uint64_t defer_sample_time;
   int last_func;
   int last_sub_func;
   int pattern;

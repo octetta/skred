@@ -17,11 +17,10 @@
 #define IS_CHUNK_END(c) (c == ';' || c == 0x04) // 0x04 ASCII EOT / end of xmit
 #define IS_DEFER(c) (c == '+' || c == '~')
 // used above 0-9 - . , { } ( ) $ # ; + ~
-// hide [ and ] because they can't work as ATOM
+// hide [ and ] because they can't work as ATOM easily to push/pop voice/etc.
 //#define IS_ATOM(c) (isalpha(c) || strchr("!@%^&*_=:\"'<>[]?/", c))
 #define IS_ATOM(c) (isalpha(c) || strchr("!@%^&*_=:\"'<>?/", c))
-// used by array
-//#define IS_NUMBER_EX(c) (isdigit(c) || strchr("-.eE", c))
+// used by array... allows hex constants too via 0x... 0X...
 #define IS_NUMBER_EX(c) (isxdigit(c) || strchr("-.eExX", c))
 
 static double skode_strtod(char *s) {
@@ -236,6 +235,8 @@ static int action(skode_t *s, int state) {
         s->fn(s, DEFER);
         defer_clear(s);
     }
+    if (s->trace) printf("# CHUNK_END\n");
+    s->fn(s, CHUNK_END);
     //return 0;
   }
   ////
