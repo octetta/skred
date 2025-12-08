@@ -315,7 +315,7 @@ void show_threads(void) {
 
 int patch_load(int voice, int n, int output) {
   char file[1024];
-  sprintf(file, "exp%d.patch", n);
+  sprintf(file, "%d.patch", n);
   FILE *in = fopen(file, "r");
   int r = 0;
   if (in) {
