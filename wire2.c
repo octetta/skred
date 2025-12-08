@@ -661,9 +661,12 @@ int wire_function(skode_t *s, int info) {
       }
       break;
     case 'x___': if (argc) {
-        if (arg[0] == NAN) w->step++;
-        else w->step = x;
-        seq_step_set(w->pattern, w->step, skode_string(w->sk));
+        if (arg[0] == NAN || x < 0) {
+          w->step++;
+        } else {
+          w->step = x;
+        }
+        if (x >= 0 && x < SEQ_STEPS_MAX) seq_step_set(w->pattern, w->step, skode_string(w->sk));
       }
       break;
     case 'y___': if (argc) {
@@ -1007,7 +1010,7 @@ void wire_init(wire_t *w) {
   w->state = W_PROTOCOL;
   w->last_func = FUNC_NULL;
   w->pattern = 0;
-  w->step = 0;
+  w->step = -1;
   w->data = NULL;
   w->data_len = 0;
   w->data_max = 0;

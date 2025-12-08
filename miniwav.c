@@ -120,7 +120,22 @@ float *mw_get(char *filename, int *frames_out, wav_t *w, int ch) {
   if (result == MA_SUCCESS) {
     // pSamples is now your interleaved float32 array
     // frameCount * channels = total number of floats
-    printf("Loaded %llu frames\n", frameCount);
+    printf("Loaded %llu frames / %d channels / %d sample rate\n",
+      frameCount,
+      decoder.outputChannels,
+      decoder.outputSampleRate);
+  }
+  int j = 0;
+  if (ch > decoder.outputChannels) ch = decoder.outputChannels;
+  for (int i = 0; i < frameCount * decoder.outputChannels; i+= decoder.outputChannels) {
+    if (ch == -1) {
+      float a = 0;
+      for (int k = 0; k < ch; k++) a += pSamples[i+k];
+      a /= (float)ch;
+    } else {
+      pSamples[j] = pSamples[i + ch];
+    }
+    j++;
   }
   w->SamplesRate = decoder.outputSampleRate;
   w->Channels = decoder.outputChannels;
