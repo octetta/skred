@@ -375,7 +375,7 @@ int data_load(wire_t *w, int where) {
 int wave_load(int which, int where, int ch) {
   if (where < EXT_SAMPLE_000 || where >= EXT_SAMPLE_999) return ERR_INVALID_EXT_SAMPLE;
   char name[1024];
-  sprintf(name, "wave%d.wav", which);
+  sprintf(name, "%d.wav", which);
   wav_t wav;
   int len;
   float *table = mw_get(name, &len, &wav, ch);
