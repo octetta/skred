@@ -1,9 +1,12 @@
 #include <string.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 #include "skred.h"
 
 #include "synth-types.h"
+
+#include "miniwav.h"
 
 #define USE_PRE
 
@@ -1277,8 +1280,11 @@ void wave_table_init(void) {
 void wave_free(void) {
   for (int i = 0; i < WAVE_TABLE_MAX; i++) {
     if (wave_table_data[i]) {
-      if (wave_is_miniwav[i]) printf("# [%d] needs mw_free\n", i);
-      free(wave_table_data[i]);
+      if (wave_is_miniwav[i]) {
+        mw_free(wave_table_data[i]);
+      } else {
+        free(wave_table_data[i]);
+      }
       wave_size[i] = 0;
     }
   }

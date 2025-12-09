@@ -194,6 +194,89 @@ static void cm_cleanup_linux(CM_Context* ctx)
 
 #if defined(__APPLE__)
 
+#if 1
+
+static void midi_read_proc(const MIDIPacketList *pktlist,
+                           void *readProcRefCon,
+                           void *srcConnRefCon)
+{
+    (void)srcConnRefCon;
+    CM_Context *ctx = (CM_Context *)readProcRefCon;
+
+    const MIDIPacket *packet = &pktlist->packet[0];
+    for (UInt32 i = 0; i < pktlist->numPackets; ++i) {
+        uint64_t ts = CM_get_timestamp_ms();
+        if (ctx->callback)
+            ctx->callback(ts, packet->data, packet->length, ctx->user_data);
+        packet = MIDIPacketNext(packet);
+    }
+}
+
+static CM_Context* cm_init_macos(const char *name, CM_Callback cb, void *ud)
+{
+    CM_Context *ctx = calloc(1, sizeof(CM_Context));
+    if (!ctx) return NULL;
+
+    ctx->callback = cb;
+    ctx->user_data = ud;
+
+    OSStatus err = MIDIClientCreate(CFSTR("crossmidi"), NULL, NULL, &ctx->client);
+    fprintf(stderr, "MIDIClientCreate err: %d\n", (int)err);
+    if (err != noErr) { free(ctx); return NULL; }
+
+    // --- Delete any existing virtual destination with the same name ---
+    ItemCount destCount = MIDIGetNumberOfDestinations();
+    for (ItemCount i = 0; i < destCount; i++) {
+        MIDIEndpointRef dest = MIDIGetDestination(i);
+        if (dest == 0) continue;
+
+        CFStringRef nameRef = NULL;
+        MIDIObjectGetStringProperty(dest, kMIDIPropertyName, &nameRef);
+        if (nameRef) {
+            if (CFStringCompare(nameRef, CFStringCreateWithCString(NULL, name, kCFStringEncodingUTF8), 0) == kCFCompareEqualTo) {
+                MIDIEndpointDispose(dest);
+            }
+            CFRelease(nameRef);
+        }
+    }
+
+    // --- Now create our virtual input port ---
+    CFStringRef portNameRef = CFStringCreateWithCString(NULL, name, kCFStringEncodingUTF8);
+    err = MIDIDestinationCreate(ctx->client, portNameRef,
+                               midi_read_proc, ctx, &ctx->virtual_endpoint);
+    CFRelease(portNameRef);
+    if (err != noErr) {
+        MIDIClientDispose(ctx->client);
+        free(ctx);
+        return NULL;
+    }
+
+    err = MIDIInputPortCreate(ctx->client, CFSTR("In"),
+                           midi_read_proc, ctx, &ctx->input_port);
+    if (err != noErr) {
+        MIDIEndpointDispose(ctx->virtual_endpoint);
+        MIDIClientDispose(ctx->client);
+        free(ctx);
+        return NULL;
+    }
+
+    // Connect to all sources
+    ItemCount n = MIDIGetNumberOfSources();
+    for (ItemCount i = 0; i < n; ++i)
+        MIDIPortConnectSource(ctx->input_port, MIDIGetSource(i), NULL);
+
+    return ctx;
+}
+
+static void cm_cleanup_macos(CM_Context* ctx)
+{
+    if (!ctx) return;
+    if (ctx->input_port) MIDIPortDispose(ctx->input_port);
+    if (ctx->virtual_endpoint) MIDIEndpointDispose(ctx->virtual_endpoint);
+    if (ctx->client) MIDIClientDispose(ctx->client);
+    free(ctx);
+}
+#else
 static void midi_read_proc(const MIDIPacketList* pktlist,
                            void* refCon,
                            void* connRefCon)
@@ -221,6 +304,7 @@ static CM_Context* cm_init_macos(const char* name, CM_Callback cb, void* ud)
     OSStatus err;
 
     err = MIDIClientCreate(CFSTR(name), NULL, NULL, &ctx->client);
+    fprintf(stderr, "MIDIClientCreate err: %d\n", (int)err);
     if (err) { free(ctx); return NULL; }
 
     CFStringRef portNameCF = CFStringCreateWithCString(NULL, name, kCFStringEncodingUTF8);
@@ -261,6 +345,7 @@ static void cm_cleanup_macos(CM_Context* ctx)
     if (ctx->client) MIDIClientDispose(ctx->client);
     free(ctx);
 }
+#endif
 
 #endif // __APPLE__
 
