@@ -818,6 +818,13 @@ int wire_chunk_end(skode_t *s, int info) {
   return 0;
 }
 
+int wire_assign(skode_t *s, int info) {
+  wire_t *w = (wire_t*)skode_user(s);
+  if (w->trace) printf("# ASSIGN %c %g\n",
+    skode_assign_variable(s), skode_assign_number(s));
+  return 0;
+}
+
 int wire_unknown(skode_t *s, int info) {
   printf("# WIRE_UNKNOWN %d\n", info);
   return 0;
@@ -828,6 +835,7 @@ int wire_cb(skode_t *s, int info) {
     case FUNCTION: return wire_function(s, info);
     case DEFER: return wire_defer(s, info);
     case CHUNK_END: return wire_chunk_end(s, info);
+    case ASSIGN: return wire_assign(s, info);
     default: return wire_unknown(s, info);
   }
   return 0;

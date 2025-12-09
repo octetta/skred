@@ -13,11 +13,17 @@ enum {
   GET_COMMENT,
   CHUNK_END,
   //
+  GET_ASSIGN_VARIABLE,
+  GET_ASSIGN_NUMBER,
+  //
   GOT_NUMBER,
   GOT_ATOM,
   //
   FUNCTION,
   DEFER,
+  ASSIGN,
+  PUSH,
+  POP,
 };
 
 typedef struct skode_s skode_t;
@@ -36,6 +42,8 @@ char *skode_defer_string(skode_t *s);
 char skode_defer_mode(skode_t *s);
 char *skode_atom_string(skode_t *s);
 void skode_trace_set(skode_t *s, int n);
+char skode_assign_variable(skode_t *s);
+double skode_assign_number(skode_t *s);
 
 #endif
 

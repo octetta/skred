@@ -16,10 +16,13 @@
 #define IS_COMMENT(c) (c == '#')
 #define IS_CHUNK_END(c) (c == ';' || c == 0x04) // 0x04 ASCII EOT / end of xmit
 #define IS_DEFER(c) (c == '+' || c == '~')
+#define IS_ASSIGN(c) (c == '=')
 // used above 0-9 - . , { } ( ) $ # ; + ~
 // hide [ and ] because they can't work as ATOM easily to push/pop voice/etc.
 //#define IS_ATOM(c) (isalpha(c) || strchr("!@%^&*_=:\"'<>[]?/", c))
-#define IS_ATOM(c) (isalpha(c) || strchr("!@%^&*_=:\"'<>?/", c))
+// remove = from atom for experimental assignment stuff
+//#define IS_ATOM(c) (isalpha(c) || strchr("!@%^&*_=:\"'<>?/", c))
+#define IS_ATOM(c) (isalpha(c) || strchr("!@%^&*_:\"'<>?/", c))
 // used by array... allows hex constants too via 0x... 0X...
 #define IS_NUMBER_EX(c) (isxdigit(c) || strchr("-.eExX", c))
 
@@ -65,6 +68,9 @@ typedef struct skode_s {
   int atom_len;
   int atom_num;
   //
+  char assign_variable;
+  double assign_number;
+  //
   int state;
   //
   double global_var[VAR_MAX];
@@ -80,6 +86,10 @@ typedef struct skode_s {
 
 skode_t *skode_new(int (*fn)(skode_t *s, int info), void *user) {
   skode_t *s = (skode_t*)malloc(sizeof(skode_t));
+  for (int i=0; i<VAR_MAX; i++) {
+    s->local_var[i] = 0;
+    s->global_var[i] = 0;
+  }
   s->scr_cap = 1024;
   s->scr_len = 0;
   s->scr_acc = (char*)malloc(s->scr_cap * sizeof(char));
@@ -174,6 +184,7 @@ void arg_clear(skode_t *s)  {
 }
 
 void arg_push(skode_t *s, double d) {
+  if (s->trace) printf("arg_push %g\n", d);
   if (s->arg_len < s->arg_cap) s->arg[s->arg_len++] = d;
 }
 
@@ -198,6 +209,18 @@ void atom_push(skode_t *s, char c) {
   if (s->atom_len < s->atom_cap) {
     s->atom_acc[s->atom_len++] = c;
     s->atom_acc[s->atom_len] = '\0';
+  }
+}
+
+void assign_clear(skode_t *s) { s->assign_variable = '\0'; }
+
+void assign_set_variable(skode_t *s) {
+  char c = s->assign_variable;
+  double number = s->assign_number;
+  if (islower(c)) {
+    s->local_var[c-'a'] = number;
+  } else {
+    s->global_var[c-'A'] = number;
   }
 }
 
@@ -234,6 +257,13 @@ static int action(skode_t *s, int state) {
         if (s->trace) printf("# left-over DEFER\n");
         s->fn(s, DEFER);
         defer_clear(s);
+    }
+    if (s->assign_variable) {
+        char c = s->assign_variable;
+        if (s->trace) printf("# left-over ASSIGN %c\n", c);
+        assign_set_variable(s);
+        s->fn(s, ASSIGN);
+        assign_clear(s);
     }
     if (s->trace) printf("# CHUNK_END\n");
     s->fn(s, CHUNK_END);
@@ -301,6 +331,7 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
         else if (IS_COMMENT(*ptr))   { s->state = GET_COMMENT; }
         else if (IS_CHUNK_END(*ptr)) { action(s, CHUNK_END); s->state = START; }
         else if (IS_DEFER(*ptr))     { action(s, CHUNK_END); s->defer_mode = *ptr; s->state = GET_DEFER_NUMBER; }
+        else if (IS_ASSIGN(*ptr))    { s->state = GET_ASSIGN_VARIABLE; }
         else if (iscntrl(*ptr)) { puts("# iscntrl !!!!"); }
         else {
           // i hope this is at the right catch point...
@@ -353,20 +384,15 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
         break;
       case GET_VARIABLE:
         if (isalpha(*ptr)) {
-          int i;
+          char c = *ptr;
           double d;
-          if (islower(*ptr)) {
-            // a-z
-            i = (*ptr) - 'a';
-            d = s->local_var[i];
-          } else {
-            // A-Z
-            i = (*ptr) - 'A';
-            d = s->global_var[i];
-          }
+          if (islower(c)) d = s->local_var[c - 'a'];
+          else d = s->global_var[c - 'A'];
+          if (s->trace) printf("GET_VARIABLE %c (%g)\n", c, d);
           arg_push(s, d);
         } else {
           // not a var, so ignore and hope the next this is valid
+          if (s->trace) puts("not a var");
           s->state = START;
           goto reprocess;
         }
@@ -403,6 +429,33 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
           goto reprocess;
         }
         break;
+      case GET_ASSIGN_VARIABLE:
+        if (isalpha(*ptr)) {
+          s->assign_variable = *ptr;
+          if (s->trace) printf("got assign variable '%c'\n", *ptr);
+          s->state = GET_ASSIGN_NUMBER;
+        } else {
+          puts("not a variable");
+          s->state = START;
+          goto reprocess;
+        }
+        break;
+      case GET_ASSIGN_NUMBER:
+        if (IS_NUMBER(*ptr)) {
+          if (s->trace) printf("get ASSIGN digit %c\n", *ptr);
+          num_push(s, *ptr);
+        } else {
+          s->assign_number = num_get(s);
+          printf("got ASSIGN number %g\n", s->assign_number);
+          printf("call action with ASSIGN\n");
+          assign_set_variable(s);
+          action(s, ASSIGN);
+          num_clear(s);
+          assign_clear(s);
+          s->state = START;
+          goto reprocess;
+        }
+        break;
       default:
         puts("default ->START");
         action(s, s->state);
@@ -426,6 +479,8 @@ double skode_defer_num(skode_t *s) { return s->defer_num; }
 char *skode_defer_string(skode_t *s) { return s->defer_acc; }
 char skode_defer_mode(skode_t *s) { return s->defer_mode; }
 char *skode_atom_string(skode_t *s) { return atom_string(s->atom_num); }
+char skode_assign_variable(skode_t *s) { return s->assign_variable; }
+double skode_assign_number(skode_t *s) { return s->assign_number; }
 
 #ifdef DEMO
 
@@ -476,13 +531,21 @@ int wire_cb(skode_t *s, int info) {
         s->local_var[0] = s->arg[0];
         break;
       case ':q__':
+      case '/q__':
         printf("QUIT\n");
         *user = -1;
         break;
       case ':l__':
+      case '/l__':
         if (s->arg_len) {
           printf("patch_load %d\n", (int)s->arg[0]);
           patch_load((int)s->arg[0]);
+        }
+        break;
+      case ':t__':
+      case '/t__':
+        if (s->arg_len) {
+          s->trace = (int)s->arg[0];
         }
         break;
     }
@@ -498,10 +561,6 @@ int wire_cb(skode_t *s, int info) {
 int main(int argc, char *arg[]) {
   int user = 0;
   skode_t *s = skode_new(wire_cb, &user);
-  for (int i=0; i<VAR_MAX; i++) {
-    s->local_var[i] = i+1000;
-    s->global_var[i] = i+2000;
-  }
   linenoiseHistoryLoad(HISTORY_FILE);
   while (1) {
     char *line = NULL;
