@@ -475,3 +475,11 @@ void skode_set_local(skode_t *s, int n, double x) { s->global_var[n] = x; }
 void skode_set_global(skode_t *s, double *p) { s->global_var = p; s->global_save = p; }
 void skode_use_local(skode_t *s) { s->global_var = s->local_var; }
 void skode_use_global(skode_t *s) { s->global_var = s->global_save; }
+
+void skode_local_to_global(skode_t *s, int n) {
+  if (n >= 0 && n <= 9) s->global_var[n] = s->local_var[n];
+}
+
+void skode_global_to_local(skode_t *s, int n) {
+  if (n >= 0 && n <= 9) s->local_var[n] = s->global_var[n];
+}

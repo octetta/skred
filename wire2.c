@@ -692,6 +692,8 @@ int wire_function(skode_t *s, int info) {
         printf("# %s\n", skode_string(w->sk));
       }
       break;
+    case 'l>g_': if (argc) skode_local_to_global(w->sk, x); break;
+    case 'g>l_': if (argc) skode_global_to_local(w->sk, x); break;
     case '/m__': case ':m__': synth_voice_bench(voice); break;
     case '/q__': case ':q__': w->quit = -1; return 0;
     case '/d__': case ':d__': if (argc == 0) {
@@ -729,8 +731,8 @@ int wire_function(skode_t *s, int info) {
               // sub -1 for scope_channel = -1 (all channels)
     case '/l__': case ':l__': if (argc) { sk_load(voice, x, w->output); } break;
     case '/w__': case ':w__': {
-        int which;
-        int where;
+        int which = 0;
+        int where = EXT_SAMPLE_000;
         int ch = -1;
         if (argc >= 2) {
           which = (int)arg[0];

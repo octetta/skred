@@ -55,6 +55,8 @@ void skode_set_local(skode_t *s, int n, double x);
 void skode_set_global(skode_t *s, double *p);
 void skode_use_local(skode_t *s);
 void skode_use_global(skode_t *s);
+void skode_local_to_global(skode_t *s, int n);
+void skode_global_to_local(skode_t *s, int n);
 
 #endif
 
