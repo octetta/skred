@@ -687,6 +687,11 @@ int wire_function(skode_t *s, int info) {
       break;
     case '?___': voice_show(voice, ' ', 1); break;
     case '??__': voice_show_all(voice); break;
+    case '?s__':
+      {
+        printf("# %s\n", skode_string(w->sk));
+      }
+      break;
     case '/m__': case ':m__': synth_voice_bench(voice); break;
     case '/q__': case ':q__': w->quit = -1; return 0;
     case '/d__': case ':d__': if (argc == 0) {

@@ -238,6 +238,14 @@ static int action(skode_t *s, int state) {
     }
     if (s->trace) printf("# CHUNK_END\n");
     s->fn(s, CHUNK_END);
+    switch (state) {
+      case GOT_ARRAY:
+      case GOT_STRING:
+        s->fn(s, state);
+        break;
+      default:
+        break;
+    }
     if (pushes == 0) arg_clear(s);
     return 0;
   }
@@ -322,7 +330,8 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
         break;
       case GET_STRING:
         if (IS_STRING_END(*ptr)) {
-          action(s, s->state);
+          //action(s, s->state);
+          action(s, GOT_STRING);
           s->state = START;
         } else {
           string_push(s, *ptr);
@@ -331,7 +340,8 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
       case GET_ARRAY:
         if (IS_ARRAY_END(*ptr)) {
           array_push(s);
-          action(s, s->state);
+          //action(s, s->state);
+          action(s, GOT_ARRAY);
           s->state = START;
         } else if (IS_NUMBER_EX(*ptr)) {
           num_push(s, *ptr);

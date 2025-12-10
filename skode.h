@@ -18,6 +18,8 @@ enum {
   //
   FUNCTION,
   DEFER,
+  GOT_STRING,
+  GOT_ARRAY,
   PUSH,
   POP,
 };

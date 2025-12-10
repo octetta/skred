@@ -21,6 +21,10 @@ LIB = \
 COPTS = \
   -D_GNU_SOURCE \
   -Wall \
+  -march=native \
+  -O3 \
+  #
+NOPTS = \
   -g
 
 RLINC = -I raylib-quickstart-main/build/external/raylib-master/src
