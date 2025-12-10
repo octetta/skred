@@ -349,10 +349,7 @@ int main(int argc, char *argv[]) {
 #endif
     }
     if (n < 0) break; // request to stop or error
-    if (n > 0) {
-      char *s = wire_err_str(n);
-      printf("# %s ERR:%d\n", s, n);
-    }
+    if (n > 0) printf("# ERR:%d\n", n);
   }
   if (use_edit) {
 #ifdef _WIN32

@@ -110,9 +110,9 @@ float *mw_get(char *filename, int *frames_out, wav_t *w, int ch) {
 
   result = ma_decoder_init_file(filename, &decoderConfig, &decoder);
   if (result != MA_SUCCESS) {
-      printf("Could not load file: %s\n", filename);
-      *frames_out = 0;
-      return _mw_safe;
+    printf("Could not load file: %s\n", filename);
+    *frames_out = 0;
+    return NULL;
   }
   float* pSamples = NULL;
   ma_uint64 frameCount = 0;
@@ -124,6 +124,9 @@ float *mw_get(char *filename, int *frames_out, wav_t *w, int ch) {
       frameCount,
       decoder.outputChannels,
       decoder.outputSampleRate);
+  } else {
+    *frames_out = 0;
+    return NULL;
   }
   int j = 0;
   if (ch > decoder.outputChannels) ch = decoder.outputChannels;
@@ -141,40 +144,4 @@ float *mw_get(char *filename, int *frames_out, wav_t *w, int ch) {
   w->Channels = decoder.outputChannels;
   *frames_out = frameCount;
   return pSamples;
-}
-
-float *old_mw_get(char *name, int *frames_out, wav_t *w, int ch) {
-    wav_t wav;
-    wav_t *this = &wav;
-    if (w) this = w;
-    float *table = NULL;
-    FILE *in = mw_header(name, this);
-    if (in) {
-      int frames_current = 0;
-      int frames_total = this->DataSubchunkSize / this->Channels / (this->BitsPerSample / 8);
-      table = (float *)malloc(frames_total * sizeof(float));
-      int16_t frameBlock[2];
-      while (frames_current < frames_total) {
-        int n = fread(frameBlock, sizeof(int16_t) * this->Channels, 1, in);
-        if (n < 0) break;
-        if (n == 0) break;
-        int32_t sample = frameBlock[0];
-        if (this->Channels == 2) {
-          if (ch == -1) {
-            sample += frameBlock[1];
-            sample /= 2;
-          } else if (ch == 1) {
-            sample = frameBlock[1];
-          }
-        }
-        if (sample > 32767) sample = 32767;
-        if (sample < -32767) sample = -32767;
-        float f = (float)sample / 32767;
-        table[frames_current] = f;
-        frames_current++;
-      }
-      fclose(in);
-      if (frames_out) *frames_out = frames_current;
-    }
-    return table;
 }

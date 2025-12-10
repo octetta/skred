@@ -39,10 +39,6 @@ void perf_stop(void) {
 
 #endif
 
-char *wire_err_str(int n) {
-  return "ERR:";
-}
-
 void voice_push(voice_stack_t *s, float n) {
   s->ptr++;
   if (s->ptr >= VOICE_STACK_LEN) s->ptr = 0;
@@ -72,6 +68,8 @@ float voice_pop(voice_stack_t *s) {
 // MAYBE have a user note for each oscillator that's
 //       stored in a queue note
 // MAYBE have a user note for pattern that's stored in a queue note
+
+#include <math.h>
 
 void save_wav(char *filename, float *samples, long num_samples, int *record, int max) {
   int *record_safe;
@@ -142,17 +140,15 @@ void save_wav(char *filename, float *samples, long num_samples, int *record, int
   // use the min/max to make a scale factor that keeps 0
   // in the same relative place
 
-  #include <math.h>
-
   float scale;
   if (fabsf(fsmall) > fabsf(fbig)) {
     scale = -1.0f / fsmall;
   } else {
     scale = 1.0f / fbig;
   }
-  
+ 
   // Convert scaled float samples to 16-bit PCM
-  
+
   for (int i = 0; i < num_samples * VOICE_MAX * AUDIO_CHANNELS; i++) {
     int ri = (i % (VOICE_MAX * AUDIO_CHANNELS)) >> 1;
     if (record_safe[ri] == 0) continue; // skip things that aren't recorded
@@ -534,6 +530,44 @@ void wire_data_push(wire_t *w) {
   }
 }
 
+void wave_table_dynamic_expand(int n) {
+  float fbig = 0.0;
+  float fsmall = 0.0;
+  int len = wave_size[n];
+  float *samples = wave_table_data[n];
+  if (len <= 0 || samples == NULL) {
+    printf("# nope len:%d samples:%p\n", len, samples);
+    return;
+  }
+  for (int i = 0; i < len; i++) {
+    float g = samples[i];
+    if (g > fbig) fbig = g;
+    if (g < fsmall) fsmall = g;
+  }
+
+  // use the min/max to make a scale factor that keeps 0
+  // in the same relative place
+
+  float scale;
+  if (fabsf(fsmall) > fabsf(fbig)) {
+    scale = -1.0f / fsmall;
+  } else {
+    scale = 1.0f / fbig;
+  }
+
+  printf("# expand scale %g\n", scale);
+ 
+  // Convert scaled float samples to 16-bit PCM
+
+  for (int i = 0; i < len; i++) {
+    float g = samples[i];
+    g *= scale;
+    if (g > 1.0f) g = 1.0f;
+    if (g < -1.0f) g = -1.0f;
+    samples[i] = g;
+  }
+}
+
 #include <sys/time.h>
 #include <unistd.h>
 
@@ -786,6 +820,7 @@ int wire_function(skode_t *s, int info) {
     case '!___': if (arg) seq_mute_set(w->pattern, x, 0); break;
     case '@___': if (arg) seq_mute_set(w->pattern, x, 1); break;
     case '=___': if (argc>1) skode_set_local(w->sk, x, arg[1]); break;
+    case '/wex': if (argc && x >= 200 && x <=999) wave_table_dynamic_expand(x);
     default:
       if (w->trace) {
         printf("# WIRE_UNKNOWN_FUNCTION %d [%x] :: %d", info, atom, argc);
