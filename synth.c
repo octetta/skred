@@ -1,3 +1,4 @@
+#include <float.h>
 #include <string.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -1034,6 +1035,7 @@ int voice_copy(int v, int n) {
   cmod_set(n, voice_cz_mod_osc[v], voice_cz_mod_depth[v]);
   voice_filter_mode[n] = voice_filter_mode[v];
   mmf_init(n, voice_filter_freq[v], voice_filter_res[v]);
+  // TODO stuff is missing from here...
   return 0;
 }
 
@@ -1148,7 +1150,7 @@ int mmf_set_freq(int n, float f) {
 }
 
 int mmf_set_res(int n, float res) {
-  mmf_set_params(n, voice_filter_freq[n], res);
+  if (res > 0) mmf_set_params(n, voice_filter_freq[n], res);
   return 0;
 }
 
