@@ -178,7 +178,7 @@ int wire(char *line, wire_t *w);
 void show_threads(void);
 void system_show(void);
 int audio_show(void);
-int patch_load(int voice, int n, int output);
+int sk_load(int voice, int n, int output);
 int wavetable_show(int n);
 int audio_show(void);
 char *wire_err_str(int n);

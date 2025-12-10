@@ -313,9 +313,9 @@ void show_threads(void) {
 #endif
 }
 
-int patch_load(int voice, int n, int output) {
+int sk_load(int voice, int n, int output) {
   char file[1024];
-  sprintf(file, "%d.patch", n);
+  sprintf(file, "%d.sk", n);
   FILE *in = fopen(file, "r");
   int r = 0;
   if (in) {
@@ -722,7 +722,7 @@ int wire_function(skode_t *s, int info) {
               // sub q for scope_quit = 0
               // sub 0..VOICE_MAX-1 for scope_channel = n
               // sub -1 for scope_channel = -1 (all channels)
-    case '/l__': case ':l__': if (argc) { patch_load(voice, x, w->output); } break;
+    case '/l__': case ':l__': if (argc) { sk_load(voice, x, w->output); } break;
     case '/w__': case ':w__': {
         int which;
         int where;

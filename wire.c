@@ -1,3 +1,5 @@
+// THIS IS THE OLD WIRE CODE NOT CURRENTY USED BUT KEEPING PRESENT TO MAKE SURE
+// I IMPLEMENT EVERYTHING
 #include "skred.h"
 #include "wire.h"
 #include "seq.h"

@@ -278,7 +278,7 @@ int main(int argc, char *argv[]) {
 
   system_show();
 
-  if (load_patch_number >= 0) patch_load(0, load_patch_number, 0);
+  if (load_patch_number >= 0) sk_load(0, load_patch_number, 0);
 
   if (scope_enable) {
     scope->buffer_len = SCOPE_WIDTH_IN_SAMPLES;
