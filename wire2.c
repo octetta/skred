@@ -515,21 +515,6 @@ int wavetable_show(int n) {
   return 0;
 }
 
-void wire_data_push(wire_t *w) {
-  if (w->data_len >= w->data_max) {
-    // too much data, ignoring...
-    return;
-  }
-  if (w->data_acc[0] != '\0') {
-    float f = strtof(w->data_acc, NULL);
-    // printf("# [%d] %s ~> %g\n", w->data_len, w->data_acc, f);
-    w->data_acc[0] = '\0';
-    w->data_acc_ptr = 0;
-    w->data[w->data_len] = f;
-    w->data_len++;
-  }
-}
-
 void wave_table_dynamic_expand(int n) {
   float fbig = 0.0;
   float fsmall = 0.0;
@@ -779,10 +764,6 @@ int wire_function(skode_t *s, int info) {
         wave_load(which, where, ch);
       }
       break;
-    // push and pop do not work with wire 2... need to put this into skode
-    // as save context or something special
-    // case '[___': voice_push(&w->stack, (float)voice); break;
-    // case ']___': w->voice = (int)voice_pop(&w->stack); break;
     case '<___': if (arg) {
         rec_state = 0;
         float max_sec = arg[0];
@@ -867,10 +848,15 @@ int wire_unknown(skode_t *s, int info) {
 }
 
 int wire_cb(skode_t *s, int info) {
+  wire_t *w = (wire_t*)skode_user(s);
   switch (info) {
     case FUNCTION: return wire_function(s, info);
     case DEFER: return wire_defer(s, info);
     case CHUNK_END: return wire_chunk_end(s, info);
+    case PUSH: { voice_push(&w->stack, w->voice); printf("pushed v%d\n", w->voice); } break;
+    case POP: { w->voice = voice_pop(&w->stack); } break;
+    case GOT_STRING: { if (w->trace) printf("# -> {%s}\n", skode_string(s)); } break;
+    case GOT_ARRAY: { if (w->trace) printf("# -> (..%d..)\n", skode_data_len(s)); } break;
     default: return wire_unknown(s, info);
   }
   return 0;

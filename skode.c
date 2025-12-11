@@ -16,9 +16,9 @@
 #define IS_COMMENT(c) (c == '#')
 #define IS_CHUNK_END(c) (c == ';' || c == 0x04) // 0x04 ASCII EOT / end of xmit
 #define IS_DEFER(c) (c == '+' || c == '~')
+#define IS_PUSH(c) (c == '[')
+#define IS_POP(c) (c == ']')
 // used above 0-9 - . , { } ( ) $ # ; + ~
-// hide [ and ] because they can't work as ATOM easily to push/pop voice/etc.
-//#define IS_ATOM(c) (isalpha(c) || strchr("!@%^&*_=:\"'<>[]?/", c))
 #define IS_ATOM(c) (isalpha(c) || strchr("!@%^&*_=:\"'<>?/", c))
 // used by array... allows hex constants too via 0x... 0X...
 #define IS_NUMBER_EX(c) (isxdigit(c) || strchr("-.eExX", c))
@@ -303,6 +303,8 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
           s->state = GET_NUMBER;
         }
         else if (IS_SEPARATOR(*ptr)) { /* skip whitespace and , */ }
+        else if (IS_PUSH(*ptr))      { s->fn(s, PUSH); }
+        else if (IS_POP(*ptr))       { s->fn(s, POP); }
         else if (IS_STRING(*ptr))    { string_clear(s); s->state = GET_STRING; }
         else if (IS_ARRAY(*ptr))     { num_clear(s); array_clear(s); s->state = GET_ARRAY; }
         else if (IS_VARIABLE(*ptr))  { s->state = GET_VARIABLE; }
@@ -331,7 +333,8 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
       case GET_STRING:
         if (IS_STRING_END(*ptr)) {
           //action(s, s->state);
-          action(s, GOT_STRING);
+          //action(s, GOT_STRING);
+          s->fn(s, GOT_STRING);
           s->state = START;
         } else {
           string_push(s, *ptr);
@@ -341,7 +344,8 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
         if (IS_ARRAY_END(*ptr)) {
           array_push(s);
           //action(s, s->state);
-          action(s, GOT_ARRAY);
+          //action(s, GOT_ARRAY);
+          s->fn(s, GOT_ARRAY);
           s->state = START;
         } else if (IS_NUMBER_EX(*ptr)) {
           num_push(s, *ptr);
