@@ -1,5 +1,3 @@
-// THIS IS THE OLD WIRE CODE NOT CURRENTY USED BUT KEEPING PRESENT TO MAKE SURE
-// I IMPLEMENT EVERYTHING
 #include "skred.h"
 #include "wire.h"
 #include "seq.h"
@@ -71,6 +69,8 @@ float voice_pop(voice_stack_t *s) {
 //       stored in a queue note
 // MAYBE have a user note for pattern that's stored in a queue note
 
+#include <math.h>
+
 void save_wav(char *filename, float *samples, long num_samples, int *record, int max) {
   int *record_safe;
 
@@ -140,17 +140,15 @@ void save_wav(char *filename, float *samples, long num_samples, int *record, int
   // use the min/max to make a scale factor that keeps 0
   // in the same relative place
 
-  #include <math.h>
-
   float scale;
   if (fabsf(fsmall) > fabsf(fbig)) {
     scale = -1.0f / fsmall;
   } else {
     scale = 1.0f / fbig;
   }
-  
+ 
   // Convert scaled float samples to 16-bit PCM
-  
+
   for (int i = 0; i < num_samples * VOICE_MAX * AUDIO_CHANNELS; i++) {
     int ri = (i % (VOICE_MAX * AUDIO_CHANNELS)) >> 1;
     if (record_safe[ri] == 0) continue; // skip things that aren't recorded
@@ -164,135 +162,6 @@ void save_wav(char *filename, float *samples, long num_samples, int *record, int
 
   fclose(f);
   free(record_safe);
-}
-
-char *display_func_func_str[FUNC_UNKNOWN+1] = {
-  [FUNC_NULL] = "-?-",
-  [FUNC_ERR] = "err",
-  [FUNC_SYS] = "sys",
-  [FUNC_IMM] = "imm",
-  [FUNC_VOICE] = "voice",
-  [FUNC_FREQ] = "freq",
-  [FUNC_AMP] = "amp",
-  [FUNC_TRIGGER] = "trigger",
-  [FUNC_VELOCITY] = "velocity",
-  [FUNC_MUTE] = "mute",
-  [FUNC_AMP_MOD] = "amp-mod",
-  [FUNC_CZ_MOD] = "cz-mod",
-  [FUNC_FREQ_MOD] = "freq-mod",
-  [FUNC_PAN_MOD] = "pan-mod",
-  [FUNC_MIDI] = "midi",
-  [FUNC_WAVE] = "wave",
-  [FUNC_LOOP] = "loop",
-  [FUNC_DIR] = "dir",
-  [FUNC_INTER] = "inter",
-  [FUNC_PAN] = "pan",
-  [FUNC_ENVELOPE] = "envelope",
-  [FUNC_QUANT] = "quant",
-  [FUNC_HOLD] = "hold",
-  [FUNC_RESET] = "reset",
-  [FUNC_FILTER_MODE] = "filter-mode",
-  [FUNC_FILTER_FREQ] = "filter-freq",
-  [FUNC_FILTER_RES] = "filter-q",
-  [FUNC_COPY] = "copy-voice",
-  [FUNC_WAVE_DEFAULT] = "wave-get-default",
-  [FUNC_UNKNOWN] = "unknown",
-  [FUNC_SMOOTHER] = "smoother",
-  [FUNC_GLISSANDO] = "glissando",
-  [FUNC_DATA] = "data",
-  //
-  [FUNC_HELP] = "help",
-  [FUNC_SEQ] = "seq",
-  [FUNC_MAIN_SEQ] = "main-seq",
-  [FUNC_STEP] = "step",
-  [FUNC_PATTERN] = "pattern",
-  [FUNC_QUIT] = "quit",
-  [FUNC_STATS0] = "stats-0",
-  [FUNC_STATS1] = "stats-1",
-  [FUNC_TRACE] = "trace",
-  [FUNC_DEBUG] = "debug",
-  [FUNC_SCOPE] = "scope",
-  [FUNC_LOAD] = "load",
-  [FUNC_SAVE] = "save",
-  [FUNC_WAVE_SHOW] = "show-wave",
-  [FUNC_DELAY] = "delay",
-  [FUNC_COMMENT] = "comment",
-  [FUNC_WHITESPACE] = "white-space",
-  [FUNC_METRO] = "metro",
-  [FUNC_WAVE_READ] = "wave-read",
-  [FUNC_DATA_READ] = "data-read",
-  [FUNC_CZ] = "cz",
-  [FUNC_VOLUME_SET] = "volume",
-};
-
-char *func_func_str(int n) {
-  if (n >= 0 && n <= FUNC_UNKNOWN) {
-    if (display_func_func_str[n]) {
-      return display_func_func_str[n];
-    }
-  }
-  return "no-string";
-}
-
-void dump(value_t v) {
-  printf("# %s", func_func_str(v.func));
-  if (v.sub_func != FUNC_NULL) printf(" %s", func_func_str(v.sub_func));
-  printf(" [");
-  for (int i=0; i<v.argc; i++) {
-    if (i) printf(" ");
-    printf("%g", v.args[i]);
-  }
-  puts("]");
-}
-
-value_t parse_none(int func, int sub_func, wire_t *w) {
-  value_t v;
-  v.func = func;
-  v.sub_func = sub_func;
-  v.argc = 0;
-  v.next = 0;
-  if (w->trace) dump(v);
-  return v;
-}
-
-value_t parse(const char *ptr, int func, int sub_func, int argc, wire_t *w) {
-  if (w) {
-    w->last_func = func;
-    w->last_sub_func = sub_func;
-  }
-  value_t v;
-  v.func = func;
-  v.sub_func = sub_func;
-  v.next = 0;
-  int next[8];
-  switch (argc) {
-    case 1:
-      v.argc = sscanf(ptr, "%g%n", &v.args[0], &next[0]);
-      if (v.argc == 1) v.next = next[0];
-      break;
-    case 2:
-      v.argc = sscanf(ptr, "%g%n,%g%n", &v.args[0], &next[0], &v.args[1], &next[1]);
-      if (v.argc > 0) v.next = next[v.argc-1];
-    case 4:
-      v.argc = sscanf(ptr, "%g%n,%g%n,%g%n,%g%n",
-        &v.args[0], &next[0],
-        &v.args[1], &next[1],
-        &v.args[2], &next[2],
-        &v.args[3], &next[3]);
-      if (v.argc > 0) v.next = next[v.argc-1];
-      break;
-    default:
-      v.argc = 0;
-      v.next = 0;
-      break;
-  }
-  if (w->debug) {
-    printf("# argc:%d next:%d", v.argc, v.next);
-    puts("");
-  }
-  if (w->trace) dump(v);
-
-  return v;
 }
 
 #include "skred.h"
@@ -440,9 +309,9 @@ void show_threads(void) {
 #endif
 }
 
-int patch_load(int voice, int n, int output) {
+int sk_load(int voice, int n, int output) {
   char file[1024];
-  sprintf(file, "exp%d.patch", n);
+  sprintf(file, "%d.sk", n);
   FILE *in = fopen(file, "r");
   int r = 0;
   if (in) {
@@ -502,7 +371,7 @@ int data_load(wire_t *w, int where) {
 int wave_load(int which, int where, int ch) {
   if (where < EXT_SAMPLE_000 || where >= EXT_SAMPLE_999) return ERR_INVALID_EXT_SAMPLE;
   char name[1024];
-  sprintf(name, "wave%d.wav", which);
+  sprintf(name, "%d.wav", which);
   wav_t wav;
   int len;
   float *table = mw_get(name, &len, &wav, ch);
@@ -554,7 +423,7 @@ void pattern_show(int pattern_pointer) {
       first = 0;
     }
     printf("; {%s} x%d", line, s);
-    if (seq_pattern_mute[pattern_pointer][s]) printf(" .%d", pattern_pointer);
+    if (seq_pattern_mute[pattern_pointer][s]) printf(" @%d", pattern_pointer);
     puts("");
   }
 }
@@ -646,755 +515,376 @@ int wavetable_show(int n) {
   return 0;
 }
 
-static char *ignore = " \t\r\n;";
-
-void wire_data_push(wire_t *w) {
-  if (w->data_len >= w->data_max) {
-    // too much data, ignoring...
+void wave_table_dynamic_expand(int n) {
+  float fbig = 0.0;
+  float fsmall = 0.0;
+  int len = wave_size[n];
+  float *samples = wave_table_data[n];
+  if (len <= 0 || samples == NULL) {
+    printf("# nope len:%d samples:%p\n", len, samples);
     return;
   }
-  if (w->data_acc[0] != '\0') {
-    float f = strtof(w->data_acc, NULL);
-    // printf("# [%d] %s ~> %g\n", w->data_len, w->data_acc, f);
-    w->data_acc[0] = '\0';
-    w->data_acc_ptr = 0;
-    w->data[w->data_len] = f;
-    w->data_len++;
+  for (int i = 0; i < len; i++) {
+    float g = samples[i];
+    if (g > fbig) fbig = g;
+    if (g < fsmall) fsmall = g;
+  }
+
+  // use the min/max to make a scale factor that keeps 0
+  // in the same relative place
+
+  float scale;
+  if (fabsf(fsmall) > fabsf(fbig)) {
+    scale = -1.0f / fsmall;
+  } else {
+    scale = 1.0f / fbig;
+  }
+
+  printf("# expand scale %g\n", scale);
+ 
+  // Convert scaled float samples to 16-bit PCM
+
+  for (int i = 0; i < len; i++) {
+    float g = samples[i];
+    g *= scale;
+    if (g > 1.0f) g = 1.0f;
+    if (g < -1.0f) g = -1.0f;
+    samples[i] = g;
   }
 }
 
-int wire(char *line, wire_t *w) {
-  wl[wire_hash(w)] = w;
-  wire_t safe = WIRE();
-  if (w == NULL) w = &safe;
-  size_t len = strlen(line);
-  if (len == 0) return 0;
+#include <sys/time.h>
+#include <unistd.h>
 
-  char *ptr = line;
-  char *max = line + len;
-
-  if (w->events) {
-    mpsc_queue_send(&mq, line);
-  }
-
-  value_t v;
+int wire_function(skode_t *s, int info) {
+  int atom = skode_atom_num(s);
+  int argc = skode_arg_len(s);
+  wire_t *w = (wire_t*)skode_user(s);
+  double *arg = skode_arg(s);
   int voice = w->voice;
-
-  int more = 1;
-  int r = 0;
-
-  char c;
-
-  uint64_t queue_now = 0;
-  float queue_float_acc = 0.0f;
-  w->queued_pointer = 0;
-  w->queued[0] = '\0';
-
-  while (more) {
-    // guard against over-runs...
-    if (*ptr == '\0' || ptr >= max) {
-      // handle the case where we only had one thing on a line
-      switch (w->state) {
-        case W_SCRATCH:
-          w->scratch[w->scratch_pointer++] = ' ';
-          w->scratch[w->scratch_pointer+1] = '\0';
-          break;
-        case W_DATA:
-          wire_data_push(w);
-          break;
+  int x = (int)arg[0];
+  if (w->trace) {
+    printf("# WIRE_FUNCTION ");
+    printf("%s", skode_atom_string(s));
+    if (argc) {
+      for (int i=0; i<argc; i++) printf(" %g", arg[i]);
+    }
+    puts("");
+  }
+  switch (atom) {
+    case 'a___': if (argc) amp_set(voice, arg[0]); break;
+    case 'A___': if (argc == 1) {
+        amp_mod_set(voice, -1, 0);
+      } else if (argc > 1) {
+        amp_mod_set(voice, x, arg[1]);
       }
       break;
-    }
-    if (w->state == W_SCRATCH) {
-      // collect chars to scratch...
-      char c = *ptr;
-      switch (*ptr++) {
-        case '}':
-          // do something with accumulated characters...
-          w->scratch[w->scratch_pointer] = '\0';
-          w->scratch[w->scratch_pointer+1] = '\0';
-          w->state = W_PROTOCOL;
-          continue;
-        default:
-          if (w->scratch_pointer < WIRE_SCRATCH_MAX) {
-            w->scratch[w->scratch_pointer++] = c;
-          }
-          continue;
+    case 'b___': if (argc == 0) { wave_dir(voice, -1); } else { wave_dir(voice, x); } break;
+    case 'B___': if (argc == 0) { wave_loop(voice, -1); } else { wave_loop(voice, x); } break;
+    case 'c___': if (argc > 1) { cz_set(voice, x, arg[1]); } break;
+    case 'C___': if (argc == 1) {
+        cmod_set(voice, x, -1);
+      } else if (argc > 1) {
+        cmod_set(voice, x, arg[1]);
       }
-    } else if (w->state == W_DATA) {
-      // collect floats to data...
-      char c = *ptr;
-      switch (*ptr++) {
-        case '\0':
-          puts("# got null in w_data...");
-          break;
-        case ')':
-          puts("# W_DATA -> W_PROTOCOL");
-          // stop collecting data
-          wire_data_push(w);
-          w->state = W_PROTOCOL;
-          continue;
-        default:
-          switch (c) {
-            case '-': case '.':
-            case '0': case '1': case '2': case '3': case '4':
-            case '5': case '6': case '7': case '8': case '9':
-              w->data_acc[w->data_acc_ptr] = c;
-              w->data_acc[w->data_acc_ptr+1] = '\0';
-              w->data_acc_ptr++;
-              break;
-            default:
-              wire_data_push(w);
-              break;
-          }
-          continue;
+      break;
+    case 'D___': // need to use the data array in skode here, not w->data
+      break;
+    case 'f___': if (argc) freq_set(voice, arg[0]); break;
+    case 'F___': if (argc == 1) {
+        freq_mod_set(voice, x, -1);
+      } else if (argc > 1) {
+        freq_mod_set(voice, x, arg[1]);
       }
-    } else {
-      // wire protocol section
-      // skip whitespace and semicolons
-      ptr += strspn(ptr, ignore);
-#ifdef _WIN32
-      if (w->debug) printf("# [%lld] '%c' (%d)\n", ptr-line, *ptr, *ptr);
-#else
-      if (w->debug) printf("# [%ld] '%c' (%d)\n", ptr-line, *ptr, *ptr);
-#endif
-      if (queue_now) {
-        // we started queue-ing, so...
-        char c = *ptr;
-        if (c != '~') {
-          // unless we see a '~', stuff everything into a buffer...
-          // TODO can check if there's a '#' and bail early...
-          w->queued[w->queued_pointer++] = c;
-          w->queued[w->queued_pointer] = '\0'; // make sure there's a null-terminator...
-          ptr++;
-          continue;
+      break;
+    case 'g___': if (argc) {
+        if (arg[0] <= 0) {
+          voice_glissando_enable[voice] = 0;
+        } else {
+          voice_glissando_enable[voice] = 1;
+          voice_glissando_speed[voice] = arg[0];
         }
       }
-      r = 0;
-      int verbose = 0;
-      char token = *ptr++;
-      switch (token) {
-        case '{':
-          w->state = W_SCRATCH;
-          w->scratch_pointer = 0;
-          continue;
-        case '(':
-          puts("# W_PROTOCOL -> W_DATA");
-          w->state = W_DATA;
-          w->data_len = 0;
-          w->data_acc[0] = '\0';
-          w->data_acc_ptr = 0;
-          continue;
-        case '[':
-          voice_push(&w->stack, (float)voice);
-          continue;
-        case ']':
-          voice = (int)voice_pop(&w->stack);
-          continue;
-        case '#':
-          return 0;
-        case '\0':
-          break;
-        case ':':
-          switch (*ptr++) {
-            case 'm':
-              synth_voice_bench(voice);
-              break;
-            case '\0': return 100;
-            case 'q': return -1;
-            case 'i':
-              if (w->output) w->output = 0; else w->output = 1;
-              break;
-            case 't':
-              v = parse_none(FUNC_SYS, FUNC_TRACE, w);
-              c = *ptr;
-              if (c == '0' || c == '1') {
-                w->trace = c - '0';
-                ptr++;
-              } else {
-                if (w->trace) w->trace = 0; else w->trace = 1;
-              }
-              break;
-            case 'S':
-              v = parse_none(FUNC_SYS, FUNC_STATS0, w);
-              if (w->output) show_stats();
-              if (w->output) wire_show(w);
-              break;
-            case 's':
-              v = parse_none(FUNC_SYS, FUNC_STATS1, w);
-              if (w->output) {
-                system_show();
-                show_threads();
-                audio_show();
-                printf("%s", synth_stats());
-              }
-              break;
-            case 'd':
-              v = parse_none(FUNC_SYS, FUNC_DEBUG, w);
-              c = *ptr;
-              if (c == '0' || c == '1') {
-                w->debug = c - '0';
-                ptr++;
-              } else {
-                if (w->debug) w->debug = 0; else w->debug = 1;
-              }
-              break;
-            case 'o':
-              v = parse_none(FUNC_SYS, FUNC_SCOPE, w);
-              scope_enable = 1;
+      break;
+    case 'G___': if (argc) {
+        voice_link_midi_a[voice] = x;
+        if (argc > 1) voice_link_midi_b[voice] = (int)arg[1];
+      }
+      break;
+    case 'h___': if (argc) { voice_sample_hold_max[voice] = x; } break;
+    case 'H___': if (argc) {
+        voice_link_velo_a[voice] = x;
+        if (argc > 1) voice_link_velo_b[voice] = (int)arg[1];
+      }
+      break;
+    // TODO re-allocate the data/array buffer with the arg
+    case ':D__':
+    case '/D__':
+      if (argc) {}
+      break;
+    case 'I___': if (argc) {} break; // TODO en/dis-able send timestamp wire to the event logger
+    case 'L___': if (argc) { voice_link_trig[voice] = x; } break;
+    case 'J___': if (argc) {
+        voice_filter_mode[voice] = x;
+        mmf_set_params(voice,
+          voice_filter_freq[voice],
+          voice_filter_res[voice]);
+      }
+      break;
+    case 'K___': if (argc) { mmf_set_freq(voice, arg[0]); } break;
+    case 'l___': if (argc) {
+        envelope_velocity(voice, arg[0]);
+        if (voice_link_velo_a[voice] >= 0) envelope_velocity(voice_link_velo_a[voice], arg[0]);
+        if (voice_link_velo_b[voice] >= 0) envelope_velocity(voice_link_velo_b[voice], arg[0]);
+      }
+      break;
+    case 'm___': if (argc) { wave_mute(voice, x); } break;
+    case 'M___': if (argc) { tempo_set(arg[0]); } break;
+    case 'n___': if (argc) {
+        freq_midi(voice, arg[0]);
+        if (voice_link_midi_a[voice] >= 0) freq_midi(voice_link_midi_a[voice], arg[0]);
+        if (voice_link_midi_b[voice] >= 0) freq_midi(voice_link_midi_b[voice], arg[0]);
+      }
+      break;
+    case 'N___': if (argc) { voice_midi_transpose[voice] = arg[0]; } break;
+    case 'p___': if (argc) pan_set(voice, arg[0]); break;
+    case 'P___': if (argc == 1) {
+        pan_mod_set(voice, x, -1);
+      } else if (argc > 1) {
+        pan_mod_set(voice, x, arg[1]);
+      }
+      break;
+    case 'q___': if (argc) { wave_quant(voice, x); } break;
+    case 'Q___': if (argc) { mmf_set_res(voice, arg[0]); } break;
+    case 'r___': if (argc) { if (rec_state == 0) voice_record[voice] = x; } break;
+    case 's___': if (argc) {
+        if (arg[0] <= 0) {
+          voice_smoother_enable[voice] = 0;
+        } else {
+          voice_smoother_enable[voice] = 1;
+          voice_smoother_smoothing[voice] = arg[0];
+        }
+      }
+      break;
+    case 'S___': if (argc) wave_reset(voice, x); break;
+    case 't___': if (argc > 3) envelope_set(voice, arg[0], arg[1], arg[2], arg[3]); break;
+    case 'T___': {
+        voice_trigger(voice);
+        if (voice_link_trig[voice] > 0) voice_trigger(voice_link_trig[voice]);
+      }
+      break;
+    case 'v___': if (argc) voice_set(x, &w->voice); break;
+    case 'V___': if (argc) volume_set(arg[0]); break;
+    case 'w___': if (argc) {
+        wave_set(voice, x);
+        if (scope_enable) sprintf(scope->wave_text, "w%d", x);
+      }
+      break;
+    case 'W___': if (argc) {
+        wavetable_show(x);
+        if (scope_enable) sprintf(scope->wave_text, "w%d", x);
+      }
+      break;
+    case 'x___': if (argc) {
+        if (arg[0] == NAN || x < 0) {
+          w->step++;
+        } else {
+          w->step = x;
+        }
+        if (x >= 0 && x < SEQ_STEPS_MAX) seq_step_set(w->pattern, w->step, skode_string(w->sk));
+      }
+      break;
+    case 'y___': if (argc) {
+        w->pattern = x;
+        scope_pattern_pointer = x;
+      }
+      break;
+    case 'z___': if (argc) {
+        seq_state_set(w->pattern, x);
+      } else if (w->output) pattern_show(w->pattern);
+      break;
+    case 'Z___': if (argc) {
+        seq_state_all(x);
+      } else if (w->output) {
+        printf("; M%g\n", tempo_bpm * 4.0f);
+        for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(p);
+      }
+      break;
+    case '?___': voice_show(voice, ' ', 0); break;
+    case '\\___': voice_show(voice, ' ', 1); break;
+    case '??__': voice_show_all(voice); break;
+    case '?s__':
+      {
+        printf("# %s\n", skode_string(w->sk));
+      }
+      break;
+    case 'l>g_': if (argc) skode_local_to_global(w->sk, x); break;
+    case 'g>l_': if (argc) skode_global_to_local(w->sk, x); break;
+    case '/m__': case ':m__': synth_voice_bench(voice); break;
+    case '/q__': case ':q__': w->quit = -1; return 0;
+    case '/d__': case ':d__': if (argc == 0) {
+        if (w->debug) w->debug = 0; else w->debug = 1;
+      } else {
+        w->debug = x;
+      }
+      break;
+    case '/i__': case ':i__': if (argc == 0) {
+        if (w->output) w->output = 0; else w->output = 1;
+      } else {
+        w->output = x;
+      }
+      break;
+    case '/t__': case ':t__': if (argc == 0) x = (w->trace) ? 0 : 1;
+      w->trace = x;
+      skode_trace_set(s, x > 1);
+      break;
+    case '/s__': case ':s__': if (w->output) {
+        system_show();
+        show_threads();
+        audio_show();
+        printf("%s", synth_stats());
+      }
+      break;
+    case '/S__': case ':S__': if (w->output) {
+        show_stats();
+        wire_show(w);
+      }
+      break;
+    case '/o__': case ':o__': scope_enable = x; break;
               // sub x for scope_cross = 1
               // sub q for scope_quit = 0
               // sub 0..VOICE_MAX-1 for scope_channel = n
               // sub -1 for scope_channel = -1 (all channels)
-              break;
-            case 'l':
-              // :l# load exp#.patch
-              v = parse(ptr, FUNC_SYS, FUNC_LOAD, 1, w);
-              {
-                int which;
-                if (v.argc == 1) {
-                  ptr += v.next;
-                  which = (int)v.args[0];
-                } else return ERR_PARSING;
-                r = patch_load(voice, which, w->output);
-              }
-              break;
-            case 'D':
-              // :D# load data into wave slot #
-              v = parse(ptr, FUNC_SYS, FUNC_DATA_READ, 1, w);
-              if (v.argc == 1) {
-                ptr += v.next;
-                int where = (int)v.args[0];
-                data_load(w, where);
-              } else return ERR_PARSING;
-              break;
-            case 'w':
-              // :w#,# load wave#.wav into wave slot #
-              v = parse(ptr, FUNC_SYS, FUNC_WAVE_READ, 2, w);
-              {
-                int which;
-                int where;
-                int ch = -1;
-                if (v.argc >= 2) {
-                  ptr += v.next;
-                  which = (int)v.args[0];
-                  where = (int)v.args[1];
-                  if (v.argc > 2) ch = (int)v.args[2];
-                } else if (v.argc == 1) {
-                  ptr += v.next;
-                  which = (int)v.args[0];
-                  where = EXT_SAMPLE_000;
-                } else return ERR_PARSING;
-                r = wave_load(which, where, ch);
-              }
-              break;
-            default: return 999;
+    case '/l__': case ':l__': if (argc) { sk_load(voice, x, w->output); } break;
+    case '/w__': case ':w__': {
+        int which = 0;
+        int where = EXT_SAMPLE_000;
+        int ch = -1;
+        if (argc >= 2) {
+          which = (int)arg[0];
+          where = (int)arg[1];
+          if (argc > 2) ch = (int)arg[2];
+        } else if (argc == 1) {
+          which = (int)arg[0];
+          where = EXT_SAMPLE_000;
+        }
+        wave_load(which, where, ch);
+      }
+      break;
+    case '<___': if (arg) {
+        rec_state = 0;
+        float max_sec = arg[0];
+        float max_samples;
+        if (max_sec > 0.0f) {
+          if (max_sec > rec_sec) {
+            max_sec = rec_sec;
           }
-          break;
-        case '+': case '~':
-          // delay by absolute time versus delay by fraction of BPS
-          {
-            if (token == '+') {
-            }
-            int func = FUNC_DELAY;
-            v = parse(ptr, func, FUNC_NULL, 1, w);
-            if (v.argc == 1) {
-              ptr += v.next;
-              float t = v.args[0];
-              if (t == 0) {
-                // queue any previous items
-                if (w->queued_pointer) {
-                  queue_item(queue_now, w->queued, voice);
-                  w->queued_pointer = 0;
-                }
-                // switch back to "real-time"
-                queue_float_acc = 0.0f; // not sure this is what I want... revisit
-                queue_now = 0;
-              } else if (t > 0) {
-                if (token == '+') {
-                  // use t as a fraction multiplied by BPS time
-                  t *= (tempo_time_per_step * 4.0f);
-                }
-                queue_float_acc += t;
-                uint64_t queue_new = (uint64_t)(queue_float_acc * (float)MAIN_SAMPLE_RATE);
-                queue_new += synth_sample_count;
-                if (queue_new != queue_now) {
-                  // queue any previous items
-                  if (w->queued_pointer) {
-                    queue_item(queue_now, w->queued, voice);
-                    w->queued_pointer = 0;
-                  }
-                  // start new queue-ing
-                  queue_now = queue_new;
-                }
-                // mark synth sample count (now) + argument converted from seconds -> samples
-                // and start queueing...
-              }
-            }
-          } break;
-        case 'c':
-          v = parse(ptr, FUNC_CZ, FUNC_NULL, 2, w);
-          if (v.argc == 2) {
-            ptr += v.next;
-            r = cz_set(voice, (int)v.args[0], v.args[1]);
-          }
-          break;
-        case 'C':
-          v = parse(ptr, FUNC_CZ, FUNC_NULL, 2, w);
-          if (v.argc == 2) {
-            ptr += v.next;
-            r = cmod_set(voice, (int)v.args[0], v.args[1]);
-          }
-          break;
-        case '\\':
-          verbose = 1;
-        case '?':
-          v = parse_none(FUNC_HELP, FUNC_NULL, w);
-          if (*ptr == '?') {
-            voice_show_all(voice);
-            ptr++;
-          } else {
-            voice_show(voice, ' ', verbose);
-          }
-          break;
-        case 'a':
-          v = parse(ptr, FUNC_AMP, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-          } else return ERR_PARSING;
-          r = amp_set(voice, v.args[0]);
-          break;
-        case 'p':
-          v = parse(ptr, FUNC_PAN, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-          } else return ERR_PARSING;
-          r = pan_set(voice, v.args[0]);
-          break;
-        case 'h':
-          v = parse(ptr, FUNC_HOLD, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            voice_sample_hold_max[voice] = (int)v.args[0];
-            //voice_sample_hold_count[voice] = 0;
-          }
-          break;
-        case 'q':
-          v = parse(ptr, FUNC_QUANT, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-          } else return ERR_PARSING;
-          r = wave_quant(voice, (int)v.args[0]);
-          break;
-        case 'f':
-          v = parse(ptr, FUNC_FREQ, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-          } else return ERR_PARSING;
-          r = freq_set(voice, v.args[0]);
-          break;
-        case 'v':
-          v = parse(ptr, FUNC_VOICE, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-          } else return ERR_PARSING;
-          r = voice_set((int)v.args[0], &voice);
-          if (w->output) console_voice = voice;
-          break;
-        case 'V':
-          v = parse(ptr, FUNC_VOLUME_SET, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-          } else return ERR_PARSING;
-          r = volume_set(v.args[0]);
-          break;
-        case '<': // record!
-          v = parse(ptr, FUNC_COPY, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            rec_state = 0;
-            float max_sec = v.args[0];
-            float max_samples;
-            if (max_sec > 0.0f) {
-              if (max_sec > rec_sec) {
-                max_sec = rec_sec;
-              }
-              max_samples = max_sec * (float)(MAIN_SAMPLE_RATE * AUDIO_CHANNELS * VOICE_MAX);
-              rec_max = max_samples;
-            }
-            rec_ptr = 0;
-            rec_state = 1;
-          } else return ERR_PARSING;
-          break;
-        case 'r': // mark voice for record
-          // don't allow if currently recording
-          v = parse(ptr, FUNC_RECORD, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            if (rec_state == 0) {
-              int n = (int)v.args[0];
-              voice_record[voice] = n;
-            } else {
-              // ??
-            }
-          }
-          break;
-        case '*': // stop record and write to a file
+          max_samples = max_sec * (float)(MAIN_SAMPLE_RATE * AUDIO_CHANNELS * VOICE_MAX);
+          rec_max = max_samples;
+        }
+        rec_ptr = 0;
+        rec_state = 1;
+      }
+      break;
+    case '*___': {
         #include <sys/time.h>
         #include <unistd.h>
-          if (rec_ptr) {
-            rec_state = 0;
-            pid_t pid = getpid();
-            struct timeval tv;
-            gettimeofday(&tv, NULL);
-            long long ms = (long long)tv.tv_sec * 1000 + tv.tv_usec / 1000;
-            char name[1024];
-            sprintf(name, "skred-%d-%lld.wav", pid, ms);
-            printf("# file %s (%ld frames)\n", name, rec_ptr);
-            save_wav(name, recording, rec_ptr/VOICE_MAX/AUDIO_CHANNELS, voice_record, VOICE_MAX);
-          }
-          break;
-        case '>':
-          v = parse(ptr, FUNC_COPY, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-          } else return ERR_PARSING;
-          r = voice_copy(voice, (int)v.args[0]);
-          break;
-        case 'w':
-          v = parse(ptr, FUNC_WAVE, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-          } else return ERR_PARSING;
-          r = wave_set(voice, (int)v.args[0]);
-          if (scope_enable) sprintf(scope->wave_text, "w%d", (int)v.args[0]);
-          break;
-        case 'T':
-          v = parse_none(FUNC_TRIGGER, FUNC_NULL, w);
-          voice_trigger(voice);
-          if (voice_link_trig[voice]) {
-            voice_trigger(voice_link_trig[voice]);
-          }
-          break;
-        case '/': // function-specific "set last thing to default" modifier
-          switch (w->last_func) {
-            case FUNC_WAVE:
-              v = parse_none(FUNC_WAVE_DEFAULT, FUNC_NULL, w);
-              wave_default(voice);
-              break;
-            default:
-              break;
-          }
-          break;
-        case 'B':
-          v = parse_none(FUNC_LOOP, FUNC_NULL, w);
-          c = *ptr;
-          if (c == '0' || c == '1') {
-            wave_loop(voice, c == '1');
-            ptr++;
-          } else wave_loop(voice, -1);
-          break;
-        case 'W':
-          v = parse(ptr, FUNC_WAVE_SHOW, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-          } else return ERR_PARSING;
-          r = wavetable_show((int)v.args[0]);
-          if (scope_enable) {
-            sprintf(scope->wave_text, "w%d", (int)v.args[0]);
-          }
-          break;
-        case 'y':
-          v = parse(ptr, FUNC_PATTERN, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            int p = (int)v.args[0];
-            scope_pattern_pointer = p;
-            w->pattern = p;
-          }
-          break;
-        case '%':
-          v = parse(ptr, FUNC_STEP, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            int m = (int)v.args[0];
-            seq_modulo_set(w->pattern, m);
-          }
-          break;
-        case '!':
-          v = parse(ptr, FUNC_STEP_UNMUTE, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            int step = (int)v.args[0];
-            seq_mute_set(w->pattern, step, 0);
-          }
-          break;
-        case '@':
-          v = parse(ptr, FUNC_STEP_MUTE, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            int step = (int)v.args[0];
-            seq_mute_set(w->pattern, step, 1);
-          }
-          break;
-        case 'x':
-          switch (*ptr) {
-            case '-':
-              w->step++;
-              seq_step_set(w->pattern, w->step, w->scratch);
-              ptr++;
-              break;
-            default:
-              v = parse(ptr, FUNC_STEP, FUNC_NULL, 1, w);
-              if (v.argc == 1) {
-                ptr += v.next;
-                int step = (int)v.args[0];
-                w->step = step;
-                seq_step_set(w->pattern, step, w->scratch);
-              }
-              break;
-          }
-          break;
-        case 'Z':
-          v = parse(ptr, FUNC_MAIN_SEQ, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            seq_state_all((int)v.args[0]);
-          } else {
-            if (w->output) {
-              printf("; M%g\n", tempo_bpm * 4.0f);
-              for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(p);
-            }
-          }
-          break;
-        case 'z':
-          v = parse(ptr, FUNC_SEQ, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            seq_state_set(w->pattern, (int)v.args[0]);
-          } else {
-            if (w->output) pattern_show(w->pattern);
-          }
-          break;
-        case 'M':
-          v = parse(ptr, FUNC_METRO, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-          } else return ERR_PARSING;
-          tempo_set(v.args[0]);
-          if (scope_enable) sprintf(scope->status_text, "M%g", tempo_bpm * 4.0f);
-          break;
-        case 'm':
-          v = parse_none(FUNC_MUTE, FUNC_NULL, w);
-          c = *ptr;
-          if (c == '0' || c == '1') {
-            wave_mute(voice, c == '1');
-            ptr++;
-          } else wave_mute(voice, -1);
-          break;
-        case 'b':
-          v = parse_none(FUNC_DIR, FUNC_NULL, w);
-          c = *ptr;
-          if (c == '0' || c == '1') {
-            wave_dir(voice, c == '1');
-            ptr++;
-          } else wave_dir(voice, -1);
-          break;
-        case 'N':
-          v = parse(ptr, FUNC_MIDI_TRANSPOSE, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            voice_midi_transpose[voice] = v.args[0];
-          } else return ERR_PARSING;
-          break;
-        case 'n':
-          v = parse(ptr, FUNC_MIDI, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            r = freq_midi(voice, v.args[0]);
-            if (voice_link_midi_a[voice] >= 0) freq_midi(voice_link_midi_a[voice], v.args[0]);
-            if (voice_link_midi_b[voice] >= 0) freq_midi(voice_link_midi_b[voice], v.args[0]);
-          } else return ERR_PARSING;
-          break;
-        case 'A':
-          v = parse(ptr, FUNC_AMP_MOD, FUNC_NULL, 2, w);
-          if (v.argc == 2) {
-            ptr += v.next;
-            r = amp_mod_set(voice, (int)v.args[0], v.args[1]);
-          } else if (v.argc == 1) {
-            ptr += v.next;
-            r = amp_mod_set(voice, -1, 0);
-          } else return ERR_PARSING;
-          break;
-        case 'J':
-          v = parse(ptr, FUNC_FILTER_MODE, FUNC_NULL, 2, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            voice_filter_mode[voice] = (int)v.args[0];
-            mmf_set_params(voice,
-              voice_filter_freq[voice],
-              voice_filter_res[voice]);
-          } else return ERR_PARSING;
-          break;
-        case 'K':
-          v = parse(ptr, FUNC_FILTER_FREQ, FUNC_NULL, 2, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            if (v.args[0] > 0) {
-              mmf_set_freq(voice, v.args[0]);
-              r = 0;
-            }
-          } else return ERR_PARSING;
-          break;
-        case 'Q':
-          v = parse(ptr, FUNC_FILTER_RES, FUNC_NULL, 2, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            if (v.args[0] > 0) {
-              mmf_set_res(voice, v.args[0]);
-              r = 0;
-            }
-          } else return ERR_PARSING;
-          break;
-        case 'l':
-          v = parse(ptr, FUNC_VELOCITY, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-          } else return ERR_PARSING;
-          r = envelope_velocity(voice, v.args[0]);
-          if (voice_link_velo_a[voice] >= 0) r = envelope_velocity(voice_link_velo_a[voice], v.args[0]);
-          if (voice_link_velo_b[voice] >= 0) r = envelope_velocity(voice_link_velo_b[voice], v.args[0]);
-          break;
-        case 't':
-          v = parse(ptr, FUNC_ENVELOPE, FUNC_NULL, 4, w);
-          if (v.argc == 4) {
-            ptr += v.next;
-          } else return ERR_PARSING;
-          r = envelope_set(voice, v.args[0], v.args[1], v.args[2], v.args[3]);
-          break;
-        case 's':
-          v = parse(ptr, FUNC_SMOOTHER, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            if (v.args[0] <= 0.0f) {
-              voice_smoother_enable[voice] = 0;
-            } else {
-              voice_smoother_enable[voice] = 1;
-              voice_smoother_smoothing[voice] = v.args[0];
-            }
-          } else return ERR_PARSING;
-          break;
-        case 'D':
-          v = parse(ptr, FUNC_DATA, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            int n = (int)v.args[0];
-            printf("# D%d allocate %d\n", n, n);
-            if (w->data_max != n) {
-              if (w->data) {
-                printf("# free data and alloc %d\n", n);
-                free(w->data);
-              }
-              w->data_max = n;
-              w->data = (float *)malloc(n * sizeof(float));
-              w->data_acc[0] = '\0';
-              w->data_acc_ptr = 0;
-              w->data_len = 0;
-            }
-          } else return ERR_PARSING;
-          break;
-        case 'g':
-          v = parse(ptr, FUNC_GLISSANDO, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            if (v.args[0] <= 0.0f) {
-              voice_glissando_enable[voice] = 0;
-            } else {
-              voice_glissando_enable[voice] = 1;
-              voice_glissando_speed[voice] = v.args[0];
-            }
-          } else return ERR_PARSING;
-          break;
-        case 'G': // link this freq/midi to an oscillator
-          v = parse(ptr, FUNC_LINKF, FUNC_NULL, 2, w);
-          if (v.argc >= 1) {
-            ptr += v.next;
-            voice_link_midi_a[voice] = (int)v.args[0];
-            if (v.argc > 1) voice_link_midi_b[voice] = (int)v.args[1];
-          } else return ERR_PARSING;
-          break;
-        case 'H': // link this amp/velocity to an oscillator
-          v = parse(ptr, FUNC_LINKA, FUNC_NULL, 2, w);
-          if (v.argc >= 1) {
-            ptr += v.next;
-            voice_link_velo_a[voice] = (int)v.args[0];
-            if (v.argc > 1) voice_link_velo_b[voice] = (int)v.args[1];
-          } else return ERR_PARSING;
-          break;
-        case 'L': // link this trigger to an oscillator
-          v = parse(ptr, FUNC_LINKT, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            voice_link_trig[voice] = (int)v.args[0];
-          } else return ERR_PARSING;
-          break;
-        case 'I': // send timestamp wire events to the event logger
-          v = parse(ptr, FUNC_EVENTS, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-            w->events = (int)v.args[0];
-          } else return ERR_PARSING;
-          break;
-        case 'S':
-          v = parse(ptr, FUNC_RESET, FUNC_NULL, 1, w);
-          if (v.argc == 1) {
-            ptr += v.next;
-          } else return ERR_PARSING;
-          r = wave_reset(voice, (int)v.args[0]);
-          break;
-        case 'F':
-          v = parse(ptr, FUNC_FREQ_MOD, FUNC_NULL, 2, w);
-          if (v.argc == 2) {
-            ptr += v.next;
-            r = freq_mod_set(voice, (int)v.args[0], v.args[1]);
-          } else if (v.argc == 1) {
-            ptr += v.next;
-            r = freq_mod_set(voice, -1, 0);
-          } else return ERR_PARSING;
-          break;
-        case 'P':
-          v = parse(ptr, FUNC_PAN_MOD, FUNC_NULL, 2, w);
-          if (v.argc == 2) {
-            ptr += v.next;
-            r = pan_mod_set(voice, (int)v.args[0], v.args[1]);
-          } else if (v.argc == 1) {
-            ptr += v.next;
-            r = pan_mod_set(voice, -1, 0);
-          } else return ERR_PARSING;
-          break;
-        //
-        default:
-          if (w->output) printf("# not sure\n");
-          return ERR_UNKNOWN_FUNC;
-          more = 0;
-          break;
+        if (rec_ptr) {
+          rec_state = 0;
+          pid_t pid = getpid();
+          struct timeval tv;
+          gettimeofday(&tv, NULL);
+          long long ms = (long long)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+          char name[1024];
+          sprintf(name, "skred-%d-%lld.wav", pid, ms);
+          printf("# file %s (%ld frames)\n", name, rec_ptr);
+          save_wav(name, recording, rec_ptr/VOICE_MAX/AUDIO_CHANNELS, voice_record, VOICE_MAX);
+        }
       }
-    }
-    if (r != 0) break;
-    if (ptr >= max) break;
-    if (*ptr == '\0') break;
+      break;
+    case '>___': if (arg) voice_copy(voice, x); break;
+    case '/___': wave_default(voice); break;
+    case '%___': if (arg) seq_modulo_set(w->pattern, x); break;
+    case '!___': if (arg) seq_mute_set(w->pattern, x, 0); break;
+    case '@___': if (arg) seq_mute_set(w->pattern, x, 1); break;
+    case '=___': if (argc>1) skode_set_local(w->sk, x, arg[1]); break;
+    case '/wex': if (argc && x >= 200 && x <=999) wave_table_dynamic_expand(x);
+    default:
+      if (w->trace) {
+        printf("# WIRE_UNKNOWN_FUNCTION %d [%x] :: %d", info, atom, argc);
+        printf(" v%d", w->voice);
+        puts("");
+      }
+      break;
   }
-  // queue left-over items
-  if (w->queued_pointer) {
-    queue_item(queue_now, w->queued, voice);
-    w->queued_pointer = 0;
+  return 0;
+}
+
+int wire_defer(skode_t *s, int info) {
+  wire_t *w = (wire_t*)skode_user(s);
+  if (w->defer_sample_time == 0) w->defer_sample_time = synth_sample_count;
+  uint64_t dst = w->defer_sample_time;
+  char mode = skode_defer_mode(s);
+  float t = skode_defer_num(s) + w->defer_last;
+  if (mode == '+') t *= (tempo_time_per_step * 4.0f);
+  t += w->defer_last;
+  uint64_t qt = (uint64_t)(t * (float)MAIN_SAMPLE_RATE) + dst;
+  if (w->trace) {
+    printf("# WIRE_DEFER %c %g(%ld/%ld) '%s' (%g)\n",
+      mode,
+      t, qt, dst,
+      skode_defer_string(s),
+      w->defer_last);
   }
-  if (w->output) {
-    if (queue_float_acc > 0.0f) {
-      printf("# queue_float_acc %g\n", queue_float_acc);
-    }
+  queue_item(qt, skode_defer_string(s), w->voice);
+  w->defer_last += skode_defer_num(s);
+  return 0;
+}
+
+int wire_chunk_end(skode_t *s, int info) {
+  wire_t *w = (wire_t*)skode_user(s);
+  if (w->trace) printf("# CHUNK_END %d\n", info);
+  w->defer_last = 0;
+  w->defer_sample_time = 0;
+  return 0;
+}
+
+int wire_unknown(skode_t *s, int info) {
+  printf("# WIRE_UNKNOWN %d\n", info);
+  return 0;
+}
+
+int wire_cb(skode_t *s, int info) {
+  wire_t *w = (wire_t*)skode_user(s);
+  switch (info) {
+    case FUNCTION: return wire_function(s, info);
+    case DEFER: return wire_defer(s, info);
+    case CHUNK_END: return wire_chunk_end(s, info);
+    case PUSH: { voice_push(&w->stack, w->voice); printf("pushed v%d\n", w->voice); } break;
+    case POP: { w->voice = voice_pop(&w->stack); } break;
+    case GOT_STRING: { if (w->trace) printf("# -> {%s}\n", skode_string(s)); } break;
+    case GOT_ARRAY: { if (w->trace) printf("# -> (..%d..)\n", skode_data_len(s)); } break;
+    default: return wire_unknown(s, info);
   }
-  w->voice = voice;
+  return 0;
+}
+
+double global_var[10];
+
+int wire(char *line, wire_t *w) {
+  if (w->sk == NULL) {
+    // TODO this should live in wire-init or similar
+    w->sk = skode_new(wire_cb, (void *)w);
+    skode_set_global(w->sk, global_var);
+  }
+  wl[wire_hash(w)] = w;
+
+  if (w->events) mpsc_queue_send(&mq, line);
+
+  int r = 0;
+
+  skode(w->sk, line, wire_cb);
+  return w->quit;
   return r;
 }
 
@@ -1412,48 +902,6 @@ int audio_show(void) {
   return 0;
 }
 
-char *all_err_str[ERR_UNKNOWN+1] = {
-  [ERR_EXPECTED_INT] = "expected int",
-  [ERR_EXPECTED_FLOAT] = "expected float",
-  [ERR_INVALID_VOICE] = "invalid voice",
-  [ERR_FREQUENCY_OUT_OF_RANGE] = "frequency out of range",
-  [ERR_AMPLITUDE_OUT_OF_RANGE] = "amplitude out-of-range",
-  [ERR_INVALID_WAVE] = "invalid wave",
-  [ERR_EMPTY_WAVE] = "empty wave",
-  [ERR_INVALID_DIRECTION] = "invalid direction",
-  [ERR_INVALID_LOOPING] = "invalid looping",
-  [ERR_PAN_OUT_OF_RANGE] = "pan out-of-range",
-  [ERR_INVALID_DELAY] = "invalid delay",
-  [ERR_INVALID_MODULATOR] = "invalid modulator",
-  [ERR_UNKNOWN_FUNC] = "unknown func",
-  [ERR_UNKNOWN_SYS] = "unknown sys",
-  [ERR_INVALID_TRACE] = "invalid trace",
-  [ERR_INVALID_DEBUG] = "invalid debug",
-  [ERR_INVALID_MUTE] = "invalid mute",
-  [ERR_INVALID_EXT_SAMPLE] = "invalid external sample",
-  [ERR_PARSING] = "parsing error",
-  [ERR_INVALID_PATCH] = "invalid patch",
-  [ERR_INVALID_MIDI_NOTE] = "invalid midi note",
-  [ERR_INVALID_MOD] = "invalid mod",
-  //
-  [ERR_INVALID_AMP] = "invalid amp",
-  [ERR_INVALID_PAN] = "invalid pan",
-  [ERR_INVALID_QUANT] = "invalid quant",
-  [ERR_INVALID_FREQ] = "invalid freq",
-  [ERR_INVALID_WAVETABLE] = "invalid wave table",
-  // add new stuff before here...
-  [ERR_UNKNOWN] = "x",
-};
-
-char *wire_err_str(int n) {
-  if (n >= 0 && n <= ERR_UNKNOWN) {
-    if (all_err_str[n]) {
-      return all_err_str[n];
-    }
-  }
-  return "no-string";
-}
-
 void wire_init(wire_t *w) {
   static int first = 1;
   if (first) {
@@ -1466,7 +914,7 @@ void wire_init(wire_t *w) {
   w->state = W_PROTOCOL;
   w->last_func = FUNC_NULL;
   w->pattern = 0;
-  w->step = 0;
+  w->step = -1;
   w->data = NULL;
   w->data_len = 0;
   w->data_max = 0;
@@ -1475,4 +923,6 @@ void wire_init(wire_t *w) {
   w->debug = 0;
   w->scratch[0] = '\0';
   w->events = 0;
+  w->sk = NULL;
+  w->quit = 0;
 }
