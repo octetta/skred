@@ -13,6 +13,9 @@ void util_set_thread_name(char *s) {
   swprintf(name, sizeof(name), L"%s", s);
   SetThreadDescription(GetCurrentThread(), name);
 #else
+#ifdef _IS_OSX_
+#else
   pthread_setname_np(pthread_self(), s);
+#endif
 #endif
 }

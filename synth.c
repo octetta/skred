@@ -480,7 +480,11 @@ char *synth_stats(void) {
 }
 
 #define BENCH_CLOCK CLOCK_MONOTONIC
+#ifdef _IS_OSX_
+#define VOICE_CLOCK CLOCK_MONOTONIC
+#else
 #define VOICE_CLOCK CLOCK_MONOTONIC_COARSE
+#endif
 
 void synth_voice_bench(int voice) {
   voice_mark_b[voice].tv_sec = 0;

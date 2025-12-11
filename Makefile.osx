@@ -1,7 +1,6 @@
 CC = clang
 EXE = \
 	skred \
-  skode \
   #
 
 EXTRA = \
@@ -28,6 +27,7 @@ xLIB = \
 
 COPTS = \
   -D_GNU_SOURCE \
+  -D_IS_OSX_ \
   -Wall \
   -arch arm64 \
   -arch x86_64 \
