@@ -47,7 +47,7 @@ void skred_mem_close(skred_mem_t *sm) {
 #include <string.h>
 
 int skred_mem_create(skred_mem_t *sm, const char *name, size_t size) {
-    strncpy(sm->name, name, sizeof(sm->name));
+    strncpy(sm->name, name, sizeof(sm->name)-1);
     sm->fd = shm_open(name, O_CREAT | O_RDWR, 0666);
     if (sm->fd < 0) return -1;
     if (ftruncate(sm->fd, size) != 0) return -2;
@@ -59,7 +59,7 @@ int skred_mem_create(skred_mem_t *sm, const char *name, size_t size) {
 }
 
 int skred_mem_open(skred_mem_t *sm, const char *name, size_t size) {
-    strncpy(sm->name, name, sizeof(sm->name));
+    strncpy(sm->name, name, sizeof(sm->name)-1);
     sm->fd = shm_open(name, O_RDWR, 0666);
     if (sm->fd < 0) return -1;
 

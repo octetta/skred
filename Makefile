@@ -1,3 +1,5 @@
+CC = gcc
+
 EXE = \
 	skred \
   skode \
@@ -31,28 +33,28 @@ RLINC = -I raylib-quickstart-main/build/external/raylib-master/src
 RLLIB = -L raylib-quickstart-main/bin/Debug
 
 util.o : util.c
-	gcc $(COPTS) -c $<
+	$(CC) $(COPTS) -c $<
 
 skred-mem.o : skred-mem.c
-	gcc $(COPTS) -c $<
+	$(CC) $(COPTS) -c $<
 
 scope : scope.c skred-mem.o # raylib-quickstart-main/Makefile
-	gcc -g -D_GNU_SOURCE -DUSE_RAYLIB $(RLINC) $(RLLIB) $^ -o $@ -lraylib -lm
+	$(CC) -D_GNU_SOURCE -DUSE_RAYLIB $(RLINC) $(RLLIB) $^ -o $@ -lraylib -lm
 
 wav2data : wav2data.c miniwav.o
-	gcc -g -D_GNU_SOURCE $^ -o $@
+	$(CC) -D_GNU_SOURCE $^ -o $@
 
 skode : skode.c skode-example.c linenoise.o
-	gcc -Wall -Wno-multichar skode.c skode-example.c linenoise.o -o $@
+	$(CC) -Wall -Wno-multichar skode.c skode-example.c linenoise.o -o $@
 
 smidi : cmex2.c crossmidi.c crossmidi.h udpmini.c udpmini.h
-	gcc cmex2.c crossmidi.c udpmini.c -o smidi -lasound
+	$(CC) cmex2.c crossmidi.c udpmini.c -o smidi -lasound
 
 miniwav.o : miniwav.c miniwav.h
-	gcc $(COPTS) -c $<
+	$(CC) $(COPTS) -c $<
 
 amysamples.o : amysamples.c amysamples.h
-	gcc $(COPTS) -c $<
+	$(CC) $(COPTS) -c $<
 
 raylib-quickstart-main/Makefile :
 	sh make-raylib
@@ -60,22 +62,22 @@ raylib-quickstart-main/Makefile :
 synth.def: skred.h
 
 synth.o: synth.c synth.h synth-types.h synth.def
-	gcc $(COPTS) -c $<
+	$(CC) $(COPTS) -c $<
 
 seq.o: seq.c seq.h
-	gcc $(COPTS) -c $<
+	$(CC) $(COPTS) -c $<
 
 udp.o: udp.c udp.h
-	gcc $(COPTS) -c $<
+	$(CC) $(COPTS) -c $<
 
 skode.o: skode.c skode.h
-	gcc $(COPTS) -c $<
+	$(CC) $(COPTS) -c $<
 
 wire.o: wire.c wire.h synth.def skode.h skode.o
-	gcc $(COPTS) -Wno-multichar -c $<
+	$(CC) $(COPTS) -Wno-multichar -c $<
 
 skred.o: skred.c skred.h synth.def
-	gcc $(COPTS) -c $<
+	$(CC) $(COPTS) -c $<
 
 OBJS = \
   skred.o \
@@ -102,13 +104,13 @@ SOBJS = \
   #
 
 skred : $(OBJS)
-	gcc $(COPTS) $^ -o $@ $(LIB)
+	$(CC) $(COPTS) $^ -o $@ $(LIB)
 
 linenoise.o: linenoise.c linenoise.h
-	gcc -c $<
+	$(CC) -c $<
 
 miniaudio.o: miniaudio.c miniaudio.h
-	gcc -c $<
+	$(CC) -c $<
 
 check : skred
 	valgrind --tool=memcheck --leak-check=full ./skred
