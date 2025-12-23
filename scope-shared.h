@@ -10,6 +10,7 @@
 #define SCOPE_WAVE_HEIGHT (SCOPE_HEIGHT_IN_PIXELS / 2)
 
 typedef struct {
+  uint32_t frame_count;
   int buffer_len;
   int buffer_pointer;
   int wave_len;
