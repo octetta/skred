@@ -25,22 +25,27 @@ enum {
 int scope_trigger_mode = SCOPE_TRIGGER_RISING;
 
 int scope_running = 0;
-int scope_len = SCOPE_WIDTH_IN_SAMPLES;
+int scope_width = SCOPE_WIDTH_IN_SAMPLES;
 float scope_display_pointer = 0.0f;
 float scope_display_inc = 1.0f;
 float scope_display_mag = 1.0f;
 
-int find_starting_point(int buffer_snap, int sw) {
-  int j = buffer_snap - sw;
+int find_start(int buffer_pointer, int sw) {
+  int j = buffer_pointer - sw;
+  //return j;
   float t0 = (scope->buffer_left[j] + scope->buffer_right[j]) / 2.0f;
   int i = j-1;
   int c = 1;
-  while (c < SCOPE_WIDTH_IN_SAMPLES) {
-    if (i < 0) i = SCOPE_WIDTH_IN_SAMPLES-1;
+  int cc = 0;
+  while (c < sw) {
+    if (i < 0) i = sw-1;
     float t1 = (scope->buffer_left[i] + scope->buffer_right[i]) / 2.0f;
     if (t0 == 0.0 && t1 == 0.0) {
       // zero
-    } else if (t0 < 0 && t1 > 0) break;
+    } else if (t0 < 0 && t1 > 0) {
+      cc++;
+      if (cc > 1) break;
+    }
     i--;
     c++;
     t0 = t1;
@@ -55,6 +60,23 @@ int find_starting_point(int buffer_snap, int sw) {
 pthread_t scope_thread_handle;
 
 #include "futex.h"
+
+static long futex_wait_timeout(volatile uint32_t *uaddr, uint32_t expected, int timeout_ms) {
+  struct timespec ts;
+
+  // Get current monotonic time
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+
+  // Add timeout (convert ms to seconds + nanoseconds)
+  ts.tv_sec  += timeout_ms / 1000;
+  ts.tv_nsec += (timeout_ms % 1000) * 1000000;
+  if (ts.tv_nsec >= 1000000000) {
+    ts.tv_sec++;
+    ts.tv_nsec -= 1000000000;
+  }
+
+  return syscall(SYS_futex, uaddr, FUTEX_WAIT_PRIVATE, expected, &ts);
+}
 
 void *scope_main(void *arg) {
   pthread_setname_np(pthread_self(), "skred-o-scope-2");
@@ -82,7 +104,7 @@ void *scope_main(void *arg) {
   //
   SetConfigFlags(FLAG_WINDOW_HIGHDPI);
   SetTraceLogLevel(LOG_NONE);
-  InitWindow(screenWidth, screenHeight, "skred-o-scope");
+  InitWindow(screenWidth, screenHeight, "skred-o-scope-2");
   //
   SetWindowPosition((int)position_in.x, (int)position_in.y);
   //
@@ -100,31 +122,73 @@ void *scope_main(void *arg) {
   Color green0 = {0, 255, 0, 128};
   Color green1 = {0, 128, 0, 128};
   int osd_dirty = 0;
+  double scope_buffer_change_check = 0;
+  int frame_skip = 200;
+  int frame_skip_count = 0;
   while (scope_running && !WindowShouldClose()) {
+    frame_skip_count++;
+    if (frame_skip_count > frame_skip) {
+      frame_skip_count = 0;
+    } else {
+      sched_yield();
+      continue;
+    }
     //
     volatile int *futex_word = (volatile int *)&scope->frame_count;
     int expected_count = __atomic_load_n(futex_word, __ATOMIC_SEQ_CST);
-    int result = futex_wait(futex_word, expected_count);
+    //int result = futex_wait(futex_word, expected_count);
+    int result = futex_wait_timeout(futex_word, 0, 1500);
     if (result == -1) {
       // probably errno == EWOULDBLOCK which is okay
+      if (errno != EWOULDBLOCK) sprintf(osd, "result is -1, errno = %d", errno);
+    }
+    // see if anything has changed...
+    double change_check = 0;
+    for (int i = 0; i < SCOPE_WIDTH_IN_SAMPLES; i++) {
+      change_check += scope->buffer_left[i];
+      change_check += scope->buffer_right[i];
+    }
+    if (change_check == scope_buffer_change_check) {
+      sprintf(osd, "no change, no update");
+      BeginDrawing();
+      DrawText(osd, 10, SCOPE_HEIGHT_IN_PIXELS-20, 20, RED);
+      EndDrawing();
+      scope_buffer_change_check = change_check;
+      sched_yield();
+      continue;
     }
     //
     if (mag_x <= 0) mag_x = MAG_X_INC;
     sw = (float)screenWidth / mag_x;
     float mw = (float)SCOPE_WIDTH_IN_SAMPLES / 2.0f;
     if (sw >= mw) sw = mw;
+    if (IsKeyPressed(KEY_ONE)) if (show_l == 1) show_l = 0; else show_l = 1;
+    if (IsKeyPressed(KEY_TWO)) if (show_r == 1) show_r = 0; else show_r = 1;
+    if (IsKeyPressed(KEY_RIGHT)) mag_x += (float)MAG_X_INC;
+    if (IsKeyPressed(KEY_LEFT)) mag_x -= (float)MAG_X_INC;
     int shifted = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
-    if (IsKeyDown(KEY_ONE)) {
-      if (show_l == 1) show_l = 0; else show_l = 1;
+    if (IsKeyPressed(KEY_A)) {
+      if (shifted) {
+        scope_display_mag -= 0.1f;
+        a -= 0.1f;
+      } else {
+        scope_display_mag += 0.1f;
+        a += 0.1f;
+      }
     }
-    if (IsKeyDown(KEY_TWO)) {
-      if (show_r == 1) show_r = 0; else show_r = 1;
+    if (IsKeyPressed(KEY_S)) {
+      if (shifted) {
+        frame_skip++;
+      } else {
+        frame_skip--;
+        if (frame_skip < 0) frame_skip = 0;
+      }
     }
     if (osd_dirty) {
-      sprintf(osd, "%g,%g %g,%g",
-        mag_x, sw, a, scope_display_mag);
+      //sprintf(osd, "%g,%g %g,%g", mag_x, sw, a, scope_display_mag);
+      sprintf(osd, "%d %d", scope->frame_count, scope->buffer_pointer);
     }
-    int buffer_snap = scope->buffer_pointer;
+    int buffer_pointer = scope->buffer_pointer;
     BeginDrawing();
     ClearBackground(BLACK);
     // show a wave table
@@ -143,8 +207,7 @@ void *scope_main(void *arg) {
       DrawText(scope->wave_text, 10, 10, 20, YELLOW);
     }
     // find starting point for display
-    int start = find_starting_point(buffer_snap, screenWidth);
-    //int start = buffer_snap;
+    int start = find_start(buffer_pointer, screenWidth);
     int actual = 0;
     float x_offset = (float)SCOPE_WIDTH_IN_PIXELS / 8.0f;
     start -= (int)x_offset;
@@ -152,16 +215,11 @@ void *scope_main(void *arg) {
     rlPushMatrix();
     rlTranslatef(0.0f, y, 0.0f); // x,y,z
     rlScalef(mag_x,scope_display_mag,1.0f);
+    
       DrawLine(0, 0, (int)sw, 0, DARKGREEN);
-      if (start >= scope_len) start = 0;
+      start = start % scope_width;
       actual = start;
       for (int i = 0; i < (int)sw; i++) {
-        if (actual == 0) DrawLine(i, (int)-sh, i, (int)sh, YELLOW);
-        if (actual == buffer_snap) DrawLine(i, (int)-sh, i, (int)sh, BLUE);
-        if (actual >= (SCOPE_WIDTH_IN_SAMPLES-1)) {
-          DrawLine(i, (int)-sh, i, (int)sh, RED);
-          actual = 0;
-        }
         dot.x = (float)i;
         if (show_l) {
           dot.y = scope->buffer_left[actual] * h0 * scope_display_mag;
@@ -173,6 +231,7 @@ void *scope_main(void *arg) {
         }
         actual++;
       }
+
     rlPopMatrix();
     DrawText(scope->status_text, SCOPE_WIDTH_IN_PIXELS-250, SCOPE_HEIGHT_IN_PIXELS-20, 20, BLUE);
     DrawText(scope->voice_text, 10, SCOPE_HEIGHT_IN_PIXELS-40, 20, YELLOW);
