@@ -581,8 +581,15 @@ int wire_function(skode_t *s, int info) {
       break;
     case 'b___': if (argc == 0) { wave_dir(voice, -1); } else { wave_dir(voice, x); } break;
     case 'B___': if (argc == 0) { wave_loop(voice, -1); } else { wave_loop(voice, x); } break;
-    case 'c___': if (argc > 1) { cz_set(voice, x, arg[1]); } break;
-    case 'C___': if (argc == 1) {
+    case 'c___': if (argc == 0) {
+        cz_set(voice, 0, .5);
+      } else if (argc == 1) {
+        cz_set(voice, x, .5);
+      } else {
+        cz_set(voice, x, arg[1]);
+      }
+      break;
+    case 'C___': if (argc <= 1) {
         cmod_set(voice, x, -1);
       } else if (argc > 1) {
         cmod_set(voice, x, arg[1]);
@@ -591,7 +598,7 @@ int wire_function(skode_t *s, int info) {
     case 'D___': // need to use the data array in skode here, not w->data
       break;
     case 'f___': if (argc) freq_set(voice, arg[0]); break;
-    case 'F___': if (argc == 1) {
+    case 'F___': if (argc <= 1) {
         freq_mod_set(voice, x, -1);
       } else if (argc > 1) {
         freq_mod_set(voice, x, arg[1]);
@@ -648,7 +655,7 @@ int wire_function(skode_t *s, int info) {
       break;
     case 'N___': if (argc) { voice_midi_transpose[voice] = arg[0]; } break;
     case 'p___': if (argc) pan_set(voice, arg[0]); break;
-    case 'P___': if (argc == 1) {
+    case 'P___': if (argc <= 1) {
         pan_mod_set(voice, x, -1);
       } else if (argc > 1) {
         pan_mod_set(voice, x, arg[1]);
@@ -710,9 +717,9 @@ int wire_function(skode_t *s, int info) {
         for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(p);
       }
       break;
-    case '?___': voice_show(voice, ' ', 0); break;
+    case '?___': voice_show(voice, ' ', w->verbose); break;
     case '\\___': voice_show(voice, ' ', 1); break;
-    case '??__': voice_show_all(voice); break;
+    case '??__': voice_show_all(voice, w->verbose); break;
     case '?s__':
       {
         printf("# %s\n", skode_string(w->sk));
@@ -737,6 +744,9 @@ int wire_function(skode_t *s, int info) {
     case '/t__': case ':t__': if (argc == 0) x = (w->trace) ? 0 : 1;
       w->trace = x;
       skode_trace_set(s, x > 1);
+      break;
+    case '/v__': case ':v__': if (argc == 0) x = (w->verbose) ? 0 : 1;
+      w->verbose = x;
       break;
     case '/s__': case ':s__': if (w->output) {
         system_show();
@@ -921,6 +931,7 @@ void wire_init(wire_t *w) {
   w->output = 0;
   w->trace = 0;
   w->debug = 0;
+  w->verbose = 0;
   w->scratch[0] = '\0';
   w->events = 0;
   w->sk = NULL;

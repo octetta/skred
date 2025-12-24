@@ -52,6 +52,7 @@ typedef struct {
   int output;
   int debug;
   int trace;
+  int verbose;
   int events; // do incoming events go to the logger?
   skode_t *sk;
   int quit;
@@ -188,13 +189,18 @@ char *wire_err_str(int n);
   .state = W_PROTOCOL, \
   .last_func = FUNC_NULL, \
   .pattern = 0, \
+  .step = -1, \
   .data = NULL, \
   .data_len = 0, \
   .data_max = 0, \
   .output = 0, \
   .trace = 0, \
   .debug = 0, \
+  .verbose = 0, \
+  .scratch[0] = '\0', \
   .events = 0, \
+  .sk = NULL, \
+  .quit = 0, \
 }
               
 

@@ -67,8 +67,8 @@ int freq_mod_set(int voice, int o, float f);
 int pan_mod_set(int voice, int o, float f);
 
 char *voice_format(int v, char *out, int verbose);
-void voice_show(int v, char c, int debug);
-int voice_show_all(int voice);
+void voice_show(int v, char c, int verbose);
+int voice_show_all(int voice, int verbose);
 int voice_trigger(int voice);
 int wave_default(int voice);
 int wave_loop(int voice, int state);

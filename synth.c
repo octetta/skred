@@ -539,11 +539,11 @@ void synth(float *buffer, float *input, int num_frames, int num_channels, void *
         // reuse the one white noise source for each sample
         f = whiteish;
       } else {
-        if (voice_freq_mod_osc[n] >= 0) {
+        int mod = voice_freq_mod_osc[n];
+        if (mod >= 0 && mod != n) {
           // try to use modulators phase_inc instead of recalculating...
           // REQUIRES re-thinking how I'm scaling frequency modulators via wire...
           // REVISIT experiments to see if this still makes sense
-          int mod = voice_freq_mod_osc[n];
           float g = voice_sample[mod] * voice_freq_mod_depth[n];
           float inc = voice_phase_inc[n] + (voice_phase_inc[mod] * voice_freq_scale[n] * g);
           f = osc_next(n, inc);
@@ -670,93 +670,93 @@ char *voice_format(int v, char *out, int verbose) {
       voice_user_amp[v]);
     ptr += n;
   }
-  if (voice_midi_transpose[v]) {
+  if (verbose || voice_midi_transpose[v]) {
     n = sprintf(ptr, " N%g", voice_midi_transpose[v]);
     ptr += n;
   }
-  if (voice_link_midi_a[v] >= 0 || voice_link_midi_b[v] >= 0) {
+  if (verbose || voice_link_midi_a[v] >= 0 || voice_link_midi_b[v] >= 0) {
     n = sprintf(ptr, " G%g,%g", voice_link_midi_a[v], voice_link_midi_b[v]);
     ptr += n;
   }
-  if (voice_link_velo_a[v] >= 0 || voice_link_velo_b[v] >= 0) {
+  if (verbose || voice_link_velo_a[v] >= 0 || voice_link_velo_b[v] >= 0) {
     n = sprintf(ptr, " H%g,%g", voice_link_velo_a[v], voice_link_velo_b[v]);
     ptr += n;
   }
-  if (voice_link_trig[v] >= 0) {
+  if (verbose || voice_link_trig[v] >= 0) {
     n = sprintf(ptr, " L%g", voice_link_trig[v]);
     ptr += n;
   }
-  if (voice_direction[v]) {
+  if (verbose || voice_direction[v]) {
     n = sprintf(ptr, " b%d", voice_direction[v]);
     ptr += n;
   }
-  if (voice_loop_enabled[v]) {
+  if (verbose || voice_loop_enabled[v]) {
     n = sprintf(ptr, " B%d",
       voice_loop_enabled[v]);
     ptr += n;
   }
-  if (voice_pan[v]) {
+  if (verbose || voice_pan[v]) {
     n = sprintf(ptr, " p%g", voice_pan[v]);
     ptr += n;
   }
-  if (voice_note[v]) {
+  if (verbose || voice_note[v]) {
     n = sprintf(ptr, " n%g", voice_note[v]);
     ptr += n;
   }
-  if (voice_filter_mode[v]) {
+  if (verbose || voice_filter_mode[v]) {
     n = sprintf(ptr, " J%d K%g Q%g",
       voice_filter_mode[v],
       voice_filter_freq[v],
       voice_filter_res[v]);
     ptr += n;
   }
-  if (voice_cz_mode[v]) {
+  if (verbose || voice_cz_mode[v]) {
     n = sprintf(ptr, " c%d,%g", voice_cz_mode[v], voice_cz_distortion[v]);
     ptr += n;
   }
-  if (voice_quantize[v]) {
+  if (verbose || voice_quantize[v]) {
     n = sprintf(ptr, " q%d", voice_quantize[v]);
     ptr += n;
   }
-  if (voice_sample_hold_max[v]) {
+  if (verbose || voice_sample_hold_max[v]) {
     n = sprintf(ptr, " h%d", voice_sample_hold_max[v]);
     ptr += n;
   }
-  if (voice_amp_mod_osc[v] >= 0 && voice_amp_mod_depth[v] > 0) {
+  if (verbose || (voice_amp_mod_osc[v] >= 0 && voice_amp_mod_depth[v] > 0)) {
     n = sprintf(ptr, " A%d,%g", voice_amp_mod_osc[v], voice_amp_mod_depth[v]);
     ptr += n;
   }
-  if (voice_cz_mod_osc[v] >= 0 && voice_cz_mod_depth[v] > 0) {
+  if (verbose || (voice_cz_mod_osc[v] >= 0 && voice_cz_mod_depth[v] > 0)) {
     n = sprintf(ptr, " C%d,%g", voice_cz_mod_osc[v], voice_cz_mod_depth[v]);
     ptr += n;
   }
-  if (voice_freq_mod_osc[v] >= 0 && voice_freq_mod_depth[v] > 0) {
+  if (verbose || (voice_freq_mod_osc[v] >= 0 && voice_freq_mod_depth[v] > 0)) {
     n = sprintf(ptr, " F%d,%g", voice_freq_mod_osc[v], voice_freq_mod_depth[v]);
     ptr += n;
   }
-  if (voice_pan_mod_osc[v] >= 0 && voice_pan_mod_depth[v] > 0) {
+  if (verbose || (voice_pan_mod_osc[v] >= 0 && voice_pan_mod_depth[v] > 0)) {
     n = sprintf(ptr, " P%d,%g", voice_pan_mod_osc[v], voice_pan_mod_depth[v]);
     ptr += n;
   }
-  if (voice_disconnect[v]) {
+  if (verbose || voice_disconnect[v]) {
     n = sprintf(ptr, " m%d", voice_disconnect[v]);
     ptr += n;
   }
-  if (voice_record[v]) {
+  if (verbose || voice_record[v]) {
     n = sprintf(ptr, " r%d", voice_record[v]);
     ptr += n;
   }
-  if (voice_smoother_enable[v]) {
+  if (verbose || voice_smoother_enable[v]) {
     if (voice_smoother_smoothing[v] != SMOOTH_DEFAULT) {
       n = sprintf(ptr, " s%g", voice_smoother_smoothing[v]);
       ptr += n;
     }
   }
-  if (voice_glissando_enable[v]) {
+  if (verbose || voice_glissando_enable[v]) {
     n = sprintf(ptr, " g%g", voice_glissando_speed[v]);
     ptr += n;
   }
-  if (!envelope_is_flat(v)) {
+  if (verbose || !envelope_is_flat(v)) {
     n = sprintf(ptr, " t%g,%g,%g,%g",
       voice_amp_envelope[v].a,
       voice_amp_envelope[v].d,
@@ -766,6 +766,10 @@ char *voice_format(int v, char *out, int verbose) {
   }
   if (verbose) {
     n = sprintf(ptr, "\n#");
+    ptr += n;
+  }
+  if (verbose) {
+    n = sprintf(ptr, " freq_scale:%g", voice_freq_scale[v]);
     ptr += n;
   }
   if (verbose) {
@@ -798,20 +802,20 @@ char *voice_format(int v, char *out, int verbose) {
 }
 
 
-void voice_show(int v, char c, int debug) {
+void voice_show(int v, char c, int verbose) {
   char s[1024];
   char e[8] = "";
   if (c != ' ') sprintf(e, " # *");
-  voice_format(v, s, debug);
+  voice_format(v, s, verbose);
   if (strlen(s)) printf("; %s%s\n", s, e);
 }
 
-int voice_show_all(int voice) {
+int voice_show_all(int voice, int verbose) {
   for (int i=0; i<VOICE_MAX; i++) {
     if (voice_amp[i] == 0) continue;
     char t = ' ';
     if (i == voice) t = '*';
-    voice_show(i, t, 0);
+    voice_show(i, t, verbose);
   }
   return 0;
 }
@@ -896,7 +900,7 @@ int freq_mod_set(int voice, int o, float f) {
   if (voice_invalid(voice) || voice_invalid(o)) return SYNTH_INVALID_VOICE;
   voice_freq_mod_osc[voice] = o;
   voice_freq_mod_depth[voice] = f;
-  voice_freq_scale[voice] = voice_table_size[voice] / voice_table_size[o];
+  voice_freq_scale[voice] = (float)voice_table_size[voice] / (float)voice_table_size[o];
   return 0;
 }
 
