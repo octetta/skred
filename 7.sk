@@ -1,5 +1,5 @@
-v0 w0 f110 a4 F1,100
-v1 w0 f110 a50 F2,10 m1
+v0 w0 f110 a4 F1,1
+v1 w0 f110 a50 F2,1 m1
 v2 w0 f1 a1 m1
-# v3 m1 f1 a10
-# v0 P3,1
+v3 m1 f1 a1
+v0 P3,1

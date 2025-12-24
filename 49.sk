@@ -19,7 +19,9 @@ v20 w201 f440 a30 b1 B1 p-1 c0,0 r1 # put 201 into v20 pan full left
 :w500,202,1 # load nugget01 right channel to slot 202
 v21 w202 f440 a30 b1 B1 p1 c0,0 r1 # put 202 to v21 pan full right
 
+Z0
 M180 # clock set to 180 "units" is it BPM? not sure
+Z0
 
 y0 %4 # go to pattern 0 and step every 2nd clock
 {v0T} x0 # step 0 triggers bass
