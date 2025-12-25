@@ -32,7 +32,6 @@ float scope_display_mag = 1.0f;
 
 int find_start(int buffer_pointer, int sw) {
   int j = buffer_pointer - sw;
-  //return j;
   float t0 = (scope->buffer_left[j] + scope->buffer_right[j]) / 2.0f;
   int i = j-1;
   int c = 1;
@@ -96,7 +95,6 @@ void *scope_main(void *arg) {
     if (position_in.x < 0) position_in.x = 0;
     if (position_in.y < 0) position_in.y = 0;
     if (scope_display_mag <= 0) scope_display_mag = 1;
-    // if (mag_x <= 0) mag_x = 1;
     fclose(file);
   } else {
     //printf("# %s read fopen fail\n", CONFIG_FILE);
@@ -109,7 +107,7 @@ void *scope_main(void *arg) {
   SetWindowPosition((int)position_in.x, (int)position_in.y);
   //
   Vector2 dot = { (float)screenWidth/2, (float)screenHeight/2 };
-  SetTargetFPS(0);
+  SetTargetFPS(60); // Set reasonable target FPS instead of unlimited
   float sh = (float)screenHeight;
   float h0 = (float)screenHeight / 2.0f;
   char osd[1024] = "?";
@@ -122,50 +120,22 @@ void *scope_main(void *arg) {
   Color green0 = {0, 255, 0, 128};
   Color green1 = {0, 128, 0, 128};
   int osd_dirty = 0;
-  double scope_buffer_change_check = 0;
-  int frame_skip = 200;
-  int frame_skip_count = 0;
+  int last_frame_count = -1;
+  int frames_without_update = 0;
+  const int STALE_THRESHOLD = 180; // 3 seconds at 60fps - assume synth died
+  
   while (scope_running && !WindowShouldClose()) {
-    frame_skip_count++;
-    if (frame_skip_count > frame_skip) {
-      frame_skip_count = 0;
-    } else {
-      sched_yield();
-      continue;
-    }
-    //
-    volatile int *futex_word = (volatile int *)&scope->frame_count;
-    int expected_count = __atomic_load_n(futex_word, __ATOMIC_SEQ_CST);
-    //int result = futex_wait(futex_word, expected_count);
-    int result = futex_wait_timeout(futex_word, 0, 1500);
-    if (result == -1) {
-      // probably errno == EWOULDBLOCK which is okay
-      if (errno != EWOULDBLOCK) sprintf(osd, "result is -1, errno = %d", errno);
-    }
-    // see if anything has changed...
-    double change_check = 0;
-    for (int i = 0; i < SCOPE_WIDTH_IN_SAMPLES; i++) {
-      change_check += scope->buffer_left[i];
-      change_check += scope->buffer_right[i];
-    }
-    if (change_check == scope_buffer_change_check) {
-      sprintf(osd, "no change, no update");
-      BeginDrawing();
-      DrawText(osd, 10, SCOPE_HEIGHT_IN_PIXELS-20, 20, RED);
-      EndDrawing();
-      scope_buffer_change_check = change_check;
-      sched_yield();
-      continue;
-    }
-    //
+    // Always process input first to keep window responsive
     if (mag_x <= 0) mag_x = MAG_X_INC;
     sw = (float)screenWidth / mag_x;
     float mw = (float)SCOPE_WIDTH_IN_SAMPLES / 2.0f;
     if (sw >= mw) sw = mw;
-    if (IsKeyPressed(KEY_ONE)) if (show_l == 1) show_l = 0; else show_l = 1;
-    if (IsKeyPressed(KEY_TWO)) if (show_r == 1) show_r = 0; else show_r = 1;
+    
+    if (IsKeyPressed(KEY_ONE)) show_l = !show_l;
+    if (IsKeyPressed(KEY_TWO)) show_r = !show_r;
     if (IsKeyPressed(KEY_RIGHT)) mag_x += (float)MAG_X_INC;
     if (IsKeyPressed(KEY_LEFT)) mag_x -= (float)MAG_X_INC;
+    
     int shifted = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
     if (IsKeyPressed(KEY_A)) {
       if (shifted) {
@@ -176,22 +146,43 @@ void *scope_main(void *arg) {
         a += 0.1f;
       }
     }
-    if (IsKeyPressed(KEY_S)) {
-      if (shifted) {
-        frame_skip++;
-      } else {
-        frame_skip--;
-        if (frame_skip < 0) frame_skip = 0;
-      }
+    
+    // Check for new frame (non-blocking)
+    volatile uint32_t *futex_word = (volatile uint32_t *)&scope->frame_count;
+    int current_count = __atomic_load_n(futex_word, __ATOMIC_ACQUIRE);
+    
+    // Detect synth restart: if we've been stale a while, reset tracking
+    if (frames_without_update > STALE_THRESHOLD) {
+      last_frame_count = current_count - 1; // Force next check to see it as new
+      frames_without_update = 0;
+      sprintf(osd, "synth reconnected (count=%d)", current_count);
     }
+    
+    // Check if this is a new frame
+    bool has_new_data = (current_count != last_frame_count);
+    
+    if (has_new_data) {
+      last_frame_count = current_count;
+      frames_without_update = 0;
+      sprintf(osd, "frame %d", current_count);
+    } else {
+      frames_without_update++;
+      if (frames_without_update == 60) {
+        sprintf(osd, "waiting for synth...");
+      }
+      // Don't block on futex here - just poll and let raylib's FPS limiter handle timing
+    }
+    
     if (osd_dirty) {
-      //sprintf(osd, "%g,%g %g,%g", mag_x, sw, a, scope_display_mag);
       sprintf(osd, "%d %d", scope->frame_count, scope->buffer_pointer);
     }
+    
     int buffer_pointer = scope->buffer_pointer;
+    
     BeginDrawing();
     ClearBackground(BLACK);
-    // show a wave table
+    
+    // Show wave table
     if (scope->wave_len) {
       for (int i = 0; i < SCOPE_WAVE_WIDTH; i++) {
         int mh = SCOPE_WAVE_HEIGHT / 2;
@@ -206,48 +197,60 @@ void *scope_main(void *arg) {
       }
       DrawText(scope->wave_text, 10, 10, 20, YELLOW);
     }
-    // find starting point for display
+    
+    // Find starting point for display
     int start = find_start(buffer_pointer, screenWidth);
-    int actual = 0;
     float x_offset = (float)SCOPE_WIDTH_IN_PIXELS / 8.0f;
     start -= (int)x_offset;
-    DrawText(osd, 10, SCOPE_HEIGHT_IN_PIXELS-20, 20, GREEN);
-    rlPushMatrix();
-    rlTranslatef(0.0f, y, 0.0f); // x,y,z
-    rlScalef(mag_x,scope_display_mag,1.0f);
     
-      DrawLine(0, 0, (int)sw, 0, DARKGREEN);
-      start = start % scope_width;
-      actual = start;
+    DrawText(osd, 10, SCOPE_HEIGHT_IN_PIXELS-20, 20, GREEN);
+    
+    rlPushMatrix();
+    rlTranslatef(0.0f, y, 0.0f);
+    rlScalef(mag_x, scope_display_mag, 1.0f);
+    
+    DrawLine(0, 0, (int)sw, 0, DARKGREEN);
+    
+    start = start % scope_width;
+    int actual = start;
+    
+    // Draw dots as small circles - batch by channel for better performance
+    if (show_l) {
       for (int i = 0; i < (int)sw; i++) {
         dot.x = (float)i;
-        if (show_l) {
-          dot.y = scope->buffer_left[actual] * h0 * scope_display_mag;
-          DrawCircleV(dot, 1, color_right);
-        }
-        if (show_r) {
-          dot.y = scope->buffer_right[actual] * h0 * scope_display_mag;
-          DrawCircleV(dot, 1, color_left);
-        }
-        actual++;
+        dot.y = scope->buffer_left[actual] * h0;
+        DrawCircleV(dot, 1, color_right);
+        actual = (actual + 1) % scope_width;
       }
-
+    }
+    
+    actual = start;
+    if (show_r) {
+      for (int i = 0; i < (int)sw; i++) {
+        dot.x = (float)i;
+        dot.y = scope->buffer_right[actual] * h0;
+        DrawCircleV(dot, 1, color_left);
+        actual = (actual + 1) % scope_width;
+      }
+    }
+    
     rlPopMatrix();
+    
     DrawText(scope->status_text, SCOPE_WIDTH_IN_PIXELS-250, SCOPE_HEIGHT_IN_PIXELS-20, 20, BLUE);
     DrawText(scope->voice_text, 10, SCOPE_HEIGHT_IN_PIXELS-40, 20, YELLOW);
     DrawText(scope->debug_text, 10, SCOPE_HEIGHT_IN_PIXELS-60, 20, RED);
+    
     EndDrawing();
   }
-  //
+  
+  // Save config
   file = fopen(CONFIG_FILE, "w");
   if (file != NULL) {
     Vector2 position_out = GetWindowPosition();
     fprintf(file, "%g %g %g %g", position_out.x, position_out.y, scope_display_mag, mag_x);
     fclose(file);
-  } else {
-    //printf("# %s write fopen fail\n", CONFIG_FILE);
   }
-  //
+  
   CloseWindow();
   scope_running = 0;
   sleep(5);
