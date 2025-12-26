@@ -122,6 +122,7 @@ clean :
 	rm -f *.o
 	rm -f $(EXE)
 	rm -rf build
+	cd raylib/src && make clean
 
 test-windows :
 	x86_64-w64-mingw32-gcc test-windows-audio.c -o tone.exe
