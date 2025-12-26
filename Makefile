@@ -35,6 +35,9 @@ util.o : util.c
 skred-mem.o : skred-mem.c
 	$(CC) $(COPTS) -c $<
 
+futex-compat.o : futex-compat.c futex-compat.h
+	$(CC) $(COPTS) -c $<
+
 build/linux/libraylib.a :
 	mkdir -p build/linux
 	cd raylib/src && make clean && \
@@ -90,16 +93,6 @@ OBJS = \
   seq.o \
   wire.o skode.o \
   udp.o \
-  miniaudio.o \
-	bestline.o \
-	skred-mem.o \
-	util.o \
-  #
-
-SOBJS = \
-  miniwav.o \
-  amysamples.o \
-  synth.o \
   miniaudio.o \
 	bestline.o \
 	skred-mem.o \

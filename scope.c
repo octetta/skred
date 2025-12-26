@@ -1,3 +1,4 @@
+#include "raylib.h"
 #include <errno.h>
 #include <math.h>
 #include <pthread.h>
@@ -8,13 +9,12 @@
 #include <unistd.h>
 
 #include "scope-shared.h"
-#include "skred-mem.h"
 
 static scope_buffer_t safety;
 static scope_buffer_t *scope = &safety;
 
-#include "raylib.h"
 #include "rlgl.h"
+#include "skred-mem.h"
 
 enum {
   SCOPE_TRIGGER_BOTH,
@@ -57,8 +57,6 @@ int find_start(int buffer_pointer, int sw) {
 #define CONFIG_FILE ".skred_window"
 
 pthread_t scope_thread_handle;
-
-#include "futex-compat.h"
 
 void *scope_main(void *arg) {
   pthread_setname_np(pthread_self(), "skred-o-scope-2");
@@ -132,7 +130,7 @@ void *scope_main(void *arg) {
     
     // Check for new frame (non-blocking)
     volatile uint32_t *futex_word = (volatile uint32_t *)&scope->frame_count;
-    int current_count = __atomic_load_n(futex_word, __ATOMIC_ACQUIRE);
+    uint32_t current_count = __atomic_load_n(futex_word, __ATOMIC_ACQUIRE);
     
     // Detect synth restart: if we've been stale a while, reset tracking
     if (frames_without_update > STALE_THRESHOLD) {
@@ -157,7 +155,6 @@ void *scope_main(void *arg) {
       } else {
         osd_color = 0;
       }
-      // Don't block on futex here - just poll and let raylib's FPS limiter handle timing
     }
     
     int buffer_pointer = scope->buffer_pointer;
@@ -273,12 +270,12 @@ int main(int argc, char *argv[]) {
     exit(2);
   }
 #endif
-  skred_mem_t xyz;
-  if (skred_mem_open(&xyz, "skred-o-scope.001", sizeof(scope_buffer_t)) != 0) {
+  skred_mem_t *xyz = skred_mem_new();
+  if (skred_mem_open(xyz, "skred-o-scope.001", sizeof(scope_buffer_t)) != 0) {
     printf("# fail\n");
     exit(1);
   }
-  scope = (scope_buffer_t *)xyz.addr;
+  scope = (scope_buffer_t *)skred_mem_addr(xyz);
   if (scope == NULL) {
     printf("# can't attach to shared scope buffer\n");
     exit(3);

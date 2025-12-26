@@ -30,7 +30,6 @@
 #endif
 
 #include "skred.h"
-
 #include "skred-mem.h"
 #include "scope-shared.h"
 
@@ -105,8 +104,6 @@ void synth_callback_free(void) {
   rec_max = 0;
 }
 
-#include "futex-compat.h"
-
 void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
   static int first = 1;
   static int num_channels = 1;
@@ -144,11 +141,12 @@ void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint
   }
 #ifdef _WIN32
   //
+#endif
+#if 0
 #else
   // scope2
   volatile uint32_t *futex_word = (volatile uint32_t *)&scope->frame_count;
   __atomic_add_fetch(futex_word, frame_count, __ATOMIC_SEQ_CST);
-  futex_wake(futex_word, 1);
 #endif
   //
 }
@@ -286,15 +284,14 @@ int main(int argc, char *argv[]) {
     sprintf(scope->status_text, "n/a");
   }
 
-  //float bogus[44100 * 2];
-  skred_mem_t scope_shared;
+  skred_mem_t *scope_shared = skred_mem_new();
 #define SKRED_SCOPE_NAME "skred-o-scope.001"
-  if (skred_mem_create(&scope_shared, SKRED_SCOPE_NAME, sizeof(scope_buffer_t)) != 0) {
+  if (skred_mem_create(scope_shared, SKRED_SCOPE_NAME, sizeof(scope_buffer_t)) != 0) {
     printf("# did not create scope shared memory %s\n", SKRED_SCOPE_NAME);
     scope_enable = 0;
   } else {
     printf("# scope buffer ready\n");
-    scope = (scope_buffer_t *)scope_shared.addr;
+    scope = (scope_buffer_t *)skred_mem_addr(scope_shared);
     scope_enable = 1;
     sprintf(scope->status_text, "n/a");
   }

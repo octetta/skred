@@ -1,8 +1,28 @@
-#include "skred-mem.h"
-
 #ifdef _WIN32
+
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#define NORECT
+
+#include <windows.h>
+
 #include <stdio.h>
 #include <string.h>
+
+typedef struct skred_mem_s {
+    void *addr;
+    size_t size;
+    HANDLE hMap;
+} skred_mem_t;
+
+#include <stdlib.h>
+
+skred_mem_t *skred_mem_new(void) {
+  skred_mem_t *s = (skred_mem_t *)malloc(sizeof(skred_mem_t));
+  return s;
+}
+
+void *skred_mem_addr(skred_mem_t *s) { return s->addr; }
 
 int skred_mem_create(skred_mem_t *sm, const char *name, size_t size) {
     // Use Global namespace for cross-session sharing
@@ -77,11 +97,28 @@ void skred_mem_close(skred_mem_t *sm) {
 }
 
 #else
+
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
+
+typedef struct skred_mem_s {
+    void *addr;
+    size_t size;
+    int fd;
+    char name[64];
+} skred_mem_t;
+
+#include <stdlib.h>
+
+skred_mem_t *skred_mem_new(void) {
+  skred_mem_t *s = (skred_mem_t *)malloc(sizeof(skred_mem_t));
+  return s;
+}
+
+void *skred_mem_addr(skred_mem_t *s) { return s->addr; }
 
 int skred_mem_create(skred_mem_t *sm, const char *name, size_t size) {
     strncpy(sm->name, name, sizeof(sm->name)-1);

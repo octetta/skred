@@ -1,0 +1,2 @@
+#!/bin/bash
+WINEPREFIX=~/.wine64 wine 'scope.exe'
