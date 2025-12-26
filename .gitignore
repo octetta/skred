@@ -1,3 +1,5 @@
+sc
+build
 e
 scope2
 skred-O3
@@ -30,6 +32,7 @@ itest.tcl
 .idea
 tmp
 *.o
+*.a
 sok1
 sok2
 skred

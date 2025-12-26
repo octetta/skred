@@ -29,17 +29,20 @@ COPTS = \
 NOPTS = \
   -g
 
-RLINC = -I raylib-quickstart-main/build/external/raylib-master/src
-RLLIB = -L raylib-quickstart-main/bin/Debug
-
 util.o : util.c
 	$(CC) $(COPTS) -c $<
 
 skred-mem.o : skred-mem.c
 	$(CC) $(COPTS) -c $<
 
-scope : scope.c skred-mem.o # raylib-quickstart-main/Makefile
-	$(CC) -D_GNU_SOURCE -DUSE_RAYLIB $(RLINC) $(RLLIB) $^ -o $@ -lraylib -lm
+build/linux/libraylib.a :
+	mkdir -p build/linux
+	cd raylib/src && make clean && \
+  make PLATFORM=PLATFORM_DESKTOP RAYLIB_LIBTYPE=STATIC && \
+  cp libraylib.a ../../build/linux/
+
+scope : scope.c skred-mem.o build/linux/libraylib.a
+	$(CC) -D_GNU_SOURCE -DUSE_RAYLIB -L build/linux -I raylib/src $^ -o $@ -lraylib -lm
 
 wav2data : wav2data.c miniwav.o
 	$(CC) -D_GNU_SOURCE $^ -o $@
@@ -118,6 +121,7 @@ check : skred
 clean :
 	rm -f *.o
 	rm -f $(EXE)
+	rm -rf build
 
 test-windows :
 	x86_64-w64-mingw32-gcc test-windows-audio.c -o tone.exe
