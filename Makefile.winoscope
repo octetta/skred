@@ -1,0 +1,52 @@
+# Makefile.win - Windows cross-compile from Linux
+CC = x86_64-w64-mingw32-gcc
+AR = x86_64-w64-mingw32-ar
+TARGET = skred-o-scope.exe
+
+# Raylib paths
+RAYLIB_SRC = raylib-quickstart-main/raylib/src
+RAYLIB_LIB = lib/windows
+
+CFLAGS = -O2 -Wall -Wno-unused-result -I$(RAYLIB_SRC) -DPLATFORM_DESKTOP -D_WIN32
+LDFLAGS = -L$(RAYLIB_LIB) -static
+LDLIBS = -lraylib -lopengl32 -lgdi32 -lwinmm -lsynchronization
+
+SOURCES = src/scope.c src/skred-mem.c
+OBJECTS = $(SOURCES:.c=.win.o)
+
+all: raylib $(TARGET)
+
+raylib:
+	@if [ ! -f $(RAYLIB_LIB)/libraylib.a ]; then \
+		echo "Building raylib for Windows..."; \
+		mkdir -p $(RAYLIB_LIB); \
+		$(MAKE) -C $(RAYLIB_SRC) \
+			PLATFORM=PLATFORM_DESKTOP \
+			CC=$(CC) \
+			AR=$(AR) \
+			OS=Windows_NT \
+			RAYLIB_LIBTYPE=STATIC; \
+		cp $(RAYLIB_SRC)/libraylib.a $(RAYLIB_LIB)/; \
+		$(MAKE) -C $(RAYLIB_SRC) clean; \
+		echo "Raylib built and cached in $(RAYLIB_LIB)"; \
+	else \
+		echo "Using cached raylib from $(RAYLIB_LIB)"; \
+	fi
+
+$(TARGET): $(OBJECTS)
+	$(CC) $(OBJECTS) -o $(TARGET) $(LDFLAGS) $(LDLIBS)
+
+src/%.win.o: src/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+clean:
+	rm -f $(OBJECTS) $(TARGET)
+
+clean-raylib:
+	rm -f $(RAYLIB_LIB)/libraylib.a
+
+clean-all: clean clean-raylib
+
+rebuild: clean-all all
+
+.PHONY: all raylib clean clean-raylib clean-all rebuild

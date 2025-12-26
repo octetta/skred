@@ -25,22 +25,26 @@ enum {
 int scope_trigger_mode = SCOPE_TRIGGER_RISING;
 
 int scope_running = 0;
-int scope_len = SCOPE_WIDTH_IN_SAMPLES;
+int scope_width = SCOPE_WIDTH_IN_SAMPLES;
 float scope_display_pointer = 0.0f;
 float scope_display_inc = 1.0f;
 float scope_display_mag = 1.0f;
 
-int find_starting_point(int buffer_snap, int sw) {
-  int j = buffer_snap - sw;
+int find_start(int buffer_pointer, int sw) {
+  int j = buffer_pointer - sw;
   float t0 = (scope->buffer_left[j] + scope->buffer_right[j]) / 2.0f;
   int i = j-1;
   int c = 1;
-  while (c < SCOPE_WIDTH_IN_SAMPLES) {
-    if (i < 0) i = SCOPE_WIDTH_IN_SAMPLES-1;
+  int cc = 0;
+  while (c < sw) {
+    if (i < 0) i = sw-1;
     float t1 = (scope->buffer_left[i] + scope->buffer_right[i]) / 2.0f;
     if (t0 == 0.0 && t1 == 0.0) {
       // zero
-    } else if (t0 < 0 && t1 > 0) break;
+    } else if (t0 < 0 && t1 > 0) {
+      cc++;
+      if (cc > 1) break;
+    }
     i--;
     c++;
     t0 = t1;
@@ -54,8 +58,10 @@ int find_starting_point(int buffer_snap, int sw) {
 
 pthread_t scope_thread_handle;
 
+#include "futex-compat.h"
+
 void *scope_main(void *arg) {
-  pthread_setname_np(pthread_self(), "skred-o-scope");
+  pthread_setname_np(pthread_self(), "skred-o-scope-2");
   //
   Vector2 position_in;
   FILE *file = fopen(CONFIG_FILE, "r");
@@ -63,8 +69,6 @@ void *scope_main(void *arg) {
   const int screenHeight = SCOPE_HEIGHT_IN_PIXELS;
   float mag_x = 1.0f;
   float sw = (float)screenWidth;
-  int fps = 10;
-  int last_fps = fps;
   if (file != NULL) {
     /*
      file contents
@@ -74,7 +78,6 @@ void *scope_main(void *arg) {
     if (position_in.x < 0) position_in.x = 0;
     if (position_in.y < 0) position_in.y = 0;
     if (scope_display_mag <= 0) scope_display_mag = 1;
-    // if (mag_x <= 0) mag_x = 1;
     fclose(file);
   } else {
     //printf("# %s read fopen fail\n", CONFIG_FILE);
@@ -82,16 +85,16 @@ void *scope_main(void *arg) {
   //
   SetConfigFlags(FLAG_WINDOW_HIGHDPI);
   SetTraceLogLevel(LOG_NONE);
-  InitWindow(screenWidth, screenHeight, "skred-o-scope");
+  InitWindow(screenWidth, screenHeight, "skred-o-scope-2");
   //
   SetWindowPosition((int)position_in.x, (int)position_in.y);
   //
   Vector2 dot = { (float)screenWidth/2, (float)screenHeight/2 };
-  SetTargetFPS(fps);
+  SetTargetFPS(60); // Set reasonable target FPS instead of unlimited
   float sh = (float)screenHeight;
   float h0 = (float)screenHeight / 2.0f;
   char osd[1024] = "?";
-  int osd_dirty = 1;
+  int osd_color = 0;
   float y = h0;
   float a = 1.0f;
   int show_l = 1;
@@ -100,27 +103,23 @@ void *scope_main(void *arg) {
   Color color_right = {255, 255, 0, 128};
   Color green0 = {0, 255, 0, 128};
   Color green1 = {0, 128, 0, 128};
+  int last_frame_count = -1;
+  int frames_without_update = 0;
+  const int STALE_THRESHOLD = 180; // 3 seconds at 60fps - assume synth died
+  
   while (scope_running && !WindowShouldClose()) {
+    // Always process input first to keep window responsive
     if (mag_x <= 0) mag_x = MAG_X_INC;
     sw = (float)screenWidth / mag_x;
     float mw = (float)SCOPE_WIDTH_IN_SAMPLES / 2.0f;
     if (sw >= mw) sw = mw;
+    
+    if (IsKeyPressed(KEY_ONE)) show_l = !show_l;
+    if (IsKeyPressed(KEY_TWO)) show_r = !show_r;
+    if (IsKeyPressed(KEY_RIGHT)) mag_x += (float)MAG_X_INC;
+    if (IsKeyPressed(KEY_LEFT)) mag_x -= (float)MAG_X_INC;
+    
     int shifted = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
-    if (IsKeyPressed(KEY_ZERO)) fps--;
-    if (IsKeyPressed(KEY_NINE)) fps++;
-    if (fps <= 0) fps = 1;
-    if (fps > 60) fps = 60;
-    if (fps != last_fps) {
-      osd_dirty++;
-      SetTargetFPS(fps);
-      last_fps = fps;
-    }
-    if (IsKeyDown(KEY_ONE)) {
-      if (show_l == 1) show_l = 0; else show_l = 1;
-    }
-    if (IsKeyDown(KEY_TWO)) {
-      if (show_r == 1) show_r = 0; else show_r = 1;
-    }
     if (IsKeyPressed(KEY_A)) {
       if (shifted) {
         scope_display_mag -= 0.1f;
@@ -129,32 +128,44 @@ void *scope_main(void *arg) {
         scope_display_mag += 0.1f;
         a += 0.1f;
       }
-      osd_dirty++;
     }
-    if (IsKeyPressed(KEY_RIGHT)) {
-      mag_x += (float)MAG_X_INC;
-      osd_dirty++;
+    
+    // Check for new frame (non-blocking)
+    volatile uint32_t *futex_word = (volatile uint32_t *)&scope->frame_count;
+    int current_count = __atomic_load_n(futex_word, __ATOMIC_ACQUIRE);
+    
+    // Detect synth restart: if we've been stale a while, reset tracking
+    if (frames_without_update > STALE_THRESHOLD) {
+      last_frame_count = current_count - 1; // Force next check to see it as new
+      frames_without_update = 0;
+      sprintf(osd, "synth reconnected (count=%d)", current_count);
+      osd_color = 2;
     }
-    if (IsKeyPressed(KEY_LEFT)) {
-      mag_x -= (float)MAG_X_INC;
-      osd_dirty++;
+    
+    // Check if this is a new frame
+    bool has_new_data = (current_count != last_frame_count);
+    
+    if (has_new_data) {
+      last_frame_count = current_count;
+      frames_without_update = 0;
+      sprintf(osd, "frame %d", current_count);
+    } else {
+      frames_without_update++;
+      if (frames_without_update == 60) {
+        sprintf(osd, "waiting for synth...");
+        osd_color = 1;
+      } else {
+        osd_color = 0;
+      }
+      // Don't block on futex here - just poll and let raylib's FPS limiter handle timing
     }
-    if (IsKeyPressed(KEY_UP)) {
-      y += 1.0f;
-      osd_dirty++;
-    }
-    if (IsKeyPressed(KEY_DOWN)) {
-      y -= 1.0f;
-      osd_dirty++;
-    }
-    if (osd_dirty) {
-      sprintf(osd, "%g,%g %g,%g %d",
-        mag_x, sw, a, scope_display_mag, fps);
-    }
-    int buffer_snap = scope->buffer_pointer;
+    
+    int buffer_pointer = scope->buffer_pointer;
+    
     BeginDrawing();
     ClearBackground(BLACK);
-    // show a wave table
+    
+    // Show wave table
     if (scope->wave_len) {
       for (int i = 0; i < SCOPE_WAVE_WIDTH; i++) {
         int mh = SCOPE_WAVE_HEIGHT / 2;
@@ -169,52 +180,71 @@ void *scope_main(void *arg) {
       }
       DrawText(scope->wave_text, 10, 10, 20, YELLOW);
     }
-    // find starting point for display
-    int start = find_starting_point(buffer_snap, screenWidth);
-    int actual = 0;
+    
+    // Find starting point for display
+    int start = find_start(buffer_pointer, screenWidth);
     float x_offset = (float)SCOPE_WIDTH_IN_PIXELS / 8.0f;
     start -= (int)x_offset;
-    DrawText(osd, 10, SCOPE_HEIGHT_IN_PIXELS-20, 20, GREEN);
+    
+    switch (osd_color) {
+      case 2:
+        DrawText(osd, 10, SCOPE_HEIGHT_IN_PIXELS-20, 20, BLUE);
+        break;
+      case 1:
+        DrawText(osd, 10, SCOPE_HEIGHT_IN_PIXELS-20, 20, RED);
+        break;
+      case 0:
+      default:
+        DrawText(osd, 10, SCOPE_HEIGHT_IN_PIXELS-20, 20, GREEN);
+        break;
+    }
+    
     rlPushMatrix();
-    rlTranslatef(0.0f, y, 0.0f); // x,y,z
-    rlScalef(mag_x,scope_display_mag,1.0f);
-      DrawLine(0, 0, (int)sw, 0, DARKGREEN);
-      if (start >= scope_len) start = 0;
-      actual = start;
+    rlTranslatef(0.0f, y, 0.0f);
+    rlScalef(mag_x, scope_display_mag, 1.0f);
+    
+    DrawLine(0, 0, (int)sw, 0, DARKGREEN);
+    
+    start = start % scope_width;
+    int actual = start;
+    
+    // Draw dots as small circles - batch by channel for better performance
+    if (show_l) {
       for (int i = 0; i < (int)sw; i++) {
-        if (actual == 0) DrawLine(i, (int)-sh, i, (int)sh, YELLOW);
-        if (actual == buffer_snap) DrawLine(i, (int)-sh, i, (int)sh, BLUE);
-        if (actual >= (SCOPE_WIDTH_IN_SAMPLES-1)) {
-          DrawLine(i, (int)-sh, i, (int)sh, RED);
-          actual = 0;
-        }
         dot.x = (float)i;
-        if (show_l) {
-          dot.y = scope->buffer_left[actual] * h0 * scope_display_mag;
-          DrawCircleV(dot, 1, color_right);
-        }
-        if (show_r) {
-          dot.y = scope->buffer_right[actual] * h0 * scope_display_mag;
-          DrawCircleV(dot, 1, color_left);
-        }
-        actual++;
+        dot.y = scope->buffer_left[actual] * h0;
+        DrawCircleV(dot, 1, color_right);
+        actual = (actual + 1) % scope_width;
       }
+    }
+    
+    actual = start;
+    if (show_r) {
+      for (int i = 0; i < (int)sw; i++) {
+        dot.x = (float)i;
+        dot.y = scope->buffer_right[actual] * h0;
+        DrawCircleV(dot, 1, color_left);
+        actual = (actual + 1) % scope_width;
+      }
+    }
+    
     rlPopMatrix();
+    
     DrawText(scope->status_text, SCOPE_WIDTH_IN_PIXELS-250, SCOPE_HEIGHT_IN_PIXELS-20, 20, BLUE);
     DrawText(scope->voice_text, 10, SCOPE_HEIGHT_IN_PIXELS-40, 20, YELLOW);
     DrawText(scope->debug_text, 10, SCOPE_HEIGHT_IN_PIXELS-60, 20, RED);
+    
     EndDrawing();
   }
-  //
+  
+  // Save config
   file = fopen(CONFIG_FILE, "w");
   if (file != NULL) {
     Vector2 position_out = GetWindowPosition();
     fprintf(file, "%g %g %g %g", position_out.x, position_out.y, scope_display_mag, mag_x);
     fclose(file);
-  } else {
-    //printf("# %s write fopen fail\n", CONFIG_FILE);
   }
-  //
+  
   CloseWindow();
   scope_running = 0;
   sleep(5);
@@ -231,6 +261,7 @@ int scope_start(int sub) {
 }
 
 int main(int argc, char *argv[]) {
+#ifndef _WIN32
   pid_t pid = fork();
   if (pid < 0) {
     exit(1);
@@ -241,6 +272,7 @@ int main(int argc, char *argv[]) {
   if (setsid() < 0) {
     exit(2);
   }
+#endif
   skred_mem_t xyz;
   if (skred_mem_open(&xyz, "skred-o-scope.001", sizeof(scope_buffer_t)) != 0) {
     printf("# fail\n");

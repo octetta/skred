@@ -105,11 +105,7 @@ void synth_callback_free(void) {
   rec_max = 0;
 }
 
-#ifdef _WIN32
-// ???
-#else
-#include "futex.h"
-#endif
+#include "futex-compat.h"
 
 void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
   static int first = 1;
@@ -150,7 +146,7 @@ void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint
   //
 #else
   // scope2
-  volatile int *futex_word = (volatile int *)&scope->frame_count;
+  volatile uint32_t *futex_word = (volatile uint32_t *)&scope->frame_count;
   __atomic_add_fetch(futex_word, frame_count, __ATOMIC_SEQ_CST);
   futex_wake(futex_word, 1);
 #endif

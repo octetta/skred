@@ -3,12 +3,11 @@ CC = gcc
 EXE = \
 	skred \
   skode \
+	scope \
   #
 
 EXTRA = \
 	wav2data \
-	scope \
-	scope2 \
   #
 
 all : $(EXE)
@@ -40,9 +39,6 @@ skred-mem.o : skred-mem.c
 	$(CC) $(COPTS) -c $<
 
 scope : scope.c skred-mem.o # raylib-quickstart-main/Makefile
-	$(CC) -D_GNU_SOURCE -DUSE_RAYLIB $(RLINC) $(RLLIB) $^ -o $@ -lraylib -lm
-
-scope2 : scope2.c skred-mem.o # raylib-quickstart-main/Makefile
 	$(CC) -D_GNU_SOURCE -DUSE_RAYLIB $(RLINC) $(RLLIB) $^ -o $@ -lraylib -lm
 
 wav2data : wav2data.c miniwav.o
