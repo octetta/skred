@@ -56,6 +56,8 @@ typedef struct {
   int events; // do incoming events go to the logger?
   skode_t *sk;
   int quit;
+  int (*puts)(const char *s);
+  int (*printf)(const char *fmt, ...);
 } wire_t;
 
 enum {
@@ -176,13 +178,19 @@ enum {
 };
 
 int wire(char *line, wire_t *w);
-void show_threads(void);
-void system_show(void);
-int audio_show(void);
-int sk_load(int voice, int n, int output);
-int wavetable_show(int n);
-int audio_show(void);
+void show_threads(wire_t *w);
+void system_show(wire_t *w);
+int audio_show(wire_t *w);
+int sk_load(wire_t *w, int voice, int n, int output);
+int wavetable_show(wire_t *w, int n);
+int audio_show(wire_t *w);
 char *wire_err_str(int n);
+
+int wire_puts(const char *s);
+int wire_printf(const char *fmt, ...);
+
+int null_puts(const char *s);
+int null_printf(const char *fmt, ...);
 
 #define WIRE() { \
   .voice = 0, \
@@ -201,6 +209,8 @@ char *wire_err_str(int n);
   .events = 0, \
   .sk = NULL, \
   .quit = 0, \
+  .puts = wire_puts, \
+  .printf = wire_printf, \
 }
               
 

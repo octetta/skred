@@ -3,6 +3,26 @@
 #include "seq.h"
 #include "miniwav.h"
 
+#include <stdarg.h>
+#include <stdio.h>
+
+int wire_puts(const char *s) { puts(s); return 0; }
+int wire_printf(const char *fmt, ...) {
+  char buf[4096];
+  va_list ap;
+  va_start(ap, fmt);
+  int len = vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  if (len > 0) {
+    size_t out_len = (len >= (int)sizeof(buf)) ? sizeof(buf)-1 : (size_t)len;
+    printf("%.*s", (int)out_len, buf);
+  }
+  return 0;
+}
+
+int null_puts(const char *s) { return 0; }
+int null_printf(const char *fmt, ...) { return 0; }
+
 #define MPSC_QUEUE_IMPLEMENTATION
 #include "mpsc_queue.h"
 
@@ -71,11 +91,11 @@ float voice_pop(voice_stack_t *s) {
 
 #include <math.h>
 
-void save_wav(char *filename, float *samples, long num_samples, int *record, int max) {
+void save_wav(wire_t *w, char *filename, float *samples, long num_samples, int *record, int max) {
   int *record_safe;
 
   record_safe = (int *)malloc(sizeof(int)*max);
-  if (record_safe == NULL) { puts("OUCH"); return; } // nowhere to keep state
+  if (record_safe == NULL) { w->puts("OUCH"); return; } // nowhere to keep state
   
   int num_channels = 0;  // 32 pairs = 64 channels
 
@@ -91,7 +111,7 @@ void save_wav(char *filename, float *samples, long num_samples, int *record, int
 
   FILE *f = fopen(filename, "wb");
   if (!f) {
-    puts("# can't open file\n");
+    w->puts("# can't open file\n");
     return;
   }
 
@@ -179,29 +199,29 @@ int wire_hash(wire_t *w) {
 
 void wire_show(wire_t *w) {
   if (w != NULL) {
-    printf("# voice %d\n", w->voice);
-    printf("# state %d\n", w->state);
-    printf("# pattern %d\n", w->pattern);
-    printf("# scratch %s\n", w->scratch);
-    printf("# data max %d\n", w->data_max);
-    printf("# data len %d\n", w->data_len);
-    printf("( ");
+    w->printf("# voice %d\n", w->voice);
+    w->printf("# state %d\n", w->state);
+    w->printf("# pattern %d\n", w->pattern);
+    w->printf("# scratch %s\n", w->scratch);
+    w->printf("# data max %d\n", w->data_max);
+    w->printf("# data len %d\n", w->data_len);
+    w->printf("( ");
     int flag = 1;
     for (int i = 0; i < w->data_len; i++) {
       if (i < 10) {
-        printf("%.8f ", w->data[i]);
+        w->printf("%.8f ", w->data[i]);
       } else if (i > w->data_len - 10) {
-        printf("%.8f ", w->data[i]);
+        w->printf("%.8f ", w->data[i]);
       } else if (flag) {
         flag = 0;
-        printf(" ... ");
+        w->printf(" ... ");
       }
     }
-    printf(")\n");
+    w->printf(")\n");
   }
   for (int i = 0; i < WIRE_POINTER_MAX; i++) {
     if (wl[i]) {
-      printf("# wl[%d] {.voice=%d .pattern=%d .step=%d. .events=%d}\n",
+      w->printf("# wl[%d] {.voice=%d .pattern=%d .step=%d. .events=%d}\n",
         wire_hash(wl[i]),
         wl[i]->voice,
         wl[i]->pattern,
@@ -213,23 +233,28 @@ void wire_show(wire_t *w) {
 
 #include "udp.h"
 
-void system_show(void) {
-  printf("# udp_port %d\n", udp_info());
+void system_show(wire_t *w) {
+  wire_t wprime;
+  if (w == NULL) {
+    w = &wprime;
+    wire_init(w);
+  }
+  w->printf("# udp_port %d\n", udp_info());
 }
 
-void show_stats(void) {
+void show_stats(wire_t *w) {
   // do something useful
-  printf("# rec_state : %d rec_ptr %ld\n", rec_state, rec_ptr);
-  printf("# synth frames per callback %d : %gms\n",
+  w->printf("# rec_state : %d rec_ptr %ld\n", rec_state, rec_ptr);
+  w->printf("# synth frames per callback %d : %gms\n",
     synth_frames_per_callback, (float)synth_frames_per_callback / (float)MAIN_SAMPLE_RATE * 1000.0f);
-  printf("# seq frames per callback %d : %gms\n",
+  w->printf("# seq frames per callback %d : %gms\n",
     seq_frames_per_callback, (float)seq_frames_per_callback / (float)MAIN_SAMPLE_RATE * 1000.0f);
   for (int i = 0; i < QUEUE_SIZE; i++) {
     if (work_queue[i].state != Q_FREE) {
 #ifdef _WIN32
-      printf("# [%d] (%d) @%lld {%s}\n", i, work_queue[i].state, work_queue[i].when, work_queue[i].what);
+      w->printf("# [%d] (%d) @%lld {%s}\n", i, work_queue[i].state, work_queue[i].when, work_queue[i].what);
 #else
-      printf("# [%d] (%d) @%ld {%s}\n", i, work_queue[i].state, work_queue[i].when, work_queue[i].what);
+      w->printf("# [%d] (%d) @%ld {%s}\n", i, work_queue[i].state, work_queue[i].when, work_queue[i].what);
 #endif
     }
   }
@@ -241,7 +266,12 @@ void show_stats(void) {
 #include <processthreadsapi.h>
 #endif
 
-void show_threads(void) {
+void show_threads(wire_t *w) {
+  wire_t wprime;
+  if (w == NULL) {
+    w = &wprime;
+    wire_init(w);
+  }
 #ifdef _WIN32
   DWORD processId = GetCurrentProcessId();
   HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
@@ -260,18 +290,18 @@ void show_threads(void) {
           PWSTR threadName = NULL;
           HRESULT hr = GetThreadDescription(hThread, &threadName);
           if (FAILED(hr)) {
-            printf("# %lu <GetThreadDescription failed>\n", te32.th32ThreadID);
+            w->printf("# %lu <GetThreadDescription failed>\n", te32.th32ThreadID);
           } else if (threadName == NULL || wcslen(threadName) == 0) {
-            printf("# %lu <unnamed>\n", te32.th32ThreadID);
+            w->printf("# %lu <unnamed>\n", te32.th32ThreadID);
           } else {
             char narrowName[256];
             WideCharToMultiByte(CP_UTF8, 0, threadName, -1, narrowName, sizeof(narrowName), NULL, NULL);
-            printf("# %lu %s\n", te32.th32ThreadID, narrowName);
+            w->printf("# %lu %s\n", te32.th32ThreadID, narrowName);
             LocalFree(threadName);
           }
           CloseHandle(hThread);
         } else {
-          printf("# %lu <cannot open thread>\n", te32.th32ThreadID);
+          w->printf("# %lu <cannot open thread>\n", te32.th32ThreadID);
         }
       }
     } while (Thread32Next(hSnapshot, &te32));
@@ -302,28 +332,33 @@ void show_threads(void) {
       }
       fclose(f);
     }
-    printf("# %s %s\n", entry->d_name, name);
+    w->printf("# %s %s\n", entry->d_name, name);
   }
 
   closedir(dir);
 #endif
 }
 
-int sk_load(int voice, int n, int output) {
+int sk_load(wire_t *w, int voice, int n, int output) {
+  wire_t wprime;
+  if (w == NULL) {
+    w = &wprime;
+    wire_init(w);
+  }
   char file[1024];
   sprintf(file, "%d.sk", n);
   FILE *in = fopen(file, "r");
   int r = 0;
   if (in) {
-    static wire_t w = WIRE();
+    static wire_t wprime = WIRE();
     char line[1024];
     while (fgets(line, sizeof(line), in) != NULL) {
       size_t len = strlen(line);
       if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
-      if (output) printf("# %s\n", line);
-      r = wire(line, &w);
+      if (output) w->printf("# %s\n", line);
+      r = wire(line, &wprime);
       if (r != 0) {
-        if (output) printf("# error in patch\n");
+        if (output) w->printf("# error in patch\n");
         break;
       }
     }
@@ -348,7 +383,7 @@ int data_load(wire_t *w, int where) {
         save_wave_ptr = 0;
       }
       if (save_wave_list[save_wave_ptr]) {
-        printf("# freeing old wave %d\n", save_wave_ptr);
+        w->printf("# freeing old wave %d\n", save_wave_ptr);
         free(save_wave_list[save_wave_ptr]);
       }
       save_wave_list[save_wave_ptr++] = wave_table_data[where];
@@ -364,11 +399,11 @@ int data_load(wire_t *w, int where) {
     wave_offset_hz[where] = (float)len / 44100.0f * 440.0f;
     char *name = "data";
     int channels = 1;
-    printf("# read %d frames from %s to %d (ch:%d sr:%d)\n", len, name, where, channels, 44100);
+    w->printf("# read %d frames from %s to %d (ch:%d sr:%d)\n", len, name, where, channels, 44100);
   return 0;
 }
 
-int wave_load(int which, int where, int ch) {
+int wave_load(wire_t *w, int which, int where, int ch) {
   if (where < EXT_SAMPLE_000 || where >= EXT_SAMPLE_999) return ERR_INVALID_EXT_SAMPLE;
   char name[1024];
   sprintf(name, "%d.wav", which);
@@ -376,7 +411,7 @@ int wave_load(int which, int where, int ch) {
   int len;
   float *table = mw_get(name, &len, &wav, ch);
   if (table == NULL) {
-    printf("# can not read %s\n", name);
+    w->printf("# can not read %s\n", name);
     return ERR_INVALID_EXT_SAMPLE;
   } else {
     if (wave_table_data[where]) {
@@ -384,7 +419,7 @@ int wave_load(int which, int where, int ch) {
         save_wave_ptr = 0;
       }
       if (save_wave_list[save_wave_ptr]) {
-        printf("# freeing old wave %d\n", save_wave_ptr);
+        w->printf("# freeing old wave %d\n", save_wave_ptr);
         free(save_wave_list[save_wave_ptr]);
       }
       save_wave_list[save_wave_ptr++] = wave_table_data[where];
@@ -399,7 +434,7 @@ int wave_load(int which, int where, int ch) {
     wave_loop_end[where] = len;
     wave_midi_note[where] = 69;
     wave_offset_hz[where] = (float)len / (float)wav.SamplesRate * 440.0f;
-    printf("# read %d frames from %s to %d (ch:%d sr:%d)\n",
+    w->printf("# read %d frames from %s to %d (ch:%d sr:%d)\n",
       len, name, where, wav.Channels, wav.SamplesRate);
   }
   return 0;
@@ -412,19 +447,19 @@ int wave_load(int which, int where, int ch) {
 extern int scope_enable;
 extern scope_buffer_t *scope;
 
-void pattern_show(int pattern_pointer) {
+void pattern_show(wire_t *w, int pattern_pointer) {
   int first = 1;
   for (int s = 0; s < SEQ_STEPS_MAX; s++) {
     char *line = seq_pattern[pattern_pointer][s];
     if (strlen(line) == 0) break;
     if (first) {
-      printf("; y%d %%%d\n",
+      w->printf("; y%d %%%d\n",
         pattern_pointer, seq_modulo[pattern_pointer]);
       first = 0;
     }
-    printf("; {%s} x%d", line, s);
-    if (seq_pattern_mute[pattern_pointer][s]) printf(" @%d", pattern_pointer);
-    puts("");
+    w->printf("; {%s} x%d", line, s);
+    if (seq_pattern_mute[pattern_pointer][s]) w->printf(" @%d", pattern_pointer);
+    w->puts("");
   }
 }
 
@@ -483,7 +518,7 @@ void scope_wave_update(const float *table, int size) {
 }
 #endif
 
-int wavetable_show(int n) {
+int wavetable_show(wire_t *w, int n) {
   if (n >= 0 && n < WAVE_TABLE_MAX && wave_table_data[n] && wave_size[n]) {
     float *table = wave_table_data[n];
     int size = wave_size[n];
@@ -504,9 +539,9 @@ int wavetable_show(int n) {
         crossing++;
       }
     }
-    printf("# w%d size:%d", n, size);
-    printf(" +hz:%g midi:%g", wave_offset_hz[n], wave_midi_note[n]);
-    puts("");
+    w->printf("# w%d size:%d", n, size);
+    w->printf(" +hz:%g midi:%g", wave_offset_hz[n], wave_midi_note[n]);
+    w->puts("");
     if (scope_enable) {
       downsample_block_average_min_max(table, size, scope->wave_data, SCOPE_WAVE_WIDTH, scope->wave_min, scope->wave_max);
       scope->wave_len = SCOPE_WAVE_WIDTH;
@@ -521,7 +556,6 @@ void wave_table_dynamic_expand(int n) {
   int len = wave_size[n];
   float *samples = wave_table_data[n];
   if (len <= 0 || samples == NULL) {
-    printf("# nope len:%d samples:%p\n", len, samples);
     return;
   }
   for (int i = 0; i < len; i++) {
@@ -540,8 +574,6 @@ void wave_table_dynamic_expand(int n) {
     scale = 1.0f / fbig;
   }
 
-  printf("# expand scale %g\n", scale);
- 
   // Convert scaled float samples to 16-bit PCM
 
   for (int i = 0; i < len; i++) {
@@ -564,12 +596,12 @@ int wire_function(skode_t *s, int info) {
   int voice = w->voice;
   int x = (int)arg[0];
   if (w->trace) {
-    printf("# WIRE_FUNCTION ");
-    printf("%s", skode_atom_string(s));
+    w->printf("# WIRE_FUNCTION ");
+    w->printf("%s", skode_atom_string(s));
     if (argc) {
-      for (int i=0; i<argc; i++) printf(" %g", arg[i]);
+      for (int i=0; i<argc; i++) w->printf(" %g", arg[i]);
     }
-    puts("");
+    w->puts("");
   }
   switch (atom) {
     case 'a___': if (argc) amp_set(voice, arg[0]); break;
@@ -688,7 +720,7 @@ int wire_function(skode_t *s, int info) {
       }
       break;
     case 'W___': if (argc) {
-        wavetable_show(x);
+        wavetable_show(w,x);
         if (scope_enable) sprintf(scope->wave_text, "w%d", x);
       }
       break;
@@ -708,13 +740,13 @@ int wire_function(skode_t *s, int info) {
       break;
     case 'z___': if (argc) {
         seq_state_set(w->pattern, x);
-      } else if (w->output) pattern_show(w->pattern);
+      } else if (w->output) pattern_show(w, w->pattern);
       break;
     case 'Z___': if (argc) {
         seq_state_all(x);
       } else if (w->output) {
-        printf("; M%g\n", tempo_bpm * 4.0f);
-        for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(p);
+        w->printf("; M%g\n", tempo_bpm * 4.0f);
+        for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(w, p);
       }
       break;
     case '?___': voice_show(voice, ' ', w->verbose); break;
@@ -722,7 +754,7 @@ int wire_function(skode_t *s, int info) {
     case '??__': voice_show_all(voice, w->verbose); break;
     case '?s__':
       {
-        printf("# %s\n", skode_string(w->sk));
+        w->printf("# %s\n", skode_string(w->sk));
       }
       break;
     case 'l>g_': if (argc) skode_local_to_global(w->sk, x); break;
@@ -749,14 +781,14 @@ int wire_function(skode_t *s, int info) {
       w->verbose = x;
       break;
     case '/s__': case ':s__': if (w->output) {
-        system_show();
-        show_threads();
-        audio_show();
-        printf("%s", synth_stats());
+        system_show(w);
+        show_threads(w);
+        audio_show(w);
+        w->printf("%s", synth_stats());
       }
       break;
     case '/S__': case ':S__': if (w->output) {
-        show_stats();
+        show_stats(w);
         wire_show(w);
       }
       break;
@@ -765,7 +797,7 @@ int wire_function(skode_t *s, int info) {
               // sub q for scope_quit = 0
               // sub 0..VOICE_MAX-1 for scope_channel = n
               // sub -1 for scope_channel = -1 (all channels)
-    case '/l__': case ':l__': if (argc) { sk_load(voice, x, w->output); } break;
+    case '/l__': case ':l__': if (argc) { sk_load(w, voice, x, w->output); } break;
     case '/w__': case ':w__': {
         int which = 0;
         int where = EXT_SAMPLE_000;
@@ -778,7 +810,7 @@ int wire_function(skode_t *s, int info) {
           which = (int)arg[0];
           where = EXT_SAMPLE_000;
         }
-        wave_load(which, where, ch);
+        wave_load(w, which, where, ch);
       }
       break;
     case '<___': if (arg) {
@@ -811,8 +843,8 @@ int wire_function(skode_t *s, int info) {
 #else
           sprintf(name, "skred-%d-%lld.wav", pid, ms);
 #endif
-          printf("# file %s (%ld frames)\n", name, rec_ptr);
-          save_wav(name, recording, rec_ptr/VOICE_MAX/AUDIO_CHANNELS, voice_record, VOICE_MAX);
+          w->printf("# file %s (%ld frames)\n", name, rec_ptr);
+          save_wav(w, name, recording, rec_ptr/VOICE_MAX/AUDIO_CHANNELS, voice_record, VOICE_MAX);
         }
       }
       break;
@@ -825,9 +857,9 @@ int wire_function(skode_t *s, int info) {
     case '/wex': if (argc && x >= 200 && x <=999) wave_table_dynamic_expand(x);
     default:
       if (w->trace) {
-        printf("# WIRE_UNKNOWN_FUNCTION %d [%x] :: %d", info, atom, argc);
-        printf(" v%d", w->voice);
-        puts("");
+        w->printf("# WIRE_UNKNOWN_FUNCTION %d [%x] :: %d", info, atom, argc);
+        w->printf(" v%d", w->voice);
+        w->puts("");
       }
       break;
   }
@@ -845,9 +877,9 @@ int wire_defer(skode_t *s, int info) {
   uint64_t qt = (uint64_t)(t * (float)MAIN_SAMPLE_RATE) + dst;
   if (w->trace) {
 #ifdef _WIN32
-    printf("# WIRE_DEFER %c %g(%lld/%lld) '%s' (%g)\n",
+    w->printf("# WIRE_DEFER %c %g(%lld/%lld) '%s' (%g)\n",
 #else
-    printf("# WIRE_DEFER %c %g(%ld/%ld) '%s' (%g)\n",
+    w->printf("# WIRE_DEFER %c %g(%ld/%ld) '%s' (%g)\n",
 #endif
       mode,
       t, qt, dst,
@@ -861,14 +893,14 @@ int wire_defer(skode_t *s, int info) {
 
 int wire_chunk_end(skode_t *s, int info) {
   wire_t *w = (wire_t*)skode_user(s);
-  if (w->trace) printf("# CHUNK_END %d\n", info);
+  if (w->trace) w->printf("# CHUNK_END %d\n", info);
   w->defer_last = 0;
   w->defer_sample_time = 0;
   return 0;
 }
 
-int wire_unknown(skode_t *s, int info) {
-  printf("# WIRE_UNKNOWN %d\n", info);
+int wire_unknown(wire_t *w, skode_t *s, int info) {
+  w->printf("# WIRE_UNKNOWN %d\n", info);
   return 0;
 }
 
@@ -878,11 +910,11 @@ int wire_cb(skode_t *s, int info) {
     case FUNCTION: return wire_function(s, info);
     case DEFER: return wire_defer(s, info);
     case CHUNK_END: return wire_chunk_end(s, info);
-    case PUSH: { voice_push(&w->stack, w->voice); printf("pushed v%d\n", w->voice); } break;
+    case PUSH: { voice_push(&w->stack, w->voice); w->printf("pushed v%d\n", w->voice); } break;
     case POP: { w->voice = voice_pop(&w->stack); } break;
-    case GOT_STRING: { if (w->trace) printf("# -> {%s}\n", skode_string(s)); } break;
-    case GOT_ARRAY: { if (w->trace) printf("# -> (..%d..)\n", skode_data_len(s)); } break;
-    default: return wire_unknown(s, info);
+    case GOT_STRING: { if (w->trace) w->printf("# -> {%s}\n", skode_string(s)); } break;
+    case GOT_ARRAY: { if (w->trace) w->printf("# -> (..%d..)\n", skode_data_len(s)); } break;
+    default: return wire_unknown(w, s, info);
   }
   return 0;
 }
@@ -906,16 +938,21 @@ int wire(char *line, wire_t *w) {
   return r;
 }
 
-int audio_show(void) {
-  printf("# synth backend is running\n");
-  printf("# synth total voice count %d\n", VOICE_MAX);
+int audio_show(wire_t *w) {
+  wire_t wprime;
+  if (w == NULL) {
+    w = &wprime;
+    wire_init(w);
+  }
+  w->printf("# synth backend is running\n");
+  w->printf("# synth total voice count %d\n", VOICE_MAX);
   int active = 0;
   for (int i = 0; i < VOICE_MAX; i++) if (voice_amp[i] != 0) active++;
-  printf("# synth active voice count %d\n", active);
+  w->printf("# synth active voice count %d\n", active);
 #ifdef _WIN32
-  printf("# synth sample count %lld\n", synth_sample_count);
+  w->printf("# synth sample count %lld\n", synth_sample_count);
 #else
-  printf("# synth sample count %ld\n", synth_sample_count);
+  w->printf("# synth sample count %ld\n", synth_sample_count);
 #endif
   return 0;
 }
@@ -944,4 +981,6 @@ void wire_init(wire_t *w) {
   w->events = 0;
   w->sk = NULL;
   w->quit = 0;
+  w->puts = wire_puts;
+  w->printf = wire_printf;
 }

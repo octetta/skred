@@ -226,7 +226,7 @@ int main(int argc, char *argv[]) {
     }
   }
   
-  show_threads();
+  show_threads(NULL);
   
 #ifndef _WIN32
   bestlineHistoryLoad(HISTORY_FILE);
@@ -271,7 +271,7 @@ int main(int argc, char *argv[]) {
   ma_device_start(&seq_device);
 #endif
 
-  if (audio_show() != 0) return 1;
+  if (audio_show(NULL) != 0) return 1;
 
   util_set_thread_name("repl");
 
@@ -280,9 +280,9 @@ int main(int argc, char *argv[]) {
     if (r != udp_port) udp_port = 0;
   }
 
-  system_show();
+  system_show(NULL);
 
-  if (load_patch_number >= 0) sk_load(0, load_patch_number, 0);
+  if (load_patch_number >= 0) sk_load(NULL, 0, load_patch_number, 0);
 
   if (scope_enable) {
     scope->buffer_len = SCOPE_WIDTH_IN_SAMPLES;
@@ -373,7 +373,7 @@ int main(int argc, char *argv[]) {
   synth_free();
   synth_callback_free();
 
-  show_threads();
+  show_threads(NULL);
 
   return 0;
 }
