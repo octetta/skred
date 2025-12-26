@@ -183,7 +183,6 @@ void system_show(wire_t *w);
 int audio_show(wire_t *w);
 int sk_load(wire_t *w, int voice, int n, int output);
 int wavetable_show(wire_t *w, int n);
-int audio_show(wire_t *w);
 char *wire_err_str(int n);
 
 int wire_puts(const char *s);
