@@ -483,7 +483,13 @@ char *synth_stats(void) {
 #ifdef _IS_OSX_
 #define VOICE_CLOCK CLOCK_MONOTONIC
 #else
+
+#ifdef _WIN32
+#define VOICE_CLOCK CLOCK_MONOTONIC
+#else
 #define VOICE_CLOCK CLOCK_MONOTONIC_COARSE
+#endif
+
 #endif
 
 void synth_voice_bench(int voice) {

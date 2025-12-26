@@ -806,7 +806,11 @@ int wire_function(skode_t *s, int info) {
           gettimeofday(&tv, NULL);
           long long ms = (long long)tv.tv_sec * 1000 + tv.tv_usec / 1000;
           char name[1024];
+#ifdef _WIN32
+          sprintf(name, "skred-%lld-%lld.wav", pid, ms);
+#else
           sprintf(name, "skred-%d-%lld.wav", pid, ms);
+#endif
           printf("# file %s (%ld frames)\n", name, rec_ptr);
           save_wav(name, recording, rec_ptr/VOICE_MAX/AUDIO_CHANNELS, voice_record, VOICE_MAX);
         }
@@ -840,7 +844,11 @@ int wire_defer(skode_t *s, int info) {
   t += w->defer_last;
   uint64_t qt = (uint64_t)(t * (float)MAIN_SAMPLE_RATE) + dst;
   if (w->trace) {
+#ifdef _WIN32
+    printf("# WIRE_DEFER %c %g(%lld/%lld) '%s' (%g)\n",
+#else
     printf("# WIRE_DEFER %c %g(%ld/%ld) '%s' (%g)\n",
+#endif
       mode,
       t, qt, dst,
       skode_defer_string(s),

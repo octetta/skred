@@ -4,7 +4,6 @@ OUT = win
 
 EXE = \
 	$(OUT)/skred.exe \
-	$(OUT)/wlex.exe \
   #
 
 all : $(EXE)
@@ -45,19 +44,16 @@ $(OUT)/seq.o: seq.c seq.h
 $(OUT)/udp.o: udp.c udp.h
 	$(CC) $(COPTS) -c $< -o $@
 
-$(OUT)/wire.o: wire.c wire.h
+$(OUT)/skode.o: skode.c skode.h
 	$(CC) $(COPTS) -c $< -o $@
+
+$(OUT)/wire.o: wire.c wire.h synth.def skode.h $(OUT)/skode.o
+	$(CC) $(COPTS) -Wno-multichar -c $<
 
 $(OUT)/skred-mem.o : skred-mem.c
 	$(CC) $(COPTS) -c $< -o $@
 
 $(OUT)/skred.o: skred.c
-	$(CC) $(COPTS) -c $< -o $@
-
-$(OUT)/winline.o: winline.c winline.h
-	$(CC) $(COPTS) -c $< -o $@
-
-$(OUT)/wlex.o: wlex.c winline.h
 	$(CC) $(COPTS) -c $< -o $@
 
 OBJS = \
@@ -69,16 +65,13 @@ OBJS = \
   $(OUT)/wire.o \
   $(OUT)/udp.o \
   $(OUT)/miniaudio.o \
-  $(OUT)/winline.o \
   $(OUT)/skred-mem.o \
   $(OUT)/util.o \
+  $(OUT)/skode.o \
   #
 
 $(OUT)/skred.exe : $(OBJS)
 	$(CC) $(COPTS) $^ -o $@ $(LIB) -static
-
-$(OUT)/wlex.exe : $(OUT)/wlex.o $(OUT)/winline.o
-	$(CC) $(COPTS) $^ -o $@ # $(LIB) -static
 
 $(OUT)/miniaudio.o: miniaudio.c miniaudio.h
 	$(CC) -c $< -o $@

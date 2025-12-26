@@ -117,26 +117,26 @@ int wire_cb(skode_t *s, int info) {
   return 0;
 }
 
-#include "linenoise.h"
+#include "bestline.h"
 #define HISTORY_FILE ".skode_history"
 
 int main(int argc, char *arg[]) {
   int user = 0;
   skode_t *s = skode_new(wire_cb, &user);
-  linenoiseHistoryLoad(HISTORY_FILE);
+  bestlineHistoryLoad(HISTORY_FILE);
   while (1) {
     char *line = NULL;
-    line = linenoise("# ");
+    line = bestlineWithHistory("# ", NULL);
     if (line == NULL) break;
-    linenoiseHistoryAdd(line);
+    bestlineHistoryAdd(line);
     skode(s, line, wire_cb);
-    linenoiseFree(line);
+    free(line);
     if (user == -1) {
       printf("must quit\n");
       break;
     }
   }
-  linenoiseHistorySave(HISTORY_FILE);
+  bestlineHistorySave(HISTORY_FILE);
   skode_free(s);
   return 0;
 }

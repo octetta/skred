@@ -13,9 +13,9 @@ typedef int socklen_t;
 #define SOCKET int
 #define INVALID_SOCKET (-1)
 #define SOCKET_ERROR (-1)
+#include <sys/select.h>
 #endif
 
-#include <sys/select.h>
 
 #include "skred.h"
 #include "wire.h"

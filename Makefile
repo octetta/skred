@@ -48,8 +48,8 @@ scope2 : scope2.c skred-mem.o # raylib-quickstart-main/Makefile
 wav2data : wav2data.c miniwav.o
 	$(CC) -D_GNU_SOURCE $^ -o $@
 
-skode : skode.c skode-example.c linenoise.o
-	$(CC) -Wall -Wno-multichar skode.c skode-example.c linenoise.o -o $@
+skode : skode.c skode-example.c bestline.o
+	$(CC) -Wall -Wno-multichar skode.c skode-example.c bestline.o -o $@
 
 smidi : cmex2.c crossmidi.c crossmidi.h udpmini.c udpmini.h
 	$(CC) cmex2.c crossmidi.c udpmini.c -o smidi -lasound
@@ -92,7 +92,7 @@ OBJS = \
   wire.o skode.o \
   udp.o \
   miniaudio.o \
-	linenoise.o \
+	bestline.o \
 	skred-mem.o \
 	util.o \
   #
@@ -102,7 +102,7 @@ SOBJS = \
   amysamples.o \
   synth.o \
   miniaudio.o \
-	linenoise.o \
+	bestline.o \
 	skred-mem.o \
 	util.o \
   #
@@ -110,7 +110,7 @@ SOBJS = \
 skred : $(OBJS)
 	$(CC) $(COPTS) $^ -o $@ $(LIB)
 
-linenoise.o: linenoise.c linenoise.h
+bestline.o: bestline.c bestline.h
 	$(CC) -c $<
 
 miniaudio.o: miniaudio.c miniaudio.h

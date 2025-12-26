@@ -1,0 +1,101 @@
+#!/usr/bin/env tclkit
+
+package require Tk
+
+# --------------------- CONFIGURATION ---------------------
+if {$tcl_platform(platform) eq "windows"} {
+    set execname "skred.exe"
+} else {
+    set execname "skred"
+}
+
+set dir [file dirname [info script]]
+set prog [file join $dir $execname]
+
+if {![file exists $prog]} {
+    tk_messageBox -icon error -title "Not found" -message "Cannot find $prog"
+    exit
+}
+
+# Force line buffering for BOTH stdout and stderr
+set wrapped_cmd [list stdbuf -oL -eL $prog -n]
+
+# --------------------------------------------------------
+
+wm title . "skred REPL (-n + line buffering)"
+
+pack [text .t -yscrollcommand {.s set} -font {Courier 12} -wrap none \
+      -background white -foreground black -insertbackground black] \
+     -fill both -expand 1
+pack [scrollbar .s -orient vertical -command {.t yview}] -fill y
+
+.t tag configure input  -foreground blue
+.t tag configure output -foreground black
+.t tag configure error  -foreground red
+
+set promptEnd 1.0
+set chan ""
+
+proc insert {text {tag output}} {
+    global promptEnd
+    .t insert end $text $tag
+    .t see end
+    set promptEnd end
+    .t mark set promptEnd $promptEnd
+    .t mark gravity promptEnd left
+}
+
+# Start skred wrapped in stdbuf for forced line buffering
+if {[catch {open "|[list {*}$wrapped_cmd]" r+} chan]} {
+    insert "Failed to start skred with stdbuf: $::errorInfo\n" error
+    return
+}
+
+insert "Started skred with forced line buffering.\n" output
+insert "You should now see the full startup output AND the prompt.\n" output
+insert "All command responses will appear immediately.\n\n" output
+
+fconfigure $chan -blocking 0 -buffering none -translation binary -eofchar {}
+
+fileevent $chan readable [list read_output $chan]
+
+proc read_output {ch} {
+    if {[eof $ch]} {
+        catch {close $ch}
+        insert "\n=== skred has exited ===\n" error
+        return
+    }
+    set data [read $ch]
+    if {[string length $data] > 0} {
+        insert $data output
+    }
+}
+
+bind .t <Return> {
+    set line [.t get promptEnd {end-1c}]
+    insert "$line\n" input
+    if {$::chan ne ""} {
+        catch {puts -nonewline $::chan "$line\n"}
+        catch {flush $::chan}
+    }
+    break
+}
+
+bind .t <KeyPress> {
+    if {[.t compare insert < promptEnd]} {
+        .t mark set insert end
+    }
+    if {"%K" in {Left Up Home Prior}} {
+        if {[.t compare insert <= promptEnd]} {
+            return -code break
+        }
+    }
+    if {"%K" in {BackSpace Delete}} {
+        if {[.t compare insert <= promptEnd]} {
+            return -code break
+        }
+    }
+}
+
+focus -force .t
+.t mark set insert end

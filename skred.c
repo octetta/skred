@@ -25,10 +25,8 @@
 //#include <time.h>
 //#include <unistd.h>
 
-#ifdef _WIN32
-#include "winline.h"
-#else
-#include "linenoise.h"
+#ifndef _WIN32
+#include "bestline.h"
 #endif
 
 #include "skred.h"
@@ -107,7 +105,11 @@ void synth_callback_free(void) {
   rec_max = 0;
 }
 
+#ifdef _WIN32
+// ???
+#else
 #include "futex.h"
+#endif
 
 void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
   static int first = 1;
@@ -144,10 +146,14 @@ void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint
       //scope->buffer_pointer %= scope->buffer_len;
     }
   }
+#ifdef _WIN32
+  //
+#else
   // scope2
   volatile int *futex_word = (volatile int *)&scope->frame_count;
   __atomic_add_fetch(futex_word, frame_count, __ATOMIC_SEQ_CST);
   futex_wake(futex_word, 1);
+#endif
   //
 }
 
@@ -222,18 +228,9 @@ int main(int argc, char *argv[]) {
   
   show_threads();
   
-
-#ifdef _WIN32
-  if (winlineInit() < 0) {
-    use_edit = 0;
-  } else {
-    winlineHistoryLoad(HISTORY_FILE);
-    winlineHistorySetMaxLen(100);
-  }
-#else
-  linenoiseHistoryLoad(HISTORY_FILE);
+#ifndef _WIN32
+  bestlineHistoryLoad(HISTORY_FILE);
 #endif
-  
 
   perf_start();
 
@@ -324,47 +321,37 @@ int main(int argc, char *argv[]) {
 
     char *line = NULL;
 
+#ifndef _WIN32
     if (use_edit) {
-#ifdef _WIN32
-      line = winlineReadLine("# ");
-#else
-      line = linenoise("# ");
-#endif
+      line = bestlineWithHistory("# ", NULL);
     } else {
+      char buffer[1024];
+      //printf("# ");
+      line = fgets(buffer, sizeof(buffer), stdin);
+    }
+#else
       char buffer[1024];
       printf("# ");
       line = fgets(buffer, sizeof(buffer), stdin);
-    }
+#endif
     if (line == NULL) {
       main_running = 0;
       break;
     }
     if (strlen(line) == 0) continue;
-    if (use_edit) {
-#ifdef _WIN32
-    winlineHistoryAdd(line);
-#else
-    linenoiseHistoryAdd(line);
+#ifndef _WIN32
+    if (use_edit) { bestlineHistoryAdd(line); }
 #endif
-    }
     int n = wire(line, &w);
-    if (use_edit) {
-#ifdef _WIN32
-      free(line);
-#else
-      linenoiseFree(line);
+#ifndef _WIN32
+    if (use_edit) { free(line); }
 #endif
-    }
     if (n < 0) break; // request to stop or error
     if (n > 0) printf("# ERR:%d\n", n);
   }
-  if (use_edit) {
-#ifdef _WIN32
-    winlineHistorySave(HISTORY_FILE);
-#else
-    linenoiseHistorySave(HISTORY_FILE);
+#ifndef _WIN32
+  if (use_edit) { bestlineHistorySave(HISTORY_FILE); }
 #endif
-  }
 
   // turn down volume smoothly to avoid clicks
   volume_set(0);
