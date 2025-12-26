@@ -26,7 +26,7 @@ proc wire {msg} {
   set wire_string "f%s"
   set window_title "fire"
 
-  set wire_check 1
+  set wire_check 0
 
   if {$argc > 1} {set min_val [lindex $argv 1]}
   if {$argc > 2} {set max_val [lindex $argv 2]}
@@ -132,7 +132,7 @@ proc toggleButton {num} {
   frame .content.buttonGrid
   set voice -1
 
-  for {set i 0} {$i < 32} {incr i} {
+  for {set i 0} {$i < 64} {incr i} {
     button .content.buttonGrid.b$i -text " v$i " -padx 1 -pady 1 -bd 0 \
       -command "toggleButton $i" -bg lightblue
     grid .content.buttonGrid.b$i -row [expr {$i / 16}] -column [expr {$i % 16}] \
