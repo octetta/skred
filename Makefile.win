@@ -48,7 +48,7 @@ $(OUT)/skode.o: skode.c skode.h
 	$(CC) $(COPTS) -c $< -o $@
 
 $(OUT)/wire.o: wire.c wire.h synth.def skode.h $(OUT)/skode.o
-	$(CC) $(COPTS) -Wno-multichar -c $<
+	$(CC) $(COPTS) -Wno-multichar -c $< -o $@
 
 $(OUT)/skred-mem.o : skred-mem.c
 	$(CC) $(COPTS) -c $< -o $@

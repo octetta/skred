@@ -202,6 +202,7 @@ int main(int argc, char *argv[]) {
   int udp_port = UDP_PORT;
   char execute_from_start[1024] = "";
   int use_edit = 1;
+  use_edit = use_edit; // avoid unused warning on win32 compile
   if (argc > 1) {
     for (int i=1; i<argc; i++) {
       if (argv[i][0] == '-') {
