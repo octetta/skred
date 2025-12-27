@@ -286,12 +286,14 @@ int main(int argc, char *argv[]) {
 
   skred_mem_t *scope_shared = skred_mem_new();
 #define SKRED_SCOPE_NAME "skred-o-scope.001"
-  if (skred_mem_create(scope_shared, SKRED_SCOPE_NAME, sizeof(scope_buffer_t)) != 0) {
-    printf("# did not create scope shared memory %s\n", SKRED_SCOPE_NAME);
+  int r = skred_mem_create(scope_shared, SKRED_SCOPE_NAME, sizeof(scope_buffer_t));
+  if (r != 0) {
+    printf("# did not create scope shared memory %s (%d)\n", SKRED_SCOPE_NAME, r);
     scope_enable = 0;
   } else {
     printf("# scope buffer ready\n");
     scope = (scope_buffer_t *)skred_mem_addr(scope_shared);
+    scope->buffer_len = SCOPE_WIDTH_IN_SAMPLES;
     scope_enable = 1;
     sprintf(scope->status_text, "n/a");
   }

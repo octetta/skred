@@ -3,7 +3,6 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #define NORECT
-
 #include <windows.h>
 
 #include <stdio.h>
@@ -28,6 +27,7 @@ int skred_mem_create(skred_mem_t *sm, const char *name, size_t size) {
     // Use Global namespace for cross-session sharing
     char global_name[128];
     snprintf(global_name, sizeof(global_name), "Global\\%s", name);
+    strcpy(global_name, name);
     
     // Handle sizes > 4GB
     DWORD size_high = (DWORD)(size >> 32);
@@ -64,6 +64,7 @@ int skred_mem_open(skred_mem_t *sm, const char *name, size_t size) {
     // Use Global namespace for cross-session sharing
     char global_name[128];
     snprintf(global_name, sizeof(global_name), "Global\\%s", name);
+    strcpy(global_name, name);
     
     sm->hMap = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, global_name);
     if (!sm->hMap) {
