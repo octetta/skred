@@ -179,8 +179,135 @@ proc wire {msg} {
 }
 
 # ------------------------------------------------------------
+# Safe math support using ${...} in transform strings
+# ------------------------------------------------------------
+proc safe_eval {expr_str} {
+    if {[string trim $expr_str] eq ""} {
+        return "ERR"
+    }
+    if {[catch {expr $expr_str} result]} {
+        return "ERR"
+    }
+    return $result
+}
+
+
+proc expand_string {input_string} {
+    # Only upvar variables that exist in caller's scope
+    foreach var {a c n v} {
+        if {[uplevel 1 [list info exists $var]]} {
+            upvar 1 $var $var
+        }
+    }
+    
+    set result ""
+    set i 0
+    set len [string length $input_string]
+    
+    while {$i < $len} {
+        set char [string index $input_string $i]
+        
+        if {$char eq "\$"} {
+            incr i
+            set next_char [string index $input_string $i]
+            
+            if {$next_char eq "\{"} {
+                incr i
+                set expr_start $i
+                set brace_count 1
+                
+                while {$brace_count > 0} {
+                    set char [string index $input_string $i]
+                    if {$char eq "\{"} {incr brace_count}
+                    if {$char eq "\}"} {incr brace_count -1}
+                    incr i
+                }
+                
+                set expr [string range $input_string $expr_start [expr {$i - 2}]]
+                set map_list {}
+                foreach var {a c n v} {
+                    if {[info exists $var]} {
+                        lappend map_list "\$$var" [set $var]
+                    }
+                }
+                set expr [string map $map_list $expr]
+                append result [expr $expr]
+            } else {
+                set var_name ""
+                while {$i < $len && [string is alnum [string index $input_string $i]]} {
+                    append var_name [string index $input_string $i]
+                    incr i
+                }
+                if {[info exists $var_name]} {
+                    append result [set $var_name]
+                }
+                continue
+            }
+        } else {
+            append result $char
+            incr i
+        }
+    }
+    
+    return $result
+}
+
+proc x_expand_string {input_string} {
+    upvar 1 a a c c n n v v b b B B
+    set result ""
+    set i 0
+    set len [string length $input_string]
+    
+    while {$i < $len} {
+        set char [string index $input_string $i]
+        
+        if {$char eq "\$"} {
+            incr i
+            set next_char [string index $input_string $i]
+            
+            if {$next_char eq "\{"} {
+                incr i
+                set expr_start $i
+                set brace_count 1
+                
+                while {$brace_count > 0} {
+                    set char [string index $input_string $i]
+                    if {$char eq "\{"} {incr brace_count}
+                    if {$char eq "\}"} {incr brace_count -1}
+                    incr i
+                }
+                
+                set expr [string range $input_string $expr_start [expr {$i - 2}]]
+                set expr [string map [list "\$a" "${a}.0" "\$c" $c] $expr]
+                append result [expr $expr]
+            } else {
+                set var_name ""
+                while {$i < $len && [string is alnum [string index $input_string $i]]} {
+                    append var_name [string index $input_string $i]
+                    incr i
+                }
+                append result [set $var_name]
+                continue
+            }
+        } else {
+            append result $char
+            incr i
+        }
+    }
+    
+    return $result
+}
+
+# set c 5
+# set a 5
+# puts [expand_string "v\$c\${\$a/10}"]
+
+
+# ------------------------------------------------------------
 # skmidi pipe
 # ------------------------------------------------------------
+
+
 proc start_skmidi_pipe {} {
     global skmidi_path midi_pipe skmidi_pid
     set native [file nativename $skmidi_path]
@@ -219,16 +346,20 @@ proc process_skmidi_line {} {
     switch $cmd {
         9 {
             set v [format %.3f [expr {$data2 / 127.0}]]
-            set msg $::note_on_transform_string
+            set msg [expand_string $::note_on_transform_string]
+            # set msg $::note_on_transform_string
+            # set msg [process_transform $::note_on_transform_string $c $data1 $v $b $raw]
         }
         8 {
             set v [format %.3f [expr {$data2 / 127.0}]]
             set msg $::note_off_transform_string
+            # set msg [process_transform $::note_off_transform_string $c $data1 $v $b $raw]
         }
         14 {
             set raw [expr {($data2 << 7) | $data1}]
             set b [format %.3f [expr {($raw - 8192.0) / 8192.0}]]
             set msg $::pitch_bend_transform_string
+            # set msg [process_transform $::pitch_bend_transform_string $c 0 0 $b $raw]
         }
         default return
     }
