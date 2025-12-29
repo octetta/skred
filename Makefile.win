@@ -26,17 +26,20 @@ COPTS = \
 
 KO = skred-bridge-build
 VFS = $(KO)/skred-bridge.vfs
+KIT = tclkits/tclkit-kit-build
+TCL = tclkit.exe
+SBEXE = skred-bridge.exe
 
-skred-bridge.exe: $(OUT)/skmidi.exe skbridge.tcl
+$(SBEXE): $(OUT)/skmidi.exe skbridge.tcl
 	rm -rf $(KO)
 	mkdir -p $(KO)
-	cp tclkits/tclkit-windows.exe $(KO)/tclkit.exe
+	cp tclkits/tclkit-windows.exe $(KO)/$(TCL)
 	cp sdx-20110317.kit $(KO)/sdx.kit
 	cp win/skmidi.exe $(KO)
 	mkdir -p $(VFS)
 	cp win/skmidi.exe $(VFS)
 	cp skbridge.tcl $(VFS)/main.tcl
-	cd $(KO) ; ../tclkits/tclkit-kit-build sdx.kit wrap skred-bridge.exe -runtime tclkit.exe skbridge.tcl
+	cd $(KO) ; ../$(KIT) sdx.kit wrap $(SBEXE) -runtime $(TCL) skbridge.tcl
 	echo rm -rf $(KO)
 
 wav2data : wav2data.c miniwav.o

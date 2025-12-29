@@ -1,85 +1,113 @@
-# skbridge.tcl - skred-bridge: MIDI monitor → UDP bridge
+# skbridge.tcl - skred-bridge: MIDI monitor → UDP bridge (stable, fixed)
 package require Tk
 package require udp
 
 # ------------------------------------------------------------
-# Environment detection and skmidi handling – FINAL FIXED VERSION
+# Robust bundled detection and skmidi setup
 # ------------------------------------------------------------
+set is_bundled 0
+set appdir ""
+
 if {[info commands ::starkit::startup] ne ""} {
     package require starkit
     starkit::startup
-
-    if {[info exists starkit::topdir]} {
+    if {[info exists ::starkit::topdir]} {
         set is_bundled 1
-        set appdir $starkit::topdir
-    } else {
-        set is_bundled 0
-        set appdir [file dirname [info script]]
+        set appdir $::starkit::topdir
     }
-} else {
-    set is_bundled 0
-    set appdir [file dirname [info script]]
 }
 
-cd $appdir
+if {!$is_bundled && [string match "*skred-bridge*" [file tail [info nameofexecutable]]]} {
+    set is_bundled 1
+    set appdir [info nameofexecutable]
+}
+
+if {!$is_bundled} {
+    set appdir [file dirname [info script]]
+    cd $appdir
+}
+
 wm title . "skred-bridge"
 
-# Platform-specific name
 if {$tcl_platform(platform) eq "windows"} {
     set skmidi_name "skmidi.exe"
 } else {
     set skmidi_name "skmidi"
 }
 
-# Handle bundled vs source
+set ::skmidi_pid ""
+
 if {$is_bundled} {
-    # Bundled (starpack/starkit) – extract to temp on ALL platforms for safety
     set bundled_skmidi [file join $appdir $skmidi_name]
-    set temp_dir [file join [file normalize ~/AppData/Local/Temp] skred-bridge-[pid]] ;# Windows-friendly temp
-    if {$tcl_platform(platform) ne "windows"} {
-        # Unix temp
-        set temp_dir "/tmp/skred-bridge-[pid]"
+
+    if {[info exists env(TEMP)] && [file isdirectory $env(TEMP)] && [file writable $env(TEMP)]} {
+        set temp_base $env(TEMP)
+    } else {
+        set temp_base [file normalize ~]
     }
-    file mkdir $temp_dir
+    set temp_dir [file join $temp_base "skred-bridge-[pid]"]
+    catch {file mkdir $temp_dir}
+
     set skmidi_path [file join $temp_dir $skmidi_name]
-    file copy -force $bundled_skmidi $skmidi_path
-    file attributes $skmidi_path -permissions ugo+x   ;# Ensure executable on Unix
+
+    if {[catch {file copy -force $bundled_skmidi $skmidi_path} copy_err]} {
+        tk_messageBox -icon error -title "Extraction Failed" -message "Could not extract $skmidi_name:\n$copy_err"
+        exit 1
+    }
+    if {![file exists $skmidi_path] || [file size $skmidi_path] == 0} {
+        tk_messageBox -icon error -title "Extraction Failed" -message "Extracted file invalid: $skmidi_path"
+        exit 1
+    }
 
     proc cleanup {} {
-        global midi_pipe sock temp_dir
+        global midi_pipe sock temp_dir skmidi_pid
+        kill_skmidi
         catch {close $midi_pipe}
         catch {close $sock}
         catch {file delete -force $temp_dir}
     }
 } else {
-    # Source run
     set skmidi_path [file join $appdir $skmidi_name]
-    file attributes $skmidi_path -permissions ugo+x
+    if {$tcl_platform(platform) ne "windows"} {
+        catch {file attributes $skmidi_path -permissions ugo+x}
+    }
 
     proc cleanup {} {
-        global midi_pipe sock
+        global midi_pipe sock skmidi_pid
+        kill_skmidi
         catch {close $midi_pipe}
         catch {close $sock}
     }
 }
 
 if {![file exists $skmidi_path]} {
-    tk_messageBox -icon error -title "Missing skmidi" \
-        -message "Cannot find '$skmidi_name' at expected location."
+    tk_messageBox -icon error -title "skmidi Missing" -message "Cannot find $skmidi_name at:\n$skmidi_path"
     exit 1
+}
+
+proc kill_skmidi {} {
+    global skmidi_pid
+    if {$skmidi_pid ne "" && $::tcl_platform(platform) ne "windows"} {
+        catch {exec kill $skmidi_pid}
+        set skmidi_pid ""
+    }
 }
 
 # ------------------------------------------------------------
 # UDP Setup
 # ------------------------------------------------------------
-set addr 127.0.0.1
-set port 60440
-set sock [udp_open]
-fconfigure $sock -buffering none -translation binary
-fconfigure $sock -remote [list $addr $port]
+set ::addr 127.0.0.1
+set ::port 60440
+set ::sock [udp_open]
+fconfigure $::sock -buffering none -translation binary
+fconfigure $::sock -remote [list $::addr $::port]
+
+set ::note_on_transform_string "v\$c n\$n l\$v"
+set ::note_off_transform_string "v\$c n\$n l\$v"
+set ::pitch_bend_transform_string "v\$c N\$b"
 
 # ------------------------------------------------------------
-# GUI Setup
+# GUI
 # ------------------------------------------------------------
 wm withdraw .
 toplevel .monitor
@@ -87,17 +115,16 @@ wm title .monitor "MIDI → skode (skred-bridge)"
 wm protocol .monitor WM_DELETE_WINDOW {
     cleanup
     destroy .monitor
-    exit 0   ;# Forces full exit even under tclsh
+    exit 0
 }
 
-grid rowconfigure .monitor 0 -weight 1
+grid rowconfigure .monitor {0 4} -weight 1
 grid rowconfigure .monitor {1 2 3} -weight 0
 grid columnconfigure .monitor 0 -weight 1
 
-# skmidi input frame
 ttk::labelframe .monitor.skmidi -text "from skmidi"
 grid .monitor.skmidi -row 0 -column 0 -sticky nsew -padx 5 -pady 5
-text .monitor.skmidi.text -state disabled -height 12
+text .monitor.skmidi.text -state disabled
 ttk::scrollbar .monitor.skmidi.sb -command ".monitor.skmidi.text yview"
 grid .monitor.skmidi.text -row 0 -column 0 -sticky nsew
 grid .monitor.skmidi.sb -row 0 -column 1 -sticky ns
@@ -105,38 +132,23 @@ grid .monitor.skmidi.sb -row 0 -column 1 -sticky ns
 grid rowconfigure .monitor.skmidi 0 -weight 1
 grid columnconfigure .monitor.skmidi 0 -weight 1
 
-# Transform frames
-ttk::labelframe .monitor.noteon -text "NOTE ON transform"
-grid .monitor.noteon -row 1 -column 0 -sticky ew -padx 5 -pady 3
-ttk::label .monitor.noteon.l -text "(e.g. v\$c n\$n l\$v):"
-ttk::entry .monitor.noteon.e -textvariable ::note_on_transform_string -width 50
-grid .monitor.noteon.l -row 0 -column 0 -sticky w -padx 5
-grid .monitor.noteon.e -row 0 -column 1 -sticky ew -padx 5
-grid columnconfigure .monitor.noteon 1 -weight 1
-set ::note_on_transform_string "v\$c n\$n l\$v"
+foreach {r title var label} {
+    1 "NOTE ON" ::note_on_transform_string "(e.g. v\$c n\$n l\$v):"
+    2 "NOTE OFF" ::note_off_transform_string "(e.g. v\$c n\$n l\$v):"
+    3 "PITCH BEND" ::pitch_bend_transform_string "(e.g. v\$c N\$b):"
+} {
+    ttk::labelframe .monitor.tf$r -text $title
+    grid .monitor.tf$r -row $r -column 0 -sticky ew -padx 5 -pady 3
+    ttk::label .monitor.tf$r.l -text $label
+    ttk::entry .monitor.tf$r.e -textvariable $var -width 60
+    grid .monitor.tf$r.l -row 0 -column 0 -sticky w -padx 5
+    grid .monitor.tf$r.e -row 0 -column 1 -sticky ew -padx 5
+    grid columnconfigure .monitor.tf$r 1 -weight 1
+}
 
-ttk::labelframe .monitor.noteoff -text "NOTE OFF transform"
-grid .monitor.noteoff -row 2 -column 0 -sticky ew -padx 5 -pady 3
-ttk::label .monitor.noteoff.l -text "(e.g. v\$c n\$n l\$v):"
-ttk::entry .monitor.noteoff.e -textvariable ::note_off_transform_string -width 50
-grid .monitor.noteoff.l -row 0 -column 0 -sticky w -padx 5
-grid .monitor.noteoff.e -row 0 -column 1 -sticky ew -padx 5
-grid columnconfigure .monitor.noteoff 1 -weight 1
-set ::note_off_transform_string "v\$c n\$n l\$v"
-
-ttk::labelframe .monitor.bend -text "PITCH BEND transform"
-grid .monitor.bend -row 3 -column 0 -sticky ew -padx 5 -pady 3
-ttk::label .monitor.bend.l -text "(e.g. v\$c b\$b B\$B):"
-ttk::entry .monitor.bend.e -textvariable ::pitch_bend_transform_string -width 50
-grid .monitor.bend.l -row 0 -column 0 -sticky w -padx 5
-grid .monitor.bend.e -row 0 -column 1 -sticky ew -padx 5
-grid columnconfigure .monitor.bend 1 -weight 1
-set ::pitch_bend_transform_string "v\$c N\$b"
-
-# UDP output frame
 ttk::labelframe .monitor.udp -text "UDP → skred"
 grid .monitor.udp -row 4 -column 0 -sticky nsew -padx 5 -pady 5
-text .monitor.udp.text -state disabled -height 12
+text .monitor.udp.text -state disabled
 ttk::scrollbar .monitor.udp.sb -command ".monitor.udp.text yview"
 grid .monitor.udp.text -row 0 -column 0 -sticky nsew
 grid .monitor.udp.sb -row 0 -column 1 -sticky ns
@@ -167,75 +179,76 @@ proc wire {msg} {
 }
 
 # ------------------------------------------------------------
-# skmidi Pipe
+# skmidi pipe
 # ------------------------------------------------------------
 proc start_skmidi_pipe {} {
-    global skmidi_path midi_pipe
-    set cmd [string map {\\ /} [file nativename $skmidi_path]]  ;# Forward slashes fix Windows pipe issues
+    global skmidi_path midi_pipe skmidi_pid
+    set native [file nativename $skmidi_path]
+    set cmd [string map {\\ /} $native]
 
-    log_skmidi "Launching: $cmd"
-    set midi_pipe [open "|$cmd" r]
+    log_skmidi "Launching skmidi: $cmd"
+    set midi_pipe [open "|$cmd" r+]
+    set skmidi_pid [pid $midi_pipe]
     fconfigure $midi_pipe -blocking 0 -buffering line
     fileevent $midi_pipe readable [list process_skmidi_line]
-    log_skmidi "Waiting for MIDI input..."
 }
 
 proc process_skmidi_line {} {
     global midi_pipe
     if {[eof $midi_pipe]} {
-        log_skmidi "skmidi terminated."
+        log_skmidi "skmidi terminated"
         catch {close $midi_pipe}
+        set ::skmidi_pid ""
         return
     }
     if {[gets $midi_pipe line] < 0} return
 
     log_skmidi $line
-    if {[llength [set bytes [split $line]]] != 3} return
+    set bytes [split $line]
+    if {[llength $bytes] != 3} return
 
-    foreach hex $bytes { lappend vals [expr "0x$hex"] }
-    lassign $vals status d1 d2
+    lassign [lmap h $bytes {expr "0x$h"}] status data1 data2
+    set cmd [expr {($status >> 4) & 0xF}]
+    set c [expr {$status & 0xF}]
 
-    set cmd   [expr {($status >> 4) & 0xF}]
-    set chan  [expr {($status & 0xF) + 1}]   ;# 1-based
-    set c     [expr {$chan - 1}]             ;# 0-based for skode
+    set msg ""
+    set v 0
+    set b 0
+    set raw 0
 
     switch $cmd {
-        9 { ;# Note On
-            set n $d1
-            set v [format %.3f [expr {$d2 / 127.0}]]
+        9 {
+            set v [format %.3f [expr {$data2 / 127.0}]]
             set msg $::note_on_transform_string
         }
-        8 { ;# Note Off
-            set n $d1
-            set v [format %.3f [expr {$d2 / 127.0}]]
+        8 {
+            set v [format %.3f [expr {$data2 / 127.0}]]
             set msg $::note_off_transform_string
         }
-        14 { ;# Pitch Bend
-            set raw [expr {($d2 << 7) | $d1}]
-            set b   [format %.3f [expr {($raw - 8192) / 8192.0}]]
-            set B   $raw
+        14 {
+            set raw [expr {($data2 << 7) | $data1}]
+            set b [format %.3f [expr {($raw - 8192.0) / 8192.0}]]
             set msg $::pitch_bend_transform_string
-            regsub -all {\$b} $msg $b msg
-            regsub -all {\$B} $msg $B msg
         }
-        default { return }
+        default return
     }
 
-    # Common substitutions
+    # Safe substitution - only replace variables that exist
     regsub -all {\$c} $msg $c msg
-    regsub -all {\$n} $msg $n msg
+    regsub -all {\$n} $msg $data1 msg
     regsub -all {\$v} $msg $v msg
+    regsub -all {\$b} $msg $b msg
+    regsub -all {\$B} $msg $raw msg
 
     wire $msg
 }
 
 # ------------------------------------------------------------
-# Cleanup override
+# Exit override
 # ------------------------------------------------------------
 rename exit ::real_exit
 proc exit {{code 0}} {
     cleanup
-    destroy .monitor
     ::real_exit $code
 }
 
@@ -244,4 +257,4 @@ proc exit {{code 0}} {
 # ------------------------------------------------------------
 start_skmidi_pipe
 wm deiconify .monitor
-vwait forever   ;# Keep the app running
+vwait forever
