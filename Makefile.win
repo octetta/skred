@@ -7,6 +7,7 @@ EXE = \
 	$(OUT)/skred.exe \
 	$(OUT)/scope.exe \
 	$(OUT)/wmidi.exe \
+	$(OUT)/skmidi.exe \
   #
 
 all : $(EXE)
@@ -22,6 +23,21 @@ COPTS = \
   -D_GNU_SOURCE \
   -Wall \
   -g
+
+KO = skred-bridge-build
+VFS = $(KO)/skred-bridge.vfs
+
+skred-bridge.exe: $(OUT)/skmidi.exe skbridge.tcl
+	rm -rf $(KO)
+	mkdir -p $(KO)
+	cp tclkits/tclkit-windows.exe $(KO)/tclkit.exe
+	cp sdx-20110317.kit $(KO)/sdx.kit
+	cp win/skmidi.exe $(KO)
+	mkdir -p $(VFS)
+	cp win/skmidi.exe $(VFS)
+	cp skbridge.tcl $(VFS)/main.tcl
+	cd $(KO) ; ../tclkits/tclkit-kit-build sdx.kit wrap skred-bridge.exe -runtime tclkit.exe skbridge.tcl
+	echo rm -rf $(KO)
 
 wav2data : wav2data.c miniwav.o
 	$(CC) -g -D_GNU_SOURCE $^ -o $@
@@ -78,6 +94,9 @@ $(OUT)/scope.exe : scope.c $(OUT)/skred-mem.o build/win/libraylib.a
 
 $(OUT)/wmidi.exe : wmidi.c 
 	$(CC) $^ -o $@ -lm -lgdi32 -lwinmm
+
+$(OUT)/skmidi.exe : skmidi.c 
+	$(CC) $^ -o $@ -lm -lwinmm
 
 build/win/libraylib.a :
 	mkdir -p build/win

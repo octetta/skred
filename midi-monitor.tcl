@@ -6,7 +6,8 @@ package require udp
 # --- Configuration ---
 set addr 127.0.0.1
 set port 60440
-set wmidi_executable "wmidi.exe"
+#set skmidi_executable "skmidi.exe"
+set skmidi_executable "./skmidi"
 
 # --- UDP Socket Setup ---
 set sock [udp_open]
@@ -20,11 +21,11 @@ dest $addr $port
 wm withdraw . ;# Hide main window initially
 
 toplevel .monitor
-wm title .monitor "MIDI Monitor (wmidi.exe <-> skred)"
+wm title .monitor "MIDI Monitor (skmidi <-> skred)"
 wm protocol .monitor WM_DELETE_WINDOW {
     catch {
         if {[info exists ::pipe]} {
-            # Close the pipe, which should cause wmidi.exe to terminate
+            # Close the pipe, which should cause skmidi to terminate
             catch {close $::pipe}
         }
     }
@@ -40,18 +41,18 @@ grid rowconfigure .monitor 0 -weight 1
 grid rowconfigure .monitor 2 -weight 1
 grid columnconfigure .monitor 0 -weight 1
 
-# Frame for wmidi.exe output
-set wmidi_frame [ttk::labelframe .monitor.wmidi -text "wmidi.exe Output (Hex Bytes)"]
-grid $wmidi_frame -row 0 -column 0 -sticky nsew -padx 5 -pady 5
+# Frame for skmidi output
+set skmidi_frame [ttk::labelframe .monitor.skmidi -text "skmidi Output (Hex Bytes)"]
+grid $skmidi_frame -row 0 -column 0 -sticky nsew -padx 5 -pady 5
 
-grid rowconfigure $wmidi_frame 0 -weight 1
-grid columnconfigure $wmidi_frame 0 -weight 1
+grid rowconfigure $skmidi_frame 0 -weight 1
+grid columnconfigure $skmidi_frame 0 -weight 1
 
-set wmidi_text [text $wmidi_frame.text -height 10 -width 60 -state disabled]
-grid $wmidi_text -row 0 -column 0 -sticky nsew
-set wmidi_scroll [ttk::scrollbar $wmidi_frame.scroll -command "$wmidi_text yview"]
-grid $wmidi_scroll -row 0 -column 1 -sticky ns
-$wmidi_text configure -yscrollcommand "$wmidi_scroll set"
+set skmidi_text [text $skmidi_frame.text -height 10 -width 60 -state disabled]
+grid $skmidi_text -row 0 -column 0 -sticky nsew
+set skmidi_scroll [ttk::scrollbar $skmidi_frame.scroll -command "$skmidi_text yview"]
+grid $skmidi_scroll -row 0 -column 1 -sticky ns
+$skmidi_text configure -yscrollcommand "$skmidi_scroll set"
 
 # Frame for UDP sent messages
 set udp_frame [ttk::labelframe .monitor.udp -text "UDP Sent (Skode Messages)"]
@@ -67,11 +68,11 @@ grid $udp_scroll -row 0 -column 1 -sticky ns
 $udp_text configure -yscrollcommand "$udp_scroll set"
 
 # --- Logging Functions ---
-proc log_wmidi {msg} {
-    .monitor.wmidi.text configure -state normal
-    .monitor.wmidi.text insert end "$msg\n"
-    .monitor.wmidi.text see end
-    .monitor.wmidi.text configure -state disabled
+proc log_skmidi {msg} {
+    .monitor.skmidi.text configure -state normal
+    .monitor.skmidi.text insert end "$msg\n"
+    .monitor.skmidi.text see end
+    .monitor.skmidi.text configure -state disabled
 }
 
 proc log_udp {msg} {
@@ -89,23 +90,23 @@ proc wire {msg} {
   # puts "SENT -> $msg"
 }
 
-# --- wmidi.exe Pipe Handling ---
+# --- skmidi Pipe Handling ---
 set pipe_running 0
 
-proc start_wmidi_pipe {} {
-    global wmidi_executable pipe pipe_running
-    log_wmidi "Attempting to open pipe to $wmidi_executable..."
-    set pipe [open "|$wmidi_executable" r]
+proc start_skmidi_pipe {} {
+    global skmidi_executable pipe pipe_running
+    log_skmidi "Attempting to open pipe to $skmidi_executable..."
+    set pipe [open "|$skmidi_executable" r]
     fconfigure $pipe -blocking 0 -buffering line
 
     set pipe_running 1
-    fileevent $pipe readable [list process_wmidi_line $pipe]
-    log_wmidi "Pipe to $wmidi_executable opened successfully. Waiting for MIDI data..."
+    fileevent $pipe readable [list process_skmidi_line $pipe]
+    log_skmidi "Pipe to $skmidi_executable opened successfully. Waiting for MIDI data..."
 }
 
-proc process_wmidi_line {pipe} {
+proc process_skmidi_line {pipe} {
     if {[gets $pipe line] >= 0} {
-        log_wmidi "RAW: $line"
+        log_skmidi "RAW: $line"
 
         set bytes {}
         foreach hex $line { lappend bytes [expr "0x$hex"] }
@@ -137,15 +138,15 @@ proc process_wmidi_line {pipe} {
         }
     }
     if {[eof $pipe]} {
-        log_wmidi "wmidi.exe pipe closed or encountered EOF. Exiting..."
+        log_skmidi "skmidi pipe closed or encountered EOF. Exiting..."
         set pipe_running 0
         catch {close $pipe}
         # Optionally, try to restart or alert the user
-        # after 1000 start_wmidi_pipe
+        # after 1000 start_skmidi_pipe
     }
 }
 
 # --- Start everything ---
-start_wmidi_pipe
+start_skmidi_pipe
 
 wm deiconify .monitor ;# Show the monitor window

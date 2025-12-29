@@ -56,6 +56,9 @@ skode : skode.c skode-example.c bestline.o
 smidi : cmex2.c crossmidi.c crossmidi.h udpmini.c udpmini.h
 	$(CC) cmex2.c crossmidi.c udpmini.c -o smidi -lasound
 
+skmidi : skmidi.c
+	$(CC) skmidi.c -o skmidi -lasound
+
 miniwav.o : miniwav.c miniwav.h
 	$(CC) $(COPTS) -c $<
 
