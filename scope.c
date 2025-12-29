@@ -410,7 +410,7 @@ int main(int argc, char *argv[]) {
   if (r != 0) {
 #ifdef _WIN32
     DWORD err = GetLastError();
-    printf("# fail (%d/%lu)\n", r, err);
+    printf("# fail (%d/%lu) START skred please\n", r, err);
 #else
     printf("# fail (%d)\n", r);
 #endif

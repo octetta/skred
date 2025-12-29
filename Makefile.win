@@ -6,6 +6,7 @@ OUT = win
 EXE = \
 	$(OUT)/skred.exe \
 	$(OUT)/scope.exe \
+	$(OUT)/wmidi.exe \
   #
 
 all : $(EXE)
@@ -74,6 +75,9 @@ $(OUT)/skred.exe : $(OBJS)
 
 $(OUT)/scope.exe : scope.c $(OUT)/skred-mem.o build/win/libraylib.a
 	$(CC) -D_GNU_SOURCE -L build/win -I raylib/src $^ -o $@ -lraylib -lm -lgdi32 -lwinmm -lwinpthread
+
+$(OUT)/wmidi.exe : wmidi.c 
+	$(CC) $^ -o $@ -lm -lgdi32 -lwinmm
 
 build/win/libraylib.a :
 	mkdir -p build/win

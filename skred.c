@@ -220,6 +220,10 @@ int main(int argc, char *argv[]) {
       }
     }
   }
+
+  if (use_edit == 0) {
+    setvbuf(stdout, NULL, _IOLBF, 0);
+  }
   
   show_threads(NULL);
   
@@ -327,7 +331,7 @@ int main(int argc, char *argv[]) {
     }
 #else
       char buffer[1024];
-      printf("# ");
+      if (use_edit) printf("# ");
       line = fgets(buffer, sizeof(buffer), stdin);
 #endif
     if (line == NULL) {
