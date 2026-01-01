@@ -99,6 +99,10 @@ proc kill_skmidi {} {
 set ::addr 127.0.0.1
 set ::port 60440
 set ::sock [udp_open]
+
+set ::config_addr $::addr
+set ::config_port $::port
+
 fconfigure $::sock -buffering none -translation binary
 fconfigure $::sock -remote [list $::addr $::port]
 
@@ -156,6 +160,26 @@ grid .monitor.udp.sb -row 0 -column 1 -sticky ns
 grid rowconfigure .monitor.udp 0 -weight 1
 grid columnconfigure .monitor.udp 0 -weight 1
 
+###
+ttk::labelframe .monitor.comm -text "comm"
+grid .monitor.comm -row 5 -column 0 -sticky ew -padx 5 -pady 5
+
+ttk::label .monitor.comm.addr_label -text "Address:"
+ttk::entry .monitor.comm.addr_entry -textvariable ::config_addr -width 20
+ttk::label .monitor.comm.port_label -text "Port:"
+ttk::entry .monitor.comm.port_entry -textvariable ::config_port -width 10
+ttk::button .monitor.comm.update_btn -text "update" -command update_udp_target
+
+grid .monitor.comm.addr_label -row 0 -column 0 -sticky w -padx 5 -pady 5
+grid .monitor.comm.addr_entry -row 0 -column 1 -sticky ew -padx 5 -pady 5
+grid .monitor.comm.port_label -row 0 -column 2 -sticky w -padx 5 -pady 5
+grid .monitor.comm.port_entry -row 0 -column 3 -sticky ew -padx 5 -pady 5
+grid .monitor.comm.update_btn -row 0 -column 4 -sticky e -padx 5 -pady 5
+
+grid columnconfigure .monitor.comm 1 -weight 1
+grid columnconfigure .monitor.comm 3 -weight 1
+###
+
 # ------------------------------------------------------------
 # Logging
 # ------------------------------------------------------------
@@ -171,6 +195,31 @@ proc log_udp {msg} {
     .monitor.udp.text insert end "$msg\n"
     .monitor.udp.text see end
     .monitor.udp.text configure -state disabled
+}
+
+proc update_udp_target {} {
+    global sock config_addr config_port addr port
+    
+    # Validate inputs
+    if {[string trim $config_addr] eq ""} {
+        tk_messageBox -icon error -title "Invalid Address" -message "Address cannot be empty"
+        return
+    }
+    if {![string is integer -strict $config_port] || $config_port < 1 || $config_port > 65535} {
+        tk_messageBox -icon error -title "Invalid Port" -message "Port must be between 1 and 65535"
+        return
+    }
+    
+    # Update the socket configuration
+    set addr $config_addr
+    set port $config_port
+    
+    catch {close $sock}
+    set sock [udp_open]
+    fconfigure $sock -buffering none -translation binary
+    fconfigure $sock -remote [list $addr $port]
+    
+    log_udp "Updated target to ${addr}:${port}"
 }
 
 proc wire {msg} {
@@ -388,4 +437,5 @@ proc exit {{code 0}} {
 # ------------------------------------------------------------
 start_skmidi_pipe
 wm deiconify .monitor
+wm geometry .monitor 900x900
 vwait forever
