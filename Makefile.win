@@ -3,11 +3,14 @@ AR = x86_64-w64-mingw32-ar
 
 OUT = win
 
+SBEXE = skred-bridge.exe
+
 EXE = \
 	$(OUT)/skred.exe \
 	$(OUT)/scope.exe \
 	$(OUT)/wmidi.exe \
 	$(OUT)/skmidi.exe \
+  $(SBEXE) \
   #
 
 all : $(EXE)
@@ -28,7 +31,6 @@ KO = skred-bridge-build
 VFS = $(KO)/skred-bridge.vfs
 KIT = tclkits/tclkit-kit-build
 TCL = tclkit.exe
-SBEXE = skred-bridge.exe
 
 $(SBEXE): $(OUT)/skmidi.exe skbridge.tcl
 	rm -rf $(KO)
