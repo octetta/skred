@@ -2,16 +2,23 @@ CC = gcc
 
 EXE = \
 	skred \
-  skode \
+	skode \
 	scope \
-  sk8r-linux \
-  sk8r-windows \
-  #
+	sk8r-linux \
+	sk8r-windows \
+	#
 
 SK8R_DIR := sk8r
 MIDI_DIR := midi-sk8
 BUILD_DIR := build
 WIN_CC   := x86_64-w64-mingw32-gcc
+
+# Linker Flags
+# -s -w strips debug info for smaller binaries
+# -H=windowsgui hides the terminal window on Windows launch
+# -extldflags '-static...' ensures all C++ dependencies are bundled into the exe
+WIN_LDFLAGS="-H=windowsgui -s -w -extldflags '-static -static-libgcc -static-libstdc++'"
+LINUX_LDFLAGS="-s -w"
 
 .PHONY: all sk8r-linux sk8r-windows midi-linux midi-windows setup-midi clean
 
@@ -42,28 +49,38 @@ midi-windows:
 	CXX=x86_64-w64-mingw32-g++ \
 	go build -ldflags="-H=windowsgui -s -w -extldflags '-static -static-libgcc -static-libstdc++'" -o ../build/midi-sk8.exe .
 
+pad-linux:
+	mkdir -p $(BUILD_DIR)
+	cd sk8-pad && go build -ldflags=$(LINUX_LDFLAGS) -o ../$(BUILD_DIR)/sk8-pad-linux .
+
+pad-windows:
+	mkdir -p $(BUILD_DIR)
+	cd sk8-pad && CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
+	CC=$(CC_WIN) CXX=$(CXX_WIN) \
+	go build -ldflags=$(WIN_LDFLAGS) -o ../$(BUILD_DIR)/sk8-pad.exe .
+
 EXTRA = \
 	wav2data \
-  #
+	#
 
 all : $(EXE)
 
 LIB = \
 	-lm \
 	-lasound \
-  -pthread \
+	-pthread \
 	-lpthread \
-  -lrt \
-  #
+	-lrt \
+	#
 
 COPTS = \
-  -D_GNU_SOURCE \
-  -Wall \
-  -march=native \
-  -O3 \
-  #
+	-D_GNU_SOURCE \
+	-Wall \
+	-march=native \
+	-O3 \
+	#
 NOPTS = \
-  -g
+	-g
 
 util.o : util.c
 	$(CC) $(COPTS) -c $<
@@ -77,8 +94,8 @@ futex-compat.o : futex-compat.c futex-compat.h
 build/linux/libraylib.a :
 	mkdir -p build/linux
 	cd raylib/src && make clean && \
-  make PLATFORM=PLATFORM_DESKTOP RAYLIB_LIBTYPE=STATIC && \
-  cp libraylib.a ../../build/linux/
+	make PLATFORM=PLATFORM_DESKTOP RAYLIB_LIBTYPE=STATIC && \
+	cp libraylib.a ../../build/linux/
 
 scope : scope.c skred-mem.o build/linux/libraylib.a
 	$(CC) -D_GNU_SOURCE -DUSE_RAYLIB -L build/linux -I raylib/src $^ -o $@ -lraylib -lm
@@ -103,7 +120,7 @@ amysamples.o : amysamples.c amysamples.h
 
 raylib-quickstart-main/Makefile :
 	sh make-raylib
-  
+	
 synth.def: skred.h
 
 synth.o: synth.c synth.h synth-types.h synth.def
@@ -125,18 +142,18 @@ skred.o: skred.c skred.h synth.def
 	$(CC) $(COPTS) -c $<
 
 OBJS = \
-  skred.o \
-  miniwav.o \
-  amysamples.o \
-  synth.o \
-  seq.o \
-  wire.o skode.o \
-  udp.o \
-  miniaudio.o \
+	skred.o \
+	miniwav.o \
+	amysamples.o \
+	synth.o \
+	seq.o \
+	wire.o skode.o \
+	udp.o \
+	miniaudio.o \
 	bestline.o \
 	skred-mem.o \
 	util.o \
-  #
+	#
 
 skred : $(OBJS)
 	$(CC) $(COPTS) $^ -o $@ $(LIB)
