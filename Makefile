@@ -9,9 +9,11 @@ EXE = \
   #
 
 SK8R_DIR := sk8r
+MIDI_DIR := midi-sk8
+BUILD_DIR := build
 WIN_CC   := x86_64-w64-mingw32-gcc
 
-.PHONY: all sk8r-linux sk8r-windows clean
+.PHONY: all sk8r-linux sk8r-windows midi-linux midi-windows setup-midi clean
 
 # Build Linux version
 sk8r-linux:
@@ -22,6 +24,23 @@ sk8r-windows:
 	mkdir -p build
 	cd $(SK8R_DIR) && CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC=$(WIN_CC) \
 	go build -ldflags="-H=windowsgui" -o ../build/sk8r.exe .
+
+# 1. Install system dependencies & tidy modules (Run this once)
+setup-midi:
+	sudo dnf install mingw64-gcc mingw64-winpthreads-static alsa-lib-devel
+	cd $(MIDI_DIR) && go mod tidy
+
+# 2. Build for Linux (Native Fedora)
+midi-linux:
+	mkdir -p $(BUILD_DIR)
+	cd $(MIDI_DIR) && go build -o ../$(BUILD_DIR)/midi-sk8-linux .
+
+midi-windows:
+	mkdir -p build
+	cd midi-sk8 && CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
+	CC=x86_64-w64-mingw32-gcc \
+	CXX=x86_64-w64-mingw32-g++ \
+	go build -ldflags="-H=windowsgui -s -w -extldflags '-static -static-libgcc -static-libstdc++'" -o ../build/midi-sk8.exe .
 
 EXTRA = \
 	wav2data \
