@@ -4,8 +4,6 @@ EXE = \
 	skred \
 	skode \
 	scope \
-	sk8r-linux \
-	sk8r-windows \
 	#
 
 SK8R_DIR := sk8r
@@ -51,13 +49,15 @@ midi-windows:
 
 pad-linux:
 	mkdir -p $(BUILD_DIR)
-	cd sk8-pad && go build -ldflags=$(LINUX_LDFLAGS) -o ../$(BUILD_DIR)/sk8-pad-linux .
+	cd sk8-pad && go build -ldflags="-s -w" -o ../build/sk8-pad-linux .
 
 pad-windows:
-	mkdir -p $(BUILD_DIR)
-	cd sk8-pad && CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
-	CC=$(CC_WIN) CXX=$(CXX_WIN) \
-	go build -ldflags=$(WIN_LDFLAGS) -o ../$(BUILD_DIR)/sk8-pad.exe .
+	mkdir -p build
+	cd sk8-pad && \
+    CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
+    CC=x86_64-w64-mingw32-gcc \
+    CXX=x86_64-w64-mingw32-g++ \
+    go build -ldflags="-H=windowsgui -s -w -extldflags '-static'" -o ../build/sk8-pad.exe .
 
 EXTRA = \
 	wav2data \
