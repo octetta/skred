@@ -4,7 +4,24 @@ EXE = \
 	skred \
   skode \
 	scope \
+  sk8r-linux \
+  sk8r-windows \
   #
+
+SK8R_DIR := sk8r
+WIN_CC   := x86_64-w64-mingw32-gcc
+
+.PHONY: all sk8r-linux sk8r-windows clean
+
+# Build Linux version
+sk8r-linux:
+	cd $(SK8R_DIR) && go build -o ../build/sk8r-linux .
+
+# Build Windows version (Docker-free cross-compile)
+sk8r-windows:
+	mkdir -p build
+	cd $(SK8R_DIR) && CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC=$(WIN_CC) \
+	go build -ldflags="-H=windowsgui" -o ../build/sk8r.exe .
 
 EXTRA = \
 	wav2data \

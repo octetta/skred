@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -17,19 +18,22 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+//go:embed icon.png
+var iconBytes []byte
+
 var (
 	isDark        = true
 	activeWindows []*WindowInstance
 	globalApp     fyne.App
 )
 
-// --- Custom Compact Theme Logic ---
+// Custom Compact Theme Logic
 type compactTheme struct{ fyne.Theme }
 
 func (m compactTheme) Size(name fyne.ThemeSizeName) float32 {
-	if name == theme.SizeNameText { return 10 } // Smaller text
-	if name == theme.SizeNamePadding { return 2 } // Tighter spacing
-	if name == theme.SizeNameInlineIcon { return 12 } // Smaller icons
+	if name == theme.SizeNameText { return 10 }
+	if name == theme.SizeNamePadding { return 2 }
+	if name == theme.SizeNameInlineIcon { return 12 }
 	return theme.DefaultTheme().Size(name)
 }
 
@@ -110,10 +114,7 @@ func (w *WindowInstance) sendUDP(msg string) {
 
 func (w *WindowInstance) spawn(initialParams []string) {
 	w.win = globalApp.NewWindow("sk8r")
-	
-	if icon, err := fyne.LoadResourceFromPath("icon.png"); err == nil {
-		w.win.SetIcon(icon)
-	}
+	w.win.SetIcon(fyne.NewStaticResource("icon.png", iconBytes))
 
 	activeWindows = append(activeWindows, w)
 	w.activeVoice = -1
@@ -127,26 +128,18 @@ func (w *WindowInstance) spawn(initialParams []string) {
 		}
 	})
 
-	// --- Menus (Including the new View Menu) ---
 	fileMenu := fyne.NewMenu("File",
 		fyne.NewMenuItem("New Window", func() { (&WindowInstance{}).spawn(initialParams) }),
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Save Session", saveAll),
 		fyne.NewMenuItem("Open Session", loadSession),
 	)
-
 	viewMenu := fyne.NewMenu("View",
-		fyne.NewMenuItem("Normal Size", func() {
-			globalApp.Settings().SetTheme(theme.DefaultTheme())
-		}),
-		fyne.NewMenuItem("Compact Size", func() {
-			globalApp.Settings().SetTheme(compactTheme{theme.DefaultTheme()})
-		}),
+		fyne.NewMenuItem("Normal Size", func() { globalApp.Settings().SetTheme(theme.DefaultTheme()) }),
+		fyne.NewMenuItem("Compact Size", func() { globalApp.Settings().SetTheme(compactTheme{theme.DefaultTheme()}) }),
 	)
-
 	w.win.SetMainMenu(fyne.NewMainMenu(fileMenu, viewMenu))
 
-	// --- UI Building ---
 	w.titleEntry = widget.NewEntry()
 	w.titleEntry.SetPlaceHolder("Note / Title...")
 	w.titleEntry.OnSubmitted = func(s string) { w.win.SetTitle(s) }
