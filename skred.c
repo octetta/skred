@@ -237,6 +237,7 @@ int main(int argc, char *argv[]) {
   synth_init();
   wave_table_init();
   voice_init();
+  tempo_set(120.0);
   seq_init();
 
   // miniaudio's synth device setup

@@ -1,4 +1,4 @@
-#!/usr/bin/tclsh
+#!/usr/bin/tclsh8
 
 package require udp
 set addr 127.0.0.1
@@ -16,6 +16,12 @@ set pattern 0
 
 # Procedure called when a button is pressed
 proc toggle {num} {
+  set which "::wire_text_var$num"
+  set message [set $which]
+  # puts "$num -> $message"
+  wire $message
+}
+proc xtoggle {num} {
     set which "::wire_text_var$num"
     set state "::state_var$num"
     if {[set $state] == "sunken"} {
@@ -78,11 +84,11 @@ for {set row 0} {$row < $n} {incr row} {
         } else {
             set wire_text_text "T"
         }
-        puts "text_idx -> $text_idx :: $wire_text_text"
+        # puts "text_idx -> $text_idx :: $wire_text_text"
         
         # Create button
         button .btn$num -text $num -command [list toggle $num] \
-          -width 10 -height 2 -bd 0 \
+          -width 10 -height 4 -bd 0 \
           -bg lightblue -activebackground blue
           # -bg lightblue -activebackground #F54927
         bind .btn$num <Enter> [list fancyHilite Enter $num %W #ecfaff #ffd27f]

@@ -102,6 +102,7 @@ set ::sock [udp_open]
 
 set ::config_addr $::addr
 set ::config_port $::port
+set ::custom_transform ""
 
 fconfigure $::sock -buffering none -translation binary
 fconfigure $::sock -remote [list $::addr $::port]
@@ -115,7 +116,7 @@ set ::pitch_bend_transform_string "v\$c N\$b"
 # ------------------------------------------------------------
 wm withdraw .
 toplevel .monitor
-wm title .monitor "MIDI → skode (skred-bridge)"
+wm title .monitor "MIDI to skode"
 wm protocol .monitor WM_DELETE_WINDOW {
     cleanup
     destroy .monitor
@@ -126,7 +127,7 @@ grid rowconfigure .monitor {0 4} -weight 1
 grid rowconfigure .monitor {1 2 3} -weight 0
 grid columnconfigure .monitor 0 -weight 1
 
-ttk::labelframe .monitor.skmidi -text "from skmidi"
+ttk::labelframe .monitor.skmidi -text "from MIDI"
 grid .monitor.skmidi -row 0 -column 0 -sticky nsew -padx 5 -pady 5
 text .monitor.skmidi.text -state disabled
 ttk::scrollbar .monitor.skmidi.sb -command ".monitor.skmidi.text yview"
@@ -150,7 +151,7 @@ foreach {r title var label} {
     grid columnconfigure .monitor.tf$r 1 -weight 1
 }
 
-ttk::labelframe .monitor.udp -text "UDP → skred"
+ttk::labelframe .monitor.udp -text "to skred"
 grid .monitor.udp -row 4 -column 0 -sticky nsew -padx 5 -pady 5
 text .monitor.udp.text -state disabled
 ttk::scrollbar .monitor.udp.sb -command ".monitor.udp.text yview"
@@ -161,12 +162,12 @@ grid rowconfigure .monitor.udp 0 -weight 1
 grid columnconfigure .monitor.udp 0 -weight 1
 
 ###
-ttk::labelframe .monitor.comm -text "comm"
+ttk::labelframe .monitor.comm -text "config"
 grid .monitor.comm -row 5 -column 0 -sticky ew -padx 5 -pady 5
 
-ttk::label .monitor.comm.addr_label -text "Address:"
+ttk::label .monitor.comm.addr_label -text "address"
 ttk::entry .monitor.comm.addr_entry -textvariable ::config_addr -width 20
-ttk::label .monitor.comm.port_label -text "Port:"
+ttk::label .monitor.comm.port_label -text "port"
 ttk::entry .monitor.comm.port_entry -textvariable ::config_port -width 10
 ttk::button .monitor.comm.update_btn -text "update" -command update_udp_target
 
@@ -178,6 +179,12 @@ grid .monitor.comm.update_btn -row 0 -column 4 -sticky e -padx 5 -pady 5
 
 grid columnconfigure .monitor.comm 1 -weight 1
 grid columnconfigure .monitor.comm 3 -weight 1
+###
+ttk::label .monitor.comm.transform_label -text "custom"
+ttk::entry .monitor.comm.transform_entry -textvariable ::custom_transform -width 40
+
+grid .monitor.comm.transform_label -row 1 -column 0 -sticky w -padx 5 -pady 5
+grid .monitor.comm.transform_entry -row 1 -column 1 -columnspan 3 -sticky ew -padx 5 -pady 5
 ###
 
 # ------------------------------------------------------------
@@ -240,7 +247,6 @@ proc safe_eval {expr_str} {
     return $result
 }
 
-
 proc expand_string {input_string} {
     # Only upvar variables that exist in caller's scope
     foreach var {a c n v} {
@@ -301,61 +307,9 @@ proc expand_string {input_string} {
     return $result
 }
 
-proc x_expand_string {input_string} {
-    upvar 1 a a c c n n v v b b B B
-    set result ""
-    set i 0
-    set len [string length $input_string]
-    
-    while {$i < $len} {
-        set char [string index $input_string $i]
-        
-        if {$char eq "\$"} {
-            incr i
-            set next_char [string index $input_string $i]
-            
-            if {$next_char eq "\{"} {
-                incr i
-                set expr_start $i
-                set brace_count 1
-                
-                while {$brace_count > 0} {
-                    set char [string index $input_string $i]
-                    if {$char eq "\{"} {incr brace_count}
-                    if {$char eq "\}"} {incr brace_count -1}
-                    incr i
-                }
-                
-                set expr [string range $input_string $expr_start [expr {$i - 2}]]
-                set expr [string map [list "\$a" "${a}.0" "\$c" $c] $expr]
-                append result [expr $expr]
-            } else {
-                set var_name ""
-                while {$i < $len && [string is alnum [string index $input_string $i]]} {
-                    append var_name [string index $input_string $i]
-                    incr i
-                }
-                append result [set $var_name]
-                continue
-            }
-        } else {
-            append result $char
-            incr i
-        }
-    }
-    
-    return $result
-}
-
-# set c 5
-# set a 5
-# puts [expand_string "v\$c\${\$a/10}"]
-
-
 # ------------------------------------------------------------
 # skmidi pipe
 # ------------------------------------------------------------
-
 
 proc start_skmidi_pipe {} {
     global skmidi_path midi_pipe skmidi_pid
@@ -368,6 +322,33 @@ proc start_skmidi_pipe {} {
     fconfigure $midi_pipe -blocking 0 -buffering line
     fileevent $midi_pipe readable [list process_skmidi_line]
 }
+
+###
+proc apply_custom_transform {c_val n_val v_val b_val B_val} {
+    global custom_transform
+    
+    # If no custom transform, return original values
+    if {[string trim $custom_transform] eq ""} {
+        return [list $c_val $n_val $v_val $b_val $B_val]
+    }
+    
+    # Create local variables for the transform
+    set c $c_val
+    set n $n_val
+    set v $v_val
+    set b $b_val
+    set B $B_val
+    
+    # Try to execute the custom transform
+    if {[catch {eval $custom_transform} err]} {
+        log_udp "Custom transform error: $err"
+        return [list $c_val $n_val $v_val $b_val $B_val]
+    }
+    
+    # Return the potentially modified values
+    return [list $c $n $v $b $B]
+}
+###
 
 proc process_skmidi_line {} {
     global midi_pipe
@@ -395,23 +376,21 @@ proc process_skmidi_line {} {
     switch $cmd {
         9 {
             set v [format %.3f [expr {$data2 / 127.0}]]
-            set msg [expand_string $::note_on_transform_string]
-            # set msg $::note_on_transform_string
-            # set msg [process_transform $::note_on_transform_string $c $data1 $v $b $raw]
+            set msg $::note_on_transform_string
         }
         8 {
             set v [format %.3f [expr {$data2 / 127.0}]]
             set msg $::note_off_transform_string
-            # set msg [process_transform $::note_off_transform_string $c $data1 $v $b $raw]
         }
         14 {
             set raw [expr {($data2 << 7) | $data1}]
             set b [format %.3f [expr {($raw - 8192.0) / 8192.0}]]
             set msg $::pitch_bend_transform_string
-            # set msg [process_transform $::pitch_bend_transform_string $c 0 0 $b $raw]
         }
         default return
     }
+
+    lassign [apply_custom_transform $c $data1 $v $b $raw] c data1 v b raw
 
     # Safe substitution - only replace variables that exist
     regsub -all {\$c} $msg $c msg

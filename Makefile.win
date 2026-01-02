@@ -44,6 +44,21 @@ $(SBEXE): $(OUT)/skmidi.exe skbridge.tcl
 	cd $(KO) ; ../$(KIT) sdx.kit wrap $(SBEXE) -runtime $(TCL) skbridge.tcl
 	echo rm -rf $(KO)
 
+xKO = buttons
+xVFS = $(xKO)/buttons.vfs
+KIT = tclkits/tclkit-kit-build
+TCL = tclkit.exe
+
+buttons.exe: dreammachine
+	rm -rf $(xKO)
+	mkdir -p $(xKO)
+	cp tclkits/tclkit-windows.exe $(xKO)/$(TCL)
+	cp sdx-20110317.kit $(xKO)/sdx.kit
+	mkdir -p $(xVFS)
+	cp dreammachine $(xVFS)/main.tcl
+	cd $(xKO) ; ../$(KIT) sdx.kit wrap buttons.exe -runtime $(TCL) dreammachine
+	echo rm -rf $(xKO)
+
 wav2data : wav2data.c miniwav.o
 	$(CC) -g -D_GNU_SOURCE $^ -o $@
 
