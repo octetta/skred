@@ -185,9 +185,10 @@ clean :
 	rm -rf build
 	cd raylib/src && make clean
 
-REL = bundle-skred-2026-01-03-002
+REL = bundle-skred-2026-01-03-004
 
 install-win :
+	rm -rf $(REL)
 	mkdir -p $(REL)
 	mkdir -p $(REL)/sk
 	mkdir -p $(REL)/wav
@@ -199,7 +200,7 @@ install-win :
     cp ../build/sk8-pad.exe . ; \
     cp ../sk/909.sk sk ; \
     cp ../wav/24.wav wav ; \
-  #
+    upx --best *.exe
 	rm -f $(REL).zip
 	zip -r $(REL).zip $(REL)
 

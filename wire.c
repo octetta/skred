@@ -407,7 +407,7 @@ int data_load(wire_t *w, int where) {
   return 0;
 }
 
-int wave_load(wire_t *w, int which, int where, int ch) {
+int wave_load(wire_t *w, int which, int where, int ch, int normalize) {
   if (where < EXT_SAMPLE_000 || where >= EXT_SAMPLE_999) return ERR_INVALID_EXT_SAMPLE;
   char name[1024];
   sprintf(name, "%d.wav", which);
@@ -451,6 +451,7 @@ int wave_load(wire_t *w, int which, int where, int ch) {
     wave_offset_hz[where] = (float)len / (float)wav.SamplesRate * 440.0f;
     w->printf("# read %d frames from %s to %d (ch:%d sr:%d)\n",
       len, name, where, wav.Channels, wav.SamplesRate);
+    normalize_preserve_zero(table, len);
   }
   return 0;
 }
@@ -825,7 +826,7 @@ int wire_function(skode_t *s, int info) {
           which = (int)arg[0];
           where = EXT_SAMPLE_000;
         }
-        wave_load(w, which, where, ch);
+        wave_load(w, which, where, ch, 1);
       }
       break;
     case '<___': if (arg) {

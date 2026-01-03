@@ -84,4 +84,6 @@ void voice_init(void);
 char *synth_stats(void);
 void synth_voice_bench(int voice);
 
+void normalize_preserve_zero(float *data, int length);
+
 #endif
