@@ -348,6 +348,10 @@ int sk_load(wire_t *w, int voice, int n, int output) {
   char file[1024];
   sprintf(file, "%d.sk", n);
   FILE *in = fopen(file, "r");
+  if (in == NULL) {
+    sprintf(file, "sk/%d.sk", n);
+    in = fopen(file, "r");
+  }
   int r = 0;
   if (in) {
     static wire_t wprime = WIRE();
@@ -407,6 +411,17 @@ int wave_load(wire_t *w, int which, int where, int ch) {
   if (where < EXT_SAMPLE_000 || where >= EXT_SAMPLE_999) return ERR_INVALID_EXT_SAMPLE;
   char name[1024];
   sprintf(name, "%d.wav", which);
+  FILE *in = fopen(name, "r");
+  if (in) fclose(in);
+  else {
+    sprintf(name, "wav/%d.wav", which);
+    in = fopen(name, "r");
+    if (in) fclose(in);
+    else {
+      printf("cannot open %d.wav or wav/%d.wav\n", which, which);
+      return -1;
+    }
+  }
   wav_t wav;
   int len;
   float *table = mw_get(name, &len, &wav, ch);

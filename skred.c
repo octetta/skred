@@ -23,7 +23,7 @@
 //#include <string.h>
 //#include <sys/time.h>
 //#include <time.h>
-//#include <unistd.h>
+#include <unistd.h>
 
 #ifndef _WIN32
 #include "bestline.h"
@@ -219,6 +219,10 @@ int main(int argc, char *argv[]) {
         }
       }
     }
+  }
+
+  if (isatty(STDIN_FILENO) == 0) {
+    use_edit = 0;
   }
 
   if (use_edit == 0) {

@@ -59,6 +59,18 @@ pad-windows:
     CXX=x86_64-w64-mingw32-g++ \
     go build -ldflags="-H=windowsgui -s -w -extldflags '-static'" -o ../build/sk8-pad.exe .
 
+repl-linux:
+	mkdir -p $(BUILD_DIR)
+	cd sk8-repl && go build -ldflags="-s -w" -o ../build/sk8-repl .
+
+repl-windows:
+	mkdir -p build
+	cd sk8-repl && \
+    CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
+    CC=x86_64-w64-mingw32-gcc \
+    CXX=x86_64-w64-mingw32-g++ \
+    go build -ldflags="-H=windowsgui -s -w -extldflags '-static'" -o ../build/sk8-repl.exe .
+
 EXTRA = \
 	wav2data \
 	#
@@ -172,6 +184,24 @@ clean :
 	rm -f $(EXE)
 	rm -rf build
 	cd raylib/src && make clean
+
+REL = bundle-skred-2026-01-03-002
+
+install-win :
+	mkdir -p $(REL)
+	mkdir -p $(REL)/sk
+	mkdir -p $(REL)/wav
+	cd $(REL) ; \
+    cp ../win/skred.exe . ; \
+    cp ../win/scope.exe . ; \
+    cp ../build/sk8r.exe . ; \
+    cp ../build/midi-sk8.exe . ; \
+    cp ../build/sk8-pad.exe . ; \
+    cp ../sk/909.sk sk ; \
+    cp ../wav/24.wav wav ; \
+  #
+	rm -f $(REL).zip
+	zip -r $(REL).zip $(REL)
 
 test-windows :
 	x86_64-w64-mingw32-gcc test-windows-audio.c -o tone.exe
