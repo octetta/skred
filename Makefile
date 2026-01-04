@@ -89,6 +89,14 @@ midi-linux:
 	mkdir -p $(BUILD_DIR)
 	cd $(MIDI_DIR) && go build -o ../$(BUILD_DIR)/midi-sk8-linux .
 
+midi-macos:
+	mkdir -p $(BUILD_DIR)
+	cd $(MIDI_DIR) && \
+	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../build/midi-sk8-macos-amd64 . && \
+	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../build/midi-sk8-macos-arm64 . && \
+	lipo -create -output ../build/midi-sk8-macos-universal ../build/midi-sk8-macos-amd64 ../build/midi-sk8-macos-arm64
+	cd $(MIDI_DIR) && fyne package -exe ../build/midi-sk8-macos-universal -os darwin -icon icon.png -name ../build/midi-sk8
+
 midi-windows:
 	mkdir -p build
 	cd midi-sk8 && CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
@@ -99,6 +107,14 @@ midi-windows:
 pad-linux:
 	mkdir -p $(BUILD_DIR)
 	cd sk8-pad && go build -ldflags="-s -w" -o ../build/sk8-pad-linux .
+
+pad-macos:
+	mkdir -p $(BUILD_DIR)
+	cd sk8-pad && \
+	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../build/sk8-pad-macos-amd64 . && \
+	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../build/sk8-pad-macos-arm64 . && \
+	lipo -create -output ../build/sk8-pad-macos-universal ../build/sk8-pad-macos-amd64 ../build/sk8-pad-macos-arm64
+	cd sk8-pad && fyne package -exe ../build/sk8-pad-macos-universal -os darwin -icon icon.png -name ../build/sk8-pad
 
 pad-windows:
 	mkdir -p build
@@ -223,7 +239,7 @@ clean :
 	rm -rf build
 	cd raylib/src && make clean
 
-REL = bundle-skred-2026-01-03-004
+REL = bundle-skred-2026-01-03-005
 
 install-win :
 	rm -rf $(REL)
@@ -250,6 +266,8 @@ install-macos :
 	cd $(REL) ; \
     cp ../skred . ; \
     cp -r ../build/sk8r.app . ; \
+    cp -r ../build/sk8-pad.app . ; \
+    cp -r ../build/midi-sk8.app . ; \
     cp ../sk/909.sk sk ; \
     cp ../wav/24.wav wav ; \
 	rm -f $(REL).zip
