@@ -74,13 +74,10 @@ seq.o: seq.c seq.h
 udp.o: udp.c udp.h
 	$(CC) $(COPTS) -c $<
 
-wire.o: wire.c wire.h synth.def
-	$(CC) $(COPTS) -c $<
-
 skode.o: skode.c skode.h
 	$(CC) $(COPTS) -c $<
 
-wire2.o: wire2.c wire.h synth.def skode.h skode.o
+wire.o: wire.c wire.h synth.def skode.h skode.o
 	$(CC) $(COPTS) -Wno-multichar -c $<
 
 skred.o: skred.c skred.h synth.def

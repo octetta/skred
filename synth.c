@@ -480,7 +480,7 @@ char *synth_stats(void) {
 }
 
 #define BENCH_CLOCK CLOCK_MONOTONIC
-#ifdef _IS_OSX_
+#ifdef __APPLE__
 #define VOICE_CLOCK CLOCK_MONOTONIC
 #else
 

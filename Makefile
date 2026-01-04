@@ -1,5 +1,46 @@
 CC = gcc
 
+UNAME_S := $(shell uname -s)
+
+ifeq ($(UNAME_S), Darwin)
+	CC := clang
+	LIB := \
+	-lm \
+	-pthread \
+	-lpthread \
+	-framework CoreAudio \
+	-framework CoreFoundation \
+	#
+
+	XYZ := darwin
+
+	COPTS := \
+	  -D_GNU_SOURCE \
+	  -D_IS_OSX_ \
+	  -Wall \
+	  -arch arm64 \
+	  -arch x86_64 \
+	  #
+else
+	LIB := \
+	-lm \
+	-lasound \
+	-pthread \
+	-lpthread \
+	-lrt \
+	#
+
+	XYZ := linux
+
+	COPTS := \
+	-D_GNU_SOURCE \
+	-Wall \
+	-march=native \
+	-O3 \
+	#
+
+endif
+
 EXE = \
 	skred \
 	skode \
@@ -23,6 +64,14 @@ LINUX_LDFLAGS="-s -w"
 # Build Linux version
 sk8r-linux:
 	cd $(SK8R_DIR) && go build -o ../build/sk8r-linux .
+
+# Build macos version
+sk8r-macos:
+	cd $(SK8R_DIR) && \
+	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../build/sk8r-macos-amd64 . && \
+	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../build/sk8r-macos-arm64 . && \
+	lipo -create -output ../build/sk8r-macos-universal ../build/sk8r-macos-amd64 ../build/sk8r-macos-arm64
+	cd $(SK8R_DIR) && fyne package -exe ../build/sk8r-macos-universal -os darwin -icon icon.png -name ../build/sk8r
 
 # Build Windows version (Docker-free cross-compile)
 sk8r-windows:
@@ -77,20 +126,9 @@ EXTRA = \
 
 all : $(EXE)
 
-LIB = \
-	-lm \
-	-lasound \
-	-pthread \
-	-lpthread \
-	-lrt \
-	#
 
-COPTS = \
-	-D_GNU_SOURCE \
-	-Wall \
-	-march=native \
-	-O3 \
-	#
+
+
 NOPTS = \
 	-g
 
@@ -110,13 +148,13 @@ build/linux/libraylib.a :
 	cp libraylib.a ../../build/linux/
 
 scope : scope.c skred-mem.o build/linux/libraylib.a
-	$(CC) -D_GNU_SOURCE -DUSE_RAYLIB -L build/linux -I raylib/src $^ -o $@ -lraylib -lm
+	$(CC) $(COPTS) -D_GNU_SOURCE -DUSE_RAYLIB -L build/linux -I raylib/src $^ -o $@ -lraylib -lm
 
 wav2data : wav2data.c miniwav.o
-	$(CC) -D_GNU_SOURCE $^ -o $@
+	$(CC) $(COPTS) -D_GNU_SOURCE $^ -o $@
 
 skode : skode.c skode-example.c bestline.o
-	$(CC) -Wall -Wno-multichar skode.c skode-example.c bestline.o -o $@
+	$(CC) $(COPTS) -Wall -Wno-multichar skode.c skode-example.c bestline.o -o $@
 
 smidi : cmex2.c crossmidi.c crossmidi.h udpmini.c udpmini.h
 	$(CC) cmex2.c crossmidi.c udpmini.c -o smidi -lasound
@@ -171,10 +209,10 @@ skred : $(OBJS)
 	$(CC) $(COPTS) $^ -o $@ $(LIB)
 
 bestline.o: bestline.c bestline.h
-	$(CC) -c $<
+	$(CC) $(COPTS) -c $<
 
 miniaudio.o: miniaudio.c miniaudio.h
-	$(CC) -c $<
+	$(CC) $(COPTS) -c $<
 
 check : skred
 	valgrind --tool=memcheck --leak-check=full ./skred
@@ -201,6 +239,19 @@ install-win :
     cp ../sk/909.sk sk ; \
     cp ../wav/24.wav wav ; \
     upx --best *.exe
+	rm -f $(REL).zip
+	zip -r $(REL).zip $(REL)
+
+install-macos :
+	rm -rf $(REL)
+	mkdir -p $(REL)
+	mkdir -p $(REL)/sk
+	mkdir -p $(REL)/wav
+	cd $(REL) ; \
+    cp ../skred . ; \
+    cp -r ../build/sk8r.app . ; \
+    cp ../sk/909.sk sk ; \
+    cp ../wav/24.wav wav ; \
 	rm -f $(REL).zip
 	zip -r $(REL).zip $(REL)
 
