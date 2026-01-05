@@ -1,4 +1,5 @@
 # skred
+![skred logo](skred.png)
 
 - needs asound on linux
   - sudo apt install libasound2-dev 
