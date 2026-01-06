@@ -33,27 +33,29 @@ Several GUI helper tools are provided as examples of how to use the UDP and `sko
 ```
 ┌─────────────┐
 │ Oscillator  │ ← Frequency Modulation (FM)
-└─────────────┘
-       ↓ raw sample
-┌─────────────┐
-│Sample & Hold│ (optional downsampling)
-└─────────────┘
-       ↓
-┌─────────────┐
-│ Quantizer   │ (bit reduction)
-└─────────────┘
-       ↓
-┌─────────────┐
-│Multi-Mode   │ (LP/HP/BP/Notch/AP filter)
+└──────┬──────┘
+┌──────↓──────┐
+│    Phase    │ ← PD Modulation
+│ Distortion  │
+└──────┬──────┘
+┌──────↓──────┐
+│Sample & Hold│ (down-sampling)
+└──────┬──────┘
+┌──────↓──────┐
+│  Quantizer  │ (bit reduction)
+└──────┬──────┘
+┌──────↓──────┐
+│ Multi-Mode  │ (LP/HP/BP/Notch/AP filter)
 │   Filter    │
-└─────────────┘
-       ↓
-┌─────────────┐
+└──────┬──────┘
+┌──────↓──────┐
 │  Amplitude  │ ← Amplitude Modulation (AM)
 │   Scaling   │ ← ADSR Envelope
-└─────────────┘ ← Velocity
-       ↓
-┌─────────────┐
+└──────┬──────┘ ← Velocity
+  ┌────↓────┐
+  │  sample │
+  └────┬────┘
+┌──────↓──────┐
 │   Panner    │ ← Pan Modulation
 └─────────────┘
    ↓       ↓
