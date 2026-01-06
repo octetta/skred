@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"os"
 	"strconv"
 	"time"
 
@@ -27,6 +26,7 @@ var (
 	globalApp     fyne.App
 )
 
+// THEME: Fixes the nil pointer dereference crash
 type monitorTheme struct {
 	fyne.Theme 
 }
@@ -86,7 +86,7 @@ type WindowInstance struct {
 	isMinimized  bool
 	mainMenu     *fyne.MainMenu
 	refreshUI    func() 
-	isLoading    bool // Silence flag
+	isLoading    bool 
 }
 
 func serializeSession() []WinData {
@@ -103,14 +103,6 @@ func serializeSession() []WinData {
 		})
 	}
 	return session
-}
-
-func quickSave() {
-	if len(activeWindows) == 0 { return }
-	data := serializeSession()
-	file, _ := os.Create("autosave.sk8")
-	defer file.Close()
-	json.NewEncoder(file).Encode(data)
 }
 
 func saveAll(parent fyne.Window) {
@@ -132,12 +124,10 @@ func loadSession(parent fyne.Window) {
 		var session []WinData
 		if err := json.NewDecoder(reader).Decode(&session); err != nil { return }
 		
-		for len(activeWindows) > 0 {
-			activeWindows[0].win.Close()
-		}
+		for len(activeWindows) > 0 { activeWindows[0].win.Close() }
 
 		for _, item := range session {
-			inst := &WindowInstance{isLoading: true} // Start in silent mode
+			inst := &WindowInstance{isLoading: true}
 			inst.widthFull = item.WidthFull
 			inst.widthMin = item.WidthMin
 			inst.isMinimized = item.IsMinimized
@@ -145,10 +135,9 @@ func loadSession(parent fyne.Window) {
 			inst.spawn(item.Params)
 			inst.win.SetTitle(item.Title)
 			inst.updateVoice(item.ActiveVoice)
-			inst.slider.SetValue(item.SliderVal) // Won't transmit because isLoading is true
+			inst.slider.SetValue(item.SliderVal)
 			inst.refreshUI() 
-			
-			inst.isLoading = false // Restore transmission capability
+			inst.isLoading = false
 		}
 	}, parent)
 	d.SetFilter(storage.NewExtensionFileFilter([]string{".sk8"}))
@@ -169,7 +158,7 @@ func (w *WindowInstance) updateVoice(id int) {
 }
 
 func (w *WindowInstance) sendUDP(msg string) {
-	if w.isLoading { return } // BLOCK TRANSMISSION DURING LOAD
+	if w.isLoading { return } // Quiet load
 	if w.activeVoice >= 0 { msg = fmt.Sprintf("v%d %s", w.activeVoice, msg) }
 	w.udpMonitor.SetText(msg)
 	if w.conn != nil { w.conn.Write([]byte(msg)) }
@@ -202,8 +191,7 @@ func (w *WindowInstance) spawn(p []string) {
 
 	w.udpMonitor = widget.NewLabelWithStyle("READY", fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
 	manualEntry := widget.NewEntry(); manualEntry.SetPlaceHolder("Cmd...")
-	manualBox := container.NewBorder(nil, nil, nil, widget.NewButton("Send", func() { w.sendUDP(manualEntry.Text) }), manualEntry)
-
+	
 	w.slider = widget.NewSlider(0, 100)
 	w.slider.OnChanged = func(v float64) {
 		w.sendUDP(fmt.Sprintf(w.wire.Text, strconv.FormatFloat(v, 'f', 4, 64)))
@@ -237,12 +225,11 @@ func (w *WindowInstance) spawn(p []string) {
 			widget.NewLabel("Net"), container.NewGridWithColumns(2, w.addr, w.port),
 			widget.NewLabel("Range"), container.NewGridWithColumns(3, w.min, w.max, w.step),
 			widget.NewLabel("Wire"), w.wire),
-		widget.NewButton("Apply", applySettings),
+		widget.NewButton("Apply Settings", applySettings),
 	)
 	configPanel.Hide()
 
 	w.mainMenu = fyne.NewMainMenu(fyne.NewMenu("File",
-		fyne.NewMenuItem("Quick Save", quickSave),
 		fyne.NewMenuItem("Save Session As...", func() { saveAll(w.win) }),
 		fyne.NewMenuItem("Open Session...", func() { loadSession(w.win) }),
 	))
@@ -274,7 +261,7 @@ func (w *WindowInstance) spawn(p []string) {
 			minMaxBtn.SetIcon(theme.ViewRefreshIcon())
 			w.win.SetMainMenu(w.mainMenu)
 			footer := container.NewVBox(widget.NewSeparator(), monitorContainer, sliderRow)
-			mainBody := container.NewVBox(top, configPanel, grid, manualBox)
+			mainBody := container.NewVBox(top, configPanel, grid, container.NewBorder(nil, nil, nil, widget.NewButton("Send", func() { w.sendUDP(manualEntry.Text) }), manualEntry))
 			w.win.SetContent(container.NewBorder(mainBody, footer, nil, nil, nil))
 		}
 
