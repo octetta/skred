@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -22,25 +23,52 @@ import (
 var iconBytes []byte
 
 var (
-	isDark        = true
 	activeWindows []*WindowInstance
 	globalApp     fyne.App
 )
 
-// Custom Compact Theme Logic
-type compactTheme struct{ fyne.Theme }
+type monitorTheme struct {
+	fyne.Theme 
+}
 
-func (m compactTheme) Size(name fyne.ThemeSizeName) float32 {
-	if name == theme.SizeNameText { return 10 }
-	if name == theme.SizeNamePadding { return 2 }
-	if name == theme.SizeNameInlineIcon { return 12 }
-	return theme.DefaultTheme().Size(name)
+func (m *monitorTheme) Size(name fyne.ThemeSizeName) float32 {
+	if name == theme.SizeNameText { return 11 }
+	return m.Theme.Size(name)
+}
+
+func newMonitorTheme() fyne.Theme {
+	return &monitorTheme{Theme: theme.DefaultTheme()}
+}
+
+type doubleClickEntry struct {
+	widget.Entry
+	onDoubleClick func()
+	lastTap       time.Time
+}
+
+func newDoubleClickEntry(fn func()) *doubleClickEntry {
+	e := &doubleClickEntry{onDoubleClick: fn}
+	e.ExtendBaseWidget(e)
+	return e
+}
+
+func (e *doubleClickEntry) Tapped(ev *fyne.PointEvent) {
+	now := time.Now()
+	if now.Sub(e.lastTap) < 300*time.Millisecond {
+		e.onDoubleClick()
+	}
+	e.lastTap = now
+	e.Entry.Tapped(ev)
 }
 
 type WinData struct {
 	Title       string   `json:"title"`
 	ActiveVoice int      `json:"active_voice"`
-	Data        []string `json:"data"`
+	SliderVal   float64  `json:"slider_val"`
+	Params      []string `json:"params"`
+	IsMinimized bool     `json:"is_minimized"`
+	WidthFull   float32  `json:"width_full"`
+	WidthMin    float32  `json:"width_min"`
 }
 
 type WindowInstance struct {
@@ -49,44 +77,78 @@ type WindowInstance struct {
 	activeVoice  int
 	slider       *widget.Slider
 	udpMonitor   *widget.Label
-	titleEntry   *widget.Entry
+	titleEntry   *doubleClickEntry
 	voiceButtons []*widget.Button
 	min, max, step, wire, addr, port *widget.Entry
+	
+	widthFull    float32
+	widthMin     float32
+	isMinimized  bool
+	mainMenu     *fyne.MainMenu
+	refreshUI    func() 
 }
 
-func saveAll() {
+func serializeSession() []WinData {
 	var session []WinData
 	for _, w := range activeWindows {
 		session = append(session, WinData{
 			Title:       w.win.Title(),
 			ActiveVoice: w.activeVoice,
-			Data:        []string{w.min.Text, w.max.Text, w.step.Text, w.wire.Text, w.addr.Text, w.port.Text},
+			SliderVal:   w.slider.Value,
+			Params:      []string{w.min.Text, w.max.Text, w.step.Text, w.wire.Text, w.addr.Text, w.port.Text},
+			IsMinimized: w.isMinimized,
+			WidthFull:   w.widthFull,
+			WidthMin:    w.widthMin,
 		})
 	}
+	return session
+}
+
+func quickSave() {
+	if len(activeWindows) == 0 { return }
+	data := serializeSession()
+	file, _ := os.Create("autosave.sk8")
+	defer file.Close()
+	json.NewEncoder(file).Encode(data)
+}
+
+func saveAll(parent fyne.Window) {
+	session := serializeSession()
 	d := dialog.NewFileSave(func(writer fyne.URIWriteCloser, err error) {
 		if writer == nil || err != nil { return }
 		defer writer.Close()
 		json.NewEncoder(writer).Encode(session)
-	}, activeWindows[0].win)
-	d.SetFileName("session.sk8")
+	}, parent)
 	d.SetFilter(storage.NewExtensionFileFilter([]string{".sk8"}))
+	d.SetFileName("session.sk8") 
 	d.Show()
 }
 
-func loadSession() {
-	if len(activeWindows) == 0 { return }
+func loadSession(parent fyne.Window) {
 	d := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 		if reader == nil || err != nil { return }
 		defer reader.Close()
 		var session []WinData
 		if err := json.NewDecoder(reader).Decode(&session); err != nil { return }
+		
+		// Close current windows before loading new session
+		for len(activeWindows) > 0 {
+			activeWindows[0].win.Close()
+		}
+
 		for _, item := range session {
 			inst := &WindowInstance{}
-			inst.spawn(item.Data)
+			inst.widthFull = item.WidthFull
+			inst.widthMin = item.WidthMin
+			inst.isMinimized = item.IsMinimized
+			
+			inst.spawn(item.Params)
 			inst.win.SetTitle(item.Title)
 			inst.updateVoice(item.ActiveVoice)
+			inst.slider.SetValue(item.SliderVal)
+			inst.refreshUI() 
 		}
-	}, activeWindows[0].win)
+	}, parent)
 	d.SetFilter(storage.NewExtensionFileFilter([]string{".sk8"}))
 	d.Show()
 }
@@ -105,19 +167,19 @@ func (w *WindowInstance) updateVoice(id int) {
 }
 
 func (w *WindowInstance) sendUDP(msg string) {
-	if w.activeVoice >= 0 {
-		msg = fmt.Sprintf("v%d %s", w.activeVoice, msg)
-	}
-	w.udpMonitor.SetText("TX: " + msg)
+	if w.activeVoice >= 0 { msg = fmt.Sprintf("v%d %s", w.activeVoice, msg) }
+	w.udpMonitor.SetText(msg)
 	if w.conn != nil { w.conn.Write([]byte(msg)) }
 }
 
-func (w *WindowInstance) spawn(initialParams []string) {
+func (w *WindowInstance) spawn(p []string) {
 	w.win = globalApp.NewWindow("sk8r")
-	w.win.SetIcon(fyne.NewStaticResource("icon.png", iconBytes))
-
+	if len(iconBytes) > 0 { w.win.SetIcon(fyne.NewStaticResource("icon.png", iconBytes)) }
 	activeWindows = append(activeWindows, w)
 	w.activeVoice = -1
+	
+	if w.widthFull == 0 { w.widthFull = 700 }
+	if w.widthMin == 0 { w.widthMin = 400 }
 
 	w.win.SetOnClosed(func() {
 		for i, v := range activeWindows {
@@ -128,58 +190,29 @@ func (w *WindowInstance) spawn(initialParams []string) {
 		}
 	})
 
-	fileMenu := fyne.NewMenu("File",
-		fyne.NewMenuItem("New Window", func() { (&WindowInstance{}).spawn(initialParams) }),
-		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem("Save Session", saveAll),
-		fyne.NewMenuItem("Open Session", loadSession),
-	)
-	viewMenu := fyne.NewMenu("View",
-		fyne.NewMenuItem("Normal Size", func() { globalApp.Settings().SetTheme(theme.DefaultTheme()) }),
-		fyne.NewMenuItem("Compact Size", func() { globalApp.Settings().SetTheme(compactTheme{theme.DefaultTheme()}) }),
-	)
-	w.win.SetMainMenu(fyne.NewMainMenu(fileMenu, viewMenu))
+	w.min = widget.NewEntry(); w.min.SetText(p[0])
+	w.max = widget.NewEntry(); w.max.SetText(p[1])
+	w.step = widget.NewEntry(); w.step.SetText(p[2])
+	w.wire = widget.NewEntry(); w.wire.SetText(p[3])
+	w.addr = widget.NewEntry(); w.addr.SetText(p[4])
+	w.port = widget.NewEntry(); w.port.SetText(p[5])
 
-	w.titleEntry = widget.NewEntry()
-	w.titleEntry.SetPlaceHolder("Note / Title...")
-	w.titleEntry.OnSubmitted = func(s string) { w.win.SetTitle(s) }
+	w.udpMonitor = widget.NewLabelWithStyle("READY", fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
+	manualEntry := widget.NewEntry(); manualEntry.SetPlaceHolder("Cmd...")
+	manualBox := container.NewBorder(nil, nil, nil, widget.NewButton("Send", func() { w.sendUDP(manualEntry.Text) }), manualEntry)
 
-	cloneBtn := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
-		newInst := &WindowInstance{}
-		newInst.spawn([]string{w.min.Text, w.max.Text, w.step.Text, w.wire.Text, w.addr.Text, w.port.Text})
-	})
-
-	w.min = widget.NewEntry(); w.min.SetText(initialParams[0])
-	w.max = widget.NewEntry(); w.max.SetText(initialParams[1])
-	w.step = widget.NewEntry(); w.step.SetText(initialParams[2])
-	w.wire = widget.NewEntry(); w.wire.SetText(initialParams[3])
-	w.addr = widget.NewEntry(); w.addr.SetText(initialParams[4])
-	w.port = widget.NewEntry(); w.port.SetText(initialParams[5])
-
-	w.udpMonitor = widget.NewLabelWithStyle("Ready...", fyne.TextAlignCenter, fyne.TextStyle{Italic: true})
-
-	manualEntry := widget.NewEntry()
-	manualEntry.SetPlaceHolder("Manual command...")
-	manualSendBtn := widget.NewButtonWithIcon("Send", theme.MailSendIcon(), func() { w.sendUDP(manualEntry.Text) })
-	manualEntry.OnSubmitted = func(s string) { w.sendUDP(s) }
-	manualBox := container.NewBorder(nil, nil, nil, manualSendBtn, manualEntry)
-
-	minV, _ := strconv.ParseFloat(w.min.Text, 64)
-	maxV, _ := strconv.ParseFloat(w.max.Text, 64)
-	w.slider = widget.NewSlider(minV, maxV)
-	w.slider.Step, _ = strconv.ParseFloat(w.step.Text, 64)
-	w.slider.OnChanged = func(val float64) {
-		msg := fmt.Sprintf(w.wire.Text, strconv.FormatFloat(val, 'f', 4, 64))
-		w.sendUDP(msg)
+	w.slider = widget.NewSlider(0, 100)
+	w.slider.OnChanged = func(v float64) {
+		w.sendUDP(fmt.Sprintf(w.wire.Text, strconv.FormatFloat(v, 'f', 4, 64)))
 	}
 
 	applySettings := func() {
 		if w.conn != nil { w.conn.Close() }
 		c, _ := net.Dial("udp", w.addr.Text+":"+w.port.Text)
 		w.conn = c
-		newMin, _ := strconv.ParseFloat(w.min.Text, 64)
-		newMax, _ := strconv.ParseFloat(w.max.Text, 64)
-		w.slider.Min, w.slider.Max = newMin, newMax
+		minV, _ := strconv.ParseFloat(w.min.Text, 64)
+		maxV, _ := strconv.ParseFloat(w.max.Text, 64)
+		w.slider.Min, w.slider.Max = minV, maxV
 		w.slider.Step, _ = strconv.ParseFloat(w.step.Text, 64)
 		w.slider.Refresh()
 	}
@@ -189,50 +222,82 @@ func (w *WindowInstance) spawn(initialParams []string) {
 	grid := container.New(layout.NewGridLayout(16))
 	for i := 0; i < 64; i++ {
 		id := i
-		btn := widget.NewButton(fmt.Sprintf("v%d", id), nil)
-		btn.OnTapped = func() {
+		btn := widget.NewButton(fmt.Sprintf("v%d", id), func() {
 			if w.activeVoice == id { w.updateVoice(-1) } else { w.updateVoice(id) }
-		}
+		})
 		w.voiceButtons[id] = btn
 		grid.Add(btn)
 	}
 
-	themeBtn := widget.NewButtonWithIcon("Theme", theme.ColorPaletteIcon(), func() {
-		if isDark { globalApp.Settings().SetTheme(theme.LightTheme()); isDark = false
-		} else { globalApp.Settings().SetTheme(theme.DarkTheme()); isDark = true }
-	})
-
 	configPanel := container.NewVBox(
-		container.New(layout.NewFormLayout(),
-			widget.NewLabel("Addr/Port"), container.NewGridWithColumns(2, w.addr, w.port),
-			widget.NewLabel("Min/Max"), container.NewGridWithColumns(2, w.min, w.max),
-			widget.NewLabel("Step/Wire"), container.NewGridWithColumns(2, w.step, w.wire),
-		),
-		container.NewGridWithColumns(2, widget.NewButtonWithIcon("Apply", theme.ConfirmIcon(), applySettings), themeBtn),
+		container.New(layout.NewFormLayout(), 
+			widget.NewLabel("Net"), container.NewGridWithColumns(2, w.addr, w.port),
+			widget.NewLabel("Range"), container.NewGridWithColumns(3, w.min, w.max, w.step),
+			widget.NewLabel("Wire"), w.wire),
+		widget.NewButton("Apply", applySettings),
 	)
 	configPanel.Hide()
 
-	settingsToggle := widget.NewButtonWithIcon("", theme.SettingsIcon(), func() {
-		if configPanel.Hidden { configPanel.Show() } else { configPanel.Hide() }
-		w.win.Resize(w.win.Content().MinSize())
-	})
+	w.mainMenu = fyne.NewMainMenu(fyne.NewMenu("File",
+		fyne.NewMenuItem("Quick Save", quickSave),
+		fyne.NewMenuItem("Save Session As...", func() { saveAll(w.win) }),
+		fyne.NewMenuItem("Open Session...", func() { loadSession(w.win) }),
+	))
 
-	topBar := container.NewBorder(nil, nil, cloneBtn, settingsToggle, w.titleEntry)
-	bottomArea := container.NewVBox(widget.NewSeparator(), w.udpMonitor)
+	minMaxBtn := widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), nil)
 	
-	w.win.SetContent(container.NewBorder(topBar, bottomArea, nil, nil, container.NewVBox(configPanel, grid, manualBox, w.slider)))
-	w.win.Resize(w.win.Content().MinSize())
+	w.refreshUI = func() {
+		targetWidth := w.widthFull
+		if w.isMinimized { targetWidth = w.widthMin }
+
+		settingsBtn := widget.NewButtonWithIcon("", theme.SettingsIcon(), func() {
+			if configPanel.Hidden { configPanel.Show() } else { configPanel.Hide() }
+			w.win.Resize(fyne.NewSize(w.win.Canvas().Size().Width, w.win.Content().MinSize().Height))
+		})
+		
+		top := container.NewBorder(nil, nil, 
+			widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() { (&WindowInstance{}).spawn(p) }),
+			settingsBtn, w.titleEntry)
+		
+		sliderRow := container.NewBorder(nil, nil, minMaxBtn, nil, w.slider)
+		monitorContainer := container.NewThemeOverride(w.udpMonitor, newMonitorTheme())
+
+		if w.isMinimized {
+			minMaxBtn.SetIcon(theme.ViewFullScreenIcon())
+			w.win.SetMainMenu(nil)
+			footer := container.NewVBox(monitorContainer, sliderRow)
+			w.win.SetContent(container.NewPadded(footer))
+		} else {
+			minMaxBtn.SetIcon(theme.ViewRefreshIcon())
+			w.win.SetMainMenu(w.mainMenu)
+			footer := container.NewVBox(widget.NewSeparator(), monitorContainer, sliderRow)
+			mainBody := container.NewVBox(top, configPanel, grid, manualBox)
+			w.win.SetContent(container.NewBorder(mainBody, footer, nil, nil, nil))
+		}
+
+		w.win.Resize(fyne.NewSize(0, 0))
+		w.win.Content().Refresh()
+		w.win.Resize(fyne.NewSize(targetWidth, w.win.Content().MinSize().Height))
+	}
+
+	toggle := func() {
+		if w.isMinimized { w.widthMin = w.win.Canvas().Size().Width
+		} else { w.widthFull = w.win.Canvas().Size().Width }
+		w.isMinimized = !w.isMinimized
+		w.refreshUI()
+	}
+
+	minMaxBtn.OnTapped = toggle
+	w.titleEntry = newDoubleClickEntry(toggle)
+	w.titleEntry.OnSubmitted = func(s string) { w.win.SetTitle(s) }
+
+	w.refreshUI()
 	w.win.Show()
 }
 
 func main() {
-	globalApp = app.NewWithID("com.sk8r.firecontroller")
-	isDark = globalApp.Settings().ThemeVariant() != theme.VariantLight
-	
-	first := &WindowInstance{}
+	globalApp = app.NewWithID("com.sk8r.multi")
 	defaults := []string{"0", "880", "0.0001", "f%s", "127.0.0.1", "60440"}
-	for i := 1; i < len(os.Args) && i <= 4; i++ { defaults[i-1] = os.Args[i] }
-	
-	first.spawn(defaults)
+	(&WindowInstance{}).spawn(defaults)
 	globalApp.Run()
 }
