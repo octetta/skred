@@ -86,6 +86,7 @@ type WindowInstance struct {
 	isMinimized  bool
 	mainMenu     *fyne.MainMenu
 	refreshUI    func() 
+	isLoading    bool // Silence flag
 }
 
 func serializeSession() []WinData {
@@ -131,13 +132,12 @@ func loadSession(parent fyne.Window) {
 		var session []WinData
 		if err := json.NewDecoder(reader).Decode(&session); err != nil { return }
 		
-		// Close current windows before loading new session
 		for len(activeWindows) > 0 {
 			activeWindows[0].win.Close()
 		}
 
 		for _, item := range session {
-			inst := &WindowInstance{}
+			inst := &WindowInstance{isLoading: true} // Start in silent mode
 			inst.widthFull = item.WidthFull
 			inst.widthMin = item.WidthMin
 			inst.isMinimized = item.IsMinimized
@@ -145,8 +145,10 @@ func loadSession(parent fyne.Window) {
 			inst.spawn(item.Params)
 			inst.win.SetTitle(item.Title)
 			inst.updateVoice(item.ActiveVoice)
-			inst.slider.SetValue(item.SliderVal)
+			inst.slider.SetValue(item.SliderVal) // Won't transmit because isLoading is true
 			inst.refreshUI() 
+			
+			inst.isLoading = false // Restore transmission capability
 		}
 	}, parent)
 	d.SetFilter(storage.NewExtensionFileFilter([]string{".sk8"}))
@@ -167,6 +169,7 @@ func (w *WindowInstance) updateVoice(id int) {
 }
 
 func (w *WindowInstance) sendUDP(msg string) {
+	if w.isLoading { return } // BLOCK TRANSMISSION DURING LOAD
 	if w.activeVoice >= 0 { msg = fmt.Sprintf("v%d %s", w.activeVoice, msg) }
 	w.udpMonitor.SetText(msg)
 	if w.conn != nil { w.conn.Write([]byte(msg)) }
