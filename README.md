@@ -53,7 +53,7 @@ Several GUI helper tools are provided as examples of how to use the UDP and `sko
 │   Scaling   │ ← ADSR Envelope
 └──────┬──────┘ ← Velocity
   ┌────↓────┐
-  │  sample │
+  │ sample  │ → to Modulation Destinations
   └────┬────┘
 ┌──────↓──────┐
 │   Panner    │ ← Pan Modulation
