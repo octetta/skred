@@ -1,16 +1,33 @@
 # skred
 ![skred logo](skred.png)
 
-```what if brainf**k and Perl and AT modem commands had a noisy baby?```
+```wavetables gone rogue — snap together voices like LEGO, then poke 'em with cheeky ASCII spells for instant sonic mischief```
+
 ## description
 
-`skred` is a polyphonic wavetable synthesizer with modular routing capabilities.
+`skred` is a polyphonic wavetable synthesizer built for flexibility and live performance.
 
-This is a modular digital synthesizer with emphasis on flexibility through voice interconnection rather than traditional hardwired signal paths. The architecture favors real-time performance over features like ultra-high-quality interpolation.
+Instead of fixed, hardwired signal paths, it lets you freely interconnect voices in a modular playground — route anything to anything, and reshape sounds on the fly.
 
-Real-time external control is achieved through ASCII UDP messages (aka `skode` protocol) using the same ASCII protocol entered at the `skred` console.
+It skips ultra-polished features like pristine interpolation in favor of raw responsiveness and real-time control.
 
-Several GUI helper tools are provided as examples of how to use the UDP and `skode` for higher level performance features.
+You command it the same way everywhere: terse ASCII messages sent over wire(less) or typed directly into the console.
+
+Simple pattern playback keeps the grooves rolling while you twist the knobs — or the code.
+
+In short: a lightweight, hackable synth that feels alive under your fingers, whether you're performing live or scripting chaos from a terminal.
+
+
+# quick start
+
+# behind the scenes
+
+## components
+- synth
+- seq
+- wire
+
+## synth
 
 ### Voice Architecture
 
@@ -30,37 +47,36 @@ Several GUI helper tools are provided as examples of how to use the UDP and `sko
 
 * Signal flow per voice
 
+```mermaid
+%%{init:{'flowchart': {'nodePadding': 20},{'rankSpacing': 20}}}%%
+graph TD
+w(waveform)
+v(voice)
+f("frequency<br>&rarr;mod")
+c("phase distortion<br>&rarr;mod")
+h("sample & hold (down-sampling)")
+q("quantizer (bit-reduction)")
+J("multi-mode filter (LP/HP/BP/Notch/AP)")
+a("amplitude<br>&rarr;mod<br>ADSR&rarr;")
+X((mod))
+p("panner<br>&rarr;mod")
+v-->w;
+w-->f;
+f-->c;
+c-->h;
+h-->q;
+q-->J;
+J-->a;
+a-->X;
+X-->p;
+p-->L & R;
 ```
-┌─────────────┐
-│ Oscillator  │ ← Frequency Modulation (FM)
-└──────┬──────┘
-┌──────↓──────┐
-│    Phase    │ ← PD Modulation
-│ Distortion  │
-└──────┬──────┘
-┌──────↓──────┐
-│Sample & Hold│ (down-sampling)
-└──────┬──────┘
-┌──────↓──────┐
-│  Quantizer  │ (bit reduction)
-└──────┬──────┘
-┌──────↓──────┐
-│ Multi-Mode  │ (LP/HP/BP/Notch/AP filter)
-│   Filter    │
-└──────┬──────┘
-┌──────↓──────┐
-│  Amplitude  │ ← Amplitude Modulation (AM)
-│   Scaling   │ ← ADSR Envelope
-└──────┬──────┘ ← Velocity
-  ┌────↓────┐
-  │ sample  │ → to Modulation Destinations
-  └────┬────┘
-┌──────↓──────┐
-│   Panner    │ ← Pan Modulation
-└─────────────┘
-   ↓       ↓
-  [L]     [R]
-```
+
+## seq
+
+## wire
+
+# skred usage
 
 ## getting started
 
