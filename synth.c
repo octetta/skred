@@ -37,7 +37,6 @@
 #include <stdio.h>
 
 void synth_init(void) {
-
   if (debug) {
 #define ARRAY(type, name, size, init) printf("%s : %d\n", #name, name##__len__);
 #include "synth.def"
@@ -829,7 +828,7 @@ int voice_show_all(int voice, int verbose) {
 
 int amp_set(int voice, float f) {
   if (f >= 0) {
-    voice_use_amp_envelope[voice] = 0;
+    //voice_use_amp_envelope[voice] = 0;
     voice_amp[voice] = f;
     voice_user_amp[voice] = f;
   } else return 100; // <--- LAZY!! ... ERR_AMPLITUDE_OUT_OF_RANGE;
@@ -1088,6 +1087,8 @@ int freq_midi(int voice, float f) {
   return 100; // <-- LAZY  ERR_INVALID_MIDI_NOTE;
 }
 
+int envelope_velocity(int voice, float f);
+
 void voice_reset(int i) {
   voice_wave_table_index[i] = 0;
   voice_table_rate[i] = 0;
@@ -1099,7 +1100,7 @@ void voice_reset(int i) {
   voice_pan_left[i] = 0.5f;
   voice_pan_right[i] = 0.5f;
   // pan smoothing?
-  voice_use_amp_envelope[i] = 0;
+  voice_use_amp_envelope[i] = 1;
   voice_amp_mod_osc[i] = -1;
   voice_freq_mod_osc[i] = -1;
   voice_freq_mod_depth[i] = 0.0f;
@@ -1109,6 +1110,7 @@ void voice_reset(int i) {
   voice_quantize[i] = 0;
   voice_direction[i] = 0;
   envelope_init(i, 0.0f, 0.0f, 1.0f, 0.0f);
+  voice_amp_envelope[i].is_active = 0;
   voice_freq[i] = 440.0f;
   voice_midi_note[i] = 69.0f;
   voice_midi_transpose[i] = 0;
