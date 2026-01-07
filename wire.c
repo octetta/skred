@@ -673,7 +673,6 @@ int wire_function(skode_t *s, int info) {
       }
       break;
     // TODO re-allocate the data/array buffer with the arg
-    case ':D__':
     case '/D__':
       if (argc) {}
       break;
@@ -775,46 +774,46 @@ int wire_function(skode_t *s, int info) {
       break;
     case 'l>g_': if (argc) skode_local_to_global(w->sk, x); break;
     case 'g>l_': if (argc) skode_global_to_local(w->sk, x); break;
-    case '/m__': case ':m__': synth_voice_bench(voice); break;
-    case '/q__': case ':q__': w->quit = -1; return 0;
-    case '/d__': case ':d__': if (argc == 0) {
+    case '/m__': synth_voice_bench(voice); break;
+    case '/q__': w->quit = -1; return 0;
+    case '/d__': if (argc == 0) {
         if (w->debug) w->debug = 0; else w->debug = 1;
       } else {
         w->debug = x;
       }
       break;
-    case '/i__': case ':i__': if (argc == 0) {
+    case '/i__': if (argc == 0) {
         if (w->output) w->output = 0; else w->output = 1;
       } else {
         w->output = x;
       }
       break;
-    case '/t__': case ':t__': if (argc == 0) x = (w->trace) ? 0 : 1;
+    case '/t__': if (argc == 0) x = (w->trace) ? 0 : 1;
       w->trace = x;
       skode_trace_set(s, x > 1);
       break;
-    case '/v__': case ':v__': if (argc == 0) x = (w->verbose) ? 0 : 1;
+    case '/v__': if (argc == 0) x = (w->verbose) ? 0 : 1;
       w->verbose = x;
       break;
-    case '/s__': case ':s__': if (w->output) {
+    case '/s__': if (w->output) {
         system_show(w);
         show_threads(w);
         audio_show(w);
         w->printf("%s", synth_stats());
       }
       break;
-    case '/S__': case ':S__': if (w->output) {
+    case '/S__': if (w->output) {
         show_stats(w);
         wire_show(w);
       }
       break;
-    case '/o__': case ':o__': scope_enable = x; break;
+    case '/o__': scope_enable = x; break;
               // sub x for scope_cross = 1
               // sub q for scope_quit = 0
               // sub 0..VOICE_MAX-1 for scope_channel = n
               // sub -1 for scope_channel = -1 (all channels)
-    case '/l__': case ':l__': if (argc) { sk_load(w, voice, x, w->output); } break;
-    case '/w__': case ':w__': {
+    case '/l__': if (argc) { sk_load(w, voice, x, w->output); } break;
+    case '/w__': {
         int which = 0;
         int where = EXT_SAMPLE_000;
         int ch = -1;

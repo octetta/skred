@@ -1,21 +1,31 @@
-# skred
 ![skred logo](skred.png)
+# skred
 
-```wavetables gone rogue — snap together voices like LEGO, then poke 'em with cheeky ASCII spells for instant sonic mischief```
+*wavetables gone rogue — snap together voices like LEGO,
+then poke 'em with cheeky ASCII spells for instant
+sonic mischief*
 
 ## description
 
-`skred` is a polyphonic wavetable synthesizer built for flexibility and live performance.
+`skred` is a polyphonic wavetable synthesizer built for
+flexibility and live performance.
 
-Instead of fixed, hardwired signal paths, it lets you freely interconnect voices in a modular playground — route anything to anything, and reshape sounds on the fly.
+Instead of fixed, hardwired signal paths, it lets you
+freely interconnect voices in a modular playground —
+route anything to anything, and reshape sounds on the fly.
 
-It skips ultra-polished features like pristine interpolation in favor of raw responsiveness and real-time control.
+It skips ultra-polished features like pristine interpolation
+in favor of raw responsiveness and real-time control.
 
-You command it the same way everywhere: terse ASCII messages sent over wire(less) or typed directly into the console.
+You command it the same way everywhere: terse ASCII messages
+sent over wire or air or typed directly into the console.
 
-Simple pattern playback keeps the grooves rolling while you twist the knobs — or the code.
+Simple pattern playback keeps the grooves rolling while you
+twist the knobs — or the code.
 
-In short: a lightweight, hackable synth that feels alive under your fingers, whether you're performing live or scripting chaos from a terminal.
+In short: a lightweight, hackable synth that feels alive under
+your fingers, whether you're performing live or scripting chaos
+from a terminal.
 
 
 # quick start
@@ -144,22 +154,22 @@ p-->L & R;
 
 | name | description |
 | :--- | :--- |
-| 32 | brass, strings, and analog synths |
-| 33 | clarinet and analog synths |
-| 34 | acoustic piano |
-| 35 | electric piano |
-| 36 | electric piano (hard) |
-| 37 | clavi |
-| 38 | organ |
-| 39 | brass |
-| 40 | saxophone |
-| 41 | violin |
-| 42 | acoustic guitar |
-| 43 | guitar (distorted) |
-| 44 | electric bass |
-| 45 | digital bass |
-| 46 | bell |
-| 47 | organ and whistle |
+| 32 | (1) sawtooth : brass, strings, and fat synths leads |
+| 33 | (2) square : woodwinds (clarinets) and classic "hollow" synth sounds |
+| 34 | (3) deep sawtooth |
+| 35 | (4) narrow pulse : thin, nasally sounds; oboes and harpsichords |
+| 36 | (5) electric piano (hard) |
+| 37 | (6) clavi |
+| 38 | (7) organ |
+| 39 | (8) brass |
+| 40 | (9) saxophone |
+| 41 | (10) violin |
+| 42 | (11) acoustic guitar |
+| 43 | (12) guitar (distorted) |
+| 44 | (13) electric bass |
+| 45 | (14) digital bass |
+| 46 | (15) bell |
+| 47 | (16) organ and whistle |
 
 | name | description |
 | :--- | :--- |

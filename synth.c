@@ -293,6 +293,7 @@ void osc_set_wave_table_index(int voice, int wave) {
     voice_loop_end[voice] = wave_loop_end[wave];
     voice_midi_note[voice] = wave_midi_note[wave];
     voice_offset_hz[voice] = wave_offset_hz[wave];
+    voice_direction[voice] = wave_direction[wave];
     //
     int start = voice_loop_start[voice];
     int end = voice_loop_end[voice];
@@ -1203,6 +1204,7 @@ void wave_table_init(void) {
     wave_table_data[i] = NULL;
     wave_size[i] = 0;
     wave_is_miniwav[i] = 0;
+    wave_direction[i] = 0;
   }
 
   uint64_t white_noise;
@@ -1265,6 +1267,7 @@ void wave_table_init(void) {
     wave_one_shot[i] = 0;
     wave_loop_start[i] = 0;
     wave_loop_end[i] = s-1;
+    wave_direction[i] = 1; // my korg waveforms are backwards?
   }
 
   // load AMY samples

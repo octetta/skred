@@ -43,12 +43,12 @@ endif
 
 OUT := build/$(TARGET)
 
-$(OUT):
-	mkdir -p $@
-
 EXE = \
 	$(OUT)/skred \
 	#
+
+$(OUT):
+	mkdir -p $@
 
 SK8R_DIR := sk8r
 MIDI_DIR := midi-sk8
@@ -143,10 +143,7 @@ EXTRA = \
 	wav2data \
 	#
 
-all : $(EXE)
-
-NOPTS = \
-	-g
+all : $(OUT) $(EXE)
 
 $(OUT)/util.o : util.c
 	$(CC) $(COPTS) -c $< -o $@
@@ -171,12 +168,6 @@ $(OUT)/wav2data : wav2data.c miniwav.o
 
 $(OUT)/skode : skode.c skode-example.c bestline.o
 	$(CC) $(COPTS) -Wall -Wno-multichar skode.c skode-example.c bestline.o -o $@
-
-smidi : cmex2.c crossmidi.c crossmidi.h udpmini.c udpmini.h
-	$(CC) cmex2.c crossmidi.c udpmini.c -o smidi -lasound
-
-skmidi : skmidi.c
-	$(CC) skmidi.c -o skmidi -lasound
 
 $(OUT)/miniwav.o : miniwav.c miniwav.h
 	$(CC) $(COPTS) -c $< -o $@
@@ -223,8 +214,6 @@ OBJS = \
 	#
 
 $(OUT)/skred : $(OBJS)
-	printf "dollar-carat -> %s\n" $^
-	printf "dollar-at -> %s\n" $@
 	$(CC) $(COPTS) $(OBJS) -o $(OUT)/skred $(LIB)
 
 $(OUT)/bestline.o: bestline.c bestline.h
@@ -233,8 +222,8 @@ $(OUT)/bestline.o: bestline.c bestline.h
 $(OUT)/miniaudio.o: miniaudio.c miniaudio.h
 	$(CC) $(COPTS) -c $< -o $@
 
-check : skred
-	valgrind --tool=memcheck --leak-check=full ./skred
+check : $(OUT)/skred
+	valgrind --tool=memcheck --leak-check=full ./$(OUT)/skred -n
 
 clean :
 	rm -f *.o
