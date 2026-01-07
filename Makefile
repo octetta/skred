@@ -66,15 +66,15 @@ LINUX_LDFLAGS="-s -w"
 
 # Build Linux version
 sk8r-linux:
-	cd $(SK8R_DIR) && go build -o ../build/sk8r-linux .
+	cd $(SK8R_DIR) && go build -o ../$(OUT)/sk8r-linux .
 
 # Build macos version
 sk8r-macos:
 	cd $(SK8R_DIR) && \
-	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../build/sk8r-macos-amd64 . && \
-	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../build/sk8r-macos-arm64 . && \
-	lipo -create -output ../build/sk8r-macos-universal ../build/sk8r-macos-amd64 ../build/sk8r-macos-arm64
-	cd $(SK8R_DIR) && fyne package -exe ../build/sk8r-macos-universal -os darwin -icon icon.png -name ../build/sk8r
+	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/sk8r-macos-amd64 . && \
+	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/sk8r-macos-arm64 . && \
+	lipo -create -output ../build/sk8r-macos-universal ../$(OUT)/sk8r-macos-amd64 ../$(OUT)/sk8r-macos-arm64
+	cd $(SK8R_DIR) && fyne package -exe ../$(OUT)/sk8r-macos-universal -os darwin -icon icon.png -name ../$(OUT)/sk8r
 
 # Build Windows version (Docker-free cross-compile)
 sk8r-windows:
@@ -89,16 +89,15 @@ setup-midi:
 
 # 2. Build for Linux (Native Fedora)
 midi-linux:
-	mkdir -p $(BUILD_DIR)
-	cd $(MIDI_DIR) && go build -o ../$(BUILD_DIR)/midi-sk8-linux .
+	cd $(MIDI_DIR) && go build -o ../$(OUT)/midi-sk8-linux .
 
 midi-macos:
 	mkdir -p $(BUILD_DIR)
 	cd $(MIDI_DIR) && \
-	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../build/midi-sk8-macos-amd64 . && \
-	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../build/midi-sk8-macos-arm64 . && \
-	lipo -create -output ../build/midi-sk8-macos-universal ../build/midi-sk8-macos-amd64 ../build/midi-sk8-macos-arm64
-	cd $(MIDI_DIR) && fyne package -exe ../build/midi-sk8-macos-universal -os darwin -icon icon.png -name ../build/midi-sk8
+	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/midi-sk8-macos-amd64 . && \
+	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/midi-sk8-macos-arm64 . && \
+	lipo -create -output ../$(OUT)/midi-sk8-macos-universal ../$(OUT)/midi-sk8-macos-amd64 ../$(OUT)/midi-sk8-macos-arm64
+	cd $(MIDI_DIR) && fyne package -exe ../$(OUT)/midi-sk8-macos-universal -os darwin -icon icon.png -name ../$(OUT)/midi-sk8
 
 midi-windows:
 	mkdir -p build
@@ -109,15 +108,15 @@ midi-windows:
 
 pad-linux:
 	mkdir -p $(BUILD_DIR)
-	cd sk8-pad && go build -ldflags="-s -w" -o ../build/sk8-pad-linux .
+	cd sk8-pad && go build -ldflags="-s -w" -o ../$(OUT)/sk8-pad-linux .
 
 pad-macos:
 	mkdir -p $(BUILD_DIR)
 	cd sk8-pad && \
-	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../build/sk8-pad-macos-amd64 . && \
-	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../build/sk8-pad-macos-arm64 . && \
-	lipo -create -output ../build/sk8-pad-macos-universal ../build/sk8-pad-macos-amd64 ../build/sk8-pad-macos-arm64
-	cd sk8-pad && fyne package -exe ../build/sk8-pad-macos-universal -os darwin -icon icon.png -name ../build/sk8-pad
+	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/sk8-pad-macos-amd64 . && \
+	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/sk8-pad-macos-arm64 . && \
+	lipo -create -output ../$(OUT)/sk8-pad-macos-universal ../$(OUT)/sk8-pad-macos-amd64 ../build/sk8-pad-macos-arm64
+	cd sk8-pad && fyne package -exe ../$(OUT)/sk8-pad-macos-universal -os darwin -icon icon.png -name ../$(OUT)/sk8-pad
 
 pad-windows:
 	mkdir -p build
@@ -129,7 +128,7 @@ pad-windows:
 
 repl-linux:
 	mkdir -p $(BUILD_DIR)
-	cd sk8-repl && go build -ldflags="-s -w" -o ../build/sk8-repl .
+	cd sk8-repl && go build -ldflags="-s -w" -o ../$(OUT)/sk8-repl .
 
 repl-windows:
 	mkdir -p build
@@ -151,17 +150,14 @@ $(OUT)/util.o : util.c
 $(OUT)/skred-mem.o : skred-mem.c
 	$(CC) $(COPTS) -c $< -o $@
 
-futex-compat.o : futex-compat.c futex-compat.h
-	$(CC) $(COPTS) -c $<
-
 build/linux/libraylib.a :
 	mkdir -p build/linux
 	cd raylib/src && make clean && \
 	make PLATFORM=PLATFORM_DESKTOP RAYLIB_LIBTYPE=STATIC && \
 	cp libraylib.a ../../build/linux/
 
-scope : scope.c skred-mem.o build/linux/libraylib.a
-	$(CC) $(COPTS) -D_GNU_SOURCE -DUSE_RAYLIB -L build/linux -I raylib/src $^ -o $@ -lraylib -lm
+$(OUT)/scope : scope.c $(OUT)/skred-mem.o $(OUT)/libraylib.a
+	$(CC) $(COPTS) -D_GNU_SOURCE -DUSE_RAYLIB -L $(OUT) -I raylib/src $^ -o $@ -lraylib -lm
 
 $(OUT)/wav2data : wav2data.c miniwav.o
 	$(CC) $(COPTS) -D_GNU_SOURCE $^ -o $@
