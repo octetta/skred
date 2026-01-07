@@ -12,7 +12,7 @@ ifeq ($(UNAME_S), Darwin)
 	-framework CoreFoundation \
 	#
 
-	XYZ := darwin
+	TARGET := darwin
 
 	COPTS := \
 	  -D_GNU_SOURCE \
@@ -30,7 +30,7 @@ else
 	-lrt \
 	#
 
-	XYZ := linux
+	TARGET := linux
 
 	COPTS := \
 	-D_GNU_SOURCE \
@@ -41,10 +41,13 @@ else
 
 endif
 
+OUT := build/$(TARGET)
+
+$(OUT):
+	mkdir -p $@
+
 EXE = \
-	skred \
-	skode \
-	scope \
+	$(OUT)/skred \
 	#
 
 SK8R_DIR := sk8r
@@ -142,17 +145,14 @@ EXTRA = \
 
 all : $(EXE)
 
-
-
-
 NOPTS = \
 	-g
 
-util.o : util.c
-	$(CC) $(COPTS) -c $<
+$(OUT)/util.o : util.c
+	$(CC) $(COPTS) -c $< -o $@
 
-skred-mem.o : skred-mem.c
-	$(CC) $(COPTS) -c $<
+$(OUT)/skred-mem.o : skred-mem.c
+	$(CC) $(COPTS) -c $< -o $@
 
 futex-compat.o : futex-compat.c futex-compat.h
 	$(CC) $(COPTS) -c $<
@@ -166,10 +166,10 @@ build/linux/libraylib.a :
 scope : scope.c skred-mem.o build/linux/libraylib.a
 	$(CC) $(COPTS) -D_GNU_SOURCE -DUSE_RAYLIB -L build/linux -I raylib/src $^ -o $@ -lraylib -lm
 
-wav2data : wav2data.c miniwav.o
+$(OUT)/wav2data : wav2data.c miniwav.o
 	$(CC) $(COPTS) -D_GNU_SOURCE $^ -o $@
 
-skode : skode.c skode-example.c bestline.o
+$(OUT)/skode : skode.c skode-example.c bestline.o
 	$(CC) $(COPTS) -Wall -Wno-multichar skode.c skode-example.c bestline.o -o $@
 
 smidi : cmex2.c crossmidi.c crossmidi.h udpmini.c udpmini.h
@@ -178,57 +178,60 @@ smidi : cmex2.c crossmidi.c crossmidi.h udpmini.c udpmini.h
 skmidi : skmidi.c
 	$(CC) skmidi.c -o skmidi -lasound
 
-miniwav.o : miniwav.c miniwav.h
-	$(CC) $(COPTS) -c $<
+$(OUT)/miniwav.o : miniwav.c miniwav.h
+	$(CC) $(COPTS) -c $< -o $@
 
-amysamples.o : amysamples.c amysamples.h
-	$(CC) $(COPTS) -c $<
+$(OUT)/amysamples.o : amysamples.c amysamples.h
+	$(CC) $(COPTS) -c $< -o $@
 
 raylib-quickstart-main/Makefile :
 	sh make-raylib
 	
 synth.def: skred.h
 
-synth.o: synth.c synth.h synth-types.h synth.def
-	$(CC) $(COPTS) -c $<
+$(OUT)/synth.o: synth.c synth.h synth-types.h synth.def
+	$(CC) $(COPTS) -c $< -o $@
 
-seq.o: seq.c seq.h
-	$(CC) $(COPTS) -c $<
+$(OUT)/seq.o: seq.c seq.h
+	$(CC) $(COPTS) -c $< -o $@
 
-udp.o: udp.c udp.h
-	$(CC) $(COPTS) -c $<
+$(OUT)/udp.o: udp.c udp.h
+	$(CC) $(COPTS) -c $< -o $@
 
-skode.o: skode.c skode.h
-	$(CC) $(COPTS) -c $<
+$(OUT)/skode.o: skode.c skode.h
+	$(CC) $(COPTS) -c $< -o $@
 
-wire.o: wire.c wire.h synth.def skode.h skode.o
-	$(CC) $(COPTS) -Wno-multichar -c $<
+$(OUT)/wire.o: wire.c wire.h synth.def skode.h $(OUT)/skode.o
+	$(CC) $(COPTS) -Wno-multichar -c $< -o $@
 
-skred.o: skred.c skred.h synth.def
-	$(CC) $(COPTS) -c $<
+$(OUT)/skred.o: skred.c skred.h synth.def
+	$(CC) $(COPTS) -c $< -o $@
 
 OBJS = \
-	skred.o \
-	miniwav.o \
-	amysamples.o \
-	synth.o \
-	seq.o \
-	wire.o skode.o \
-	udp.o \
-	miniaudio.o \
-	bestline.o \
-	skred-mem.o \
-	util.o \
+	$(OUT)/skred.o \
+	$(OUT)/miniwav.o \
+	$(OUT)/amysamples.o \
+	$(OUT)/synth.o \
+	$(OUT)/seq.o \
+	$(OUT)/wire.o \
+  $(OUT)/skode.o \
+	$(OUT)/udp.o \
+	$(OUT)/miniaudio.o \
+	$(OUT)/bestline.o \
+	$(OUT)/skred-mem.o \
+	$(OUT)/util.o \
 	#
 
-skred : $(OBJS)
-	$(CC) $(COPTS) $^ -o $@ $(LIB)
+$(OUT)/skred : $(OBJS)
+	printf "dollar-carat -> %s\n" $^
+	printf "dollar-at -> %s\n" $@
+	$(CC) $(COPTS) $(OBJS) -o $(OUT)/skred $(LIB)
 
-bestline.o: bestline.c bestline.h
-	$(CC) $(COPTS) -c $<
+$(OUT)/bestline.o: bestline.c bestline.h
+	$(CC) $(COPTS) -c $< -o $@
 
-miniaudio.o: miniaudio.c miniaudio.h
-	$(CC) $(COPTS) -c $<
+$(OUT)/miniaudio.o: miniaudio.c miniaudio.h
+	$(CC) $(COPTS) -c $< -o $@
 
 check : skred
 	valgrind --tool=memcheck --leak-check=full ./skred

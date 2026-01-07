@@ -129,15 +129,48 @@ p-->L & R;
 
 ## parameters
 
-| waveform | description |
+### basic waveforms
+| name | description |
 | :--- | :--- |
 | 0 | sine |
+| 1 | square |
 | 2 | saw down |
 | 3 | saw up |
 | 4 | triangle |
 | 5 | low-period noise |
 | 6 | high-period noise |
+
+### instrument harmonic waveforms
+
+| name | description |
+| :--- | :--- |
+| 32 | brass, strings, and analog synths |
+| 33 | clarinet and analog synths |
+| 34 | acoustic piano |
+| 35 | electric piano |
+| 36 | electric piano (hard) |
+| 37 | clavi |
+| 38 | organ |
+| 39 | brass |
+| 40 | saxophone |
+| 41 | violin |
+| 42 | acoustic guitar |
+| 43 | guitar (distorted) |
+| 44 | electric bass |
+| 45 | digital bass |
+| 46 | bell |
+| 47 | organ and whistle |
+
+| name | description |
+| :--- | :--- |
+| 48 to 62 | expansion waves |
+
+| name | description |
+| :--- | :--- |
 | 100 to 166 | basic samples |
+
+| name | description |
+| :--- | :--- |
 | 200 to 999 | user wave slots |
 
 | filter mode | description |
