@@ -1,4 +1,3 @@
-
 #include "raylib.h"
 #include "rlgl.h"
 #include <math.h>
@@ -29,14 +28,19 @@ bool trigger_locked = false;
 bool is_small_mode = false;
 bool restart_requested = false;
 
+// Optimization state
+static int last_audio_frame = -1;
+
+// --- STRUCT DEFINITIONS FIRST ---
+typedef struct { int index; float offset; } trigger_result_t;
+static trigger_result_t cached_trig = {0};
+
 float get_buf_avg(int i) {
     int len = scope->buffer_len;
     if (len <= 0) return 0;
     int idx = (i + len) % len;
     return (scope->buffer_left[idx] + scope->buffer_right[idx]) * 0.5f;
 }
-
-typedef struct { int index; float offset; } trigger_result_t;
 
 trigger_result_t find_trigger(int write_ptr, int window) {
     int len = scope->buffer_len;
@@ -91,16 +95,14 @@ void scope_run_loop() {
     SetTargetFPS(60);
 
     RenderTexture2D target = LoadRenderTexture(SCOPE_WIDTH_IN_PIXELS, SCOPE_HEIGHT_IN_PIXELS);
-    int heartbeat_frame = 0;
     int display_frame_count = 0;
 
     while (!WindowShouldClose() && !restart_requested) {
-        if (IsKeyPressed(KEY_S)) {
-            is_small_mode = !is_small_mode;
-            restart_requested = true; 
-            break;
-        }
-
+        // --- CPU SAVER: Check for new data ---
+        bool data_is_new = (scope->frame_count != last_audio_frame);
+        
+        // Handle input even if no new data (allows smooth zooming/gain even when audio stops)
+        if (IsKeyPressed(KEY_S)) { is_small_mode = !is_small_mode; restart_requested = true; break; }
         if (IsKeyPressed(KEY_P)) persistence_enabled = !persistence_enabled;
         if (IsKeyDown(KEY_UP)) persistence_alpha = (int)fmin(255, persistence_alpha + 2);
         if (IsKeyDown(KEY_DOWN)) persistence_alpha = (int)fmax(5, persistence_alpha - 2);
@@ -112,33 +114,46 @@ void scope_run_loop() {
         if (IsKeyPressed(KEY_X)) scope_trigger_mode = TRIGGER_ZERO_RISING_HYST;
         if (IsKeyPressed(KEY_B)) scope_trigger_mode = TRIGGER_NONE;
 
-        if (heartbeat_frame++ % 30 == 0) display_frame_count = scope->frame_count;
+        // Only do heavy waveform drawing if there is new data OR we need persistence fades
+        if (data_is_new || persistence_enabled) {
+            float sw_samples = (float)SCOPE_WIDTH_IN_PIXELS / (mag_x > 0 ? mag_x : 1.0f);
+            
+            if (data_is_new) {
+                cached_trig = find_trigger(scope->buffer_pointer, (int)sw_samples);
+                last_audio_frame = scope->frame_count;
+                display_frame_count = scope->frame_count;
+            }
 
-        float sw_samples = (float)SCOPE_WIDTH_IN_PIXELS / (mag_x > 0 ? mag_x : 1.0f);
-        trigger_result_t trig = find_trigger(scope->buffer_pointer, (int)sw_samples);
+            BeginTextureMode(target);
+            if (persistence_enabled) DrawRectangle(0, 0, SCOPE_WIDTH_IN_PIXELS, SCOPE_HEIGHT_IN_PIXELS, (Color){0, 0, 0, (unsigned char)persistence_alpha});
+            else ClearBackground(BLACK);
 
-        BeginTextureMode(target);
-        if (persistence_enabled) DrawRectangle(0, 0, SCOPE_WIDTH_IN_PIXELS, SCOPE_HEIGHT_IN_PIXELS, (Color){0, 0, 0, (unsigned char)persistence_alpha});
-        else ClearBackground(BLACK);
+            rlPushMatrix();
+            rlTranslatef(0, (float)SCOPE_HEIGHT_IN_PIXELS/2.0f, 0); 
+            rlScalef((float)SCOPE_WIDTH_IN_PIXELS / sw_samples, 1.0f, 1.0f);
+            rlTranslatef(-cached_trig.offset, 0, 0);
 
-        rlPushMatrix();
-        rlTranslatef(0, (float)SCOPE_HEIGHT_IN_PIXELS/2.0f, 0); 
-        rlScalef((float)SCOPE_WIDTH_IN_PIXELS / sw_samples, 1.0f, 1.0f);
-        rlTranslatef(-trig.offset, 0, 0);
+            rlSetBlendMode(RL_BLEND_ADDITIVE);
+            float vScale = (SCOPE_HEIGHT_IN_PIXELS / 2.0f) * scope_display_mag;
+            Color color_l = (Color){ 255, 255, 0, 255 }; // Yellow
+            Color color_r = (Color){ 0, 255, 255, 255 }; // Cyan
 
-        rlSetBlendMode(RL_BLEND_ADDITIVE);
-        float vScale = (SCOPE_HEIGHT_IN_PIXELS / 2.0f) * scope_display_mag;
-        Color color_l = (Color){ 255, 255, 0, 255 }; // Yellow
-        Color color_r = (Color){ 0, 255, 255, 255 }; // Cyan
-
-        for (int i = 0; i < (int)sw_samples; i++) {
-            int idx = (trig.index + i) % scope->buffer_len;
-            DrawPixelV((Vector2){(float)i, scope->buffer_left[idx] * vScale}, color_l);
-            DrawPixelV((Vector2){(float)i, scope->buffer_right[idx] * vScale}, color_r);
+            for (int i = 0; i < (int)sw_samples; i++) {
+                int idx = (cached_trig.index + i) % scope->buffer_len;
+                DrawPixelV((Vector2){(float)i, scope->buffer_left[idx] * vScale}, color_l);
+                DrawPixelV((Vector2){(float)i, scope->buffer_right[idx] * vScale}, color_r);
+            }
+            rlSetBlendMode(RL_BLEND_ALPHA);
+            rlPopMatrix();
+            EndTextureMode();
+        } else {
+            // No new data, persistence off. Give CPU back to OS for ~8ms.
+            #ifdef _WIN32
+                Sleep(8);
+            #else
+                usleep(8000);
+            #endif
         }
-        rlSetBlendMode(RL_BLEND_ALPHA);
-        rlPopMatrix();
-        EndTextureMode();
 
         BeginDrawing();
         ClearBackground(BLACK);
@@ -146,15 +161,17 @@ void scope_run_loop() {
         float curH = (float)GetScreenHeight();
         float uiScale = curH / (float)SCOPE_HEIGHT_IN_PIXELS;
 
+        // Draw the cached texture (cheap)
         DrawTexturePro(target.texture, (Rectangle){0, 0, (float)target.texture.width, (float)-target.texture.height},
             (Rectangle){0, 0, curW, curH}, (Vector2){0,0}, 0, WHITE);
 
+        // --- UI Layer (Static or simple overlays) ---
         if (scope->wave_len) {
+            float mid_y = (SCOPE_WAVE_HEIGHT / 4.0f) * uiScale;
             for (int i = 0; i < SCOPE_WAVE_WIDTH; i++) {
                 float x = (float)i * uiScale;
                 float min_y = (scope->wave_min[i] / 2.0f + 0.5f) * (SCOPE_WAVE_HEIGHT / 2.0f) * uiScale;
                 float max_y = (scope->wave_max[i] / 2.0f + 0.5f) * (SCOPE_WAVE_HEIGHT / 2.0f) * uiScale;
-                float mid_y = (SCOPE_WAVE_HEIGHT / 4.0f) * uiScale;
                 DrawLine(x, (int)max_y, x, (int)mid_y, (Color){0, 255, 0, 100});
                 DrawLine(x, (int)min_y, x, (int)mid_y, (Color){0, 255, 0, 100});
                 DrawCircle(x, (int)max_y, 1, GREEN);
