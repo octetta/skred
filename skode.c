@@ -112,7 +112,9 @@ static char* buffer_str(buffer_t *b) {
 typedef struct skode_s {
     // Unified buffers
     buffer_t num;
-    buffer_t string;
+    buffer_t string[2];
+    int string_idx;
+    int string_read_idx;
     buffer_t atom;
     buffer_t defer;
     
@@ -288,7 +290,10 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
                 else if (IS_SEPARATOR(*ptr)) { /* skip */ }
                 else if (IS_PUSH(*ptr))      { s->fn(s, PUSH); }
                 else if (IS_POP(*ptr))       { s->fn(s, POP); }
-                else if (IS_STRING(*ptr))    { buffer_clear(&s->string); s->state = GET_STRING; }
+                else if (IS_STRING(*ptr))    {
+                  buffer_clear(&s->string[s->string_idx]);
+                  s->state = GET_STRING;
+                }
                 else if (IS_ARRAY(*ptr))     { buffer_clear(&s->num); s->data_len = 0; s->state = GET_ARRAY; }
                 else if (IS_VARIABLE(*ptr))  { s->state = GET_VARIABLE; }
                 else if (IS_COMMENT(*ptr))   { s->state = GET_COMMENT; }
@@ -317,9 +322,12 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
             case GET_STRING:
                 if (IS_STRING_END(*ptr)) {
                     s->fn(s, GOT_STRING);
+                    // Flip buffers: reading from current, writing to next
+                    s->string_read_idx = s->string_idx;
+                    s->string_idx = (s->string_idx + 1) % 2;
                     s->state = START;
                 } else {
-                    buffer_push(&s->string, *ptr);
+                    buffer_push(&s->string[s->string_idx], *ptr);
                 }
                 break;
                 
@@ -426,7 +434,10 @@ skode_t *skode_new(int (*fn)(skode_t *s, int info), void *user) {
     }
     
     buffer_init(&s->num, 1024);
-    buffer_init(&s->string, 1024);
+    buffer_init(&s->string[0], 1024);
+    buffer_init(&s->string[1], 1024);
+    s->string_idx = 0;
+    s->string_read_idx = 0;
     buffer_init(&s->atom, ATOM_MAX + 1);
     buffer_init(&s->defer, 1024);
     
@@ -454,7 +465,8 @@ skode_t *skode_new(int (*fn)(skode_t *s, int info), void *user) {
 
 void skode_free(skode_t *s) {
     buffer_free(&s->num);
-    buffer_free(&s->string);
+    buffer_free(&s->string[0]);
+    buffer_free(&s->string[1]);
     buffer_free(&s->atom);
     buffer_free(&s->defer);
     
@@ -469,8 +481,8 @@ int skode_atom_num(skode_t *s) { return s->atom_num; }
 int skode_arg_len(skode_t *s) { return s->arg_len; }
 double *skode_arg(skode_t *s) { return s->arg; }
 void *skode_user(skode_t *s) { return s->user; }
-char *skode_string(skode_t *s) { return buffer_str(&s->string); }
-int skode_string_len(skode_t *s) { return s->string.len; }
+char *skode_string(skode_t *s) { return buffer_str(&s->string[s->string_read_idx]); }
+int skode_string_len(skode_t *s) { return s->string[s->string_read_idx].len; }
 void skode_chunk_mode(skode_t *s, int mode) { s->mode = mode; }
 void skode_trace_set(skode_t *s, int n) { s->trace = n; }
 double skode_defer_num(skode_t *s) { return s->defer_num; }
