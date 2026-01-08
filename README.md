@@ -32,7 +32,7 @@ from a terminal.
 # quick start
 
 ```
-./skred
+./skred # or .\skred.exe on Windows 
 v0w0f440a4l1 # start a 440Hz sine wave on voice 0
 v1m1a1f1l1 # start a 1Hz modulator on voice 1
 v0F1,1 # use v1 modulator to change v0' frequency 
