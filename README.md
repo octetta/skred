@@ -1,4 +1,5 @@
-![skred logo](skred.png)
+<img src="skred.svg" width="200">
+
 # skred
 
 *wavetables gone rogue — snap together voices like LEGO,
@@ -227,7 +228,7 @@ make skred
 ```
 
 # sk8r
-![sk8r logo](sk8r/icon.png)
+<img src="sk8r/icon.svg" width="200">
 
 realtime parameter sliders
 
@@ -241,7 +242,7 @@ make sk8r-linux
 ```
 
 # sk8-pad
-![sk8-pad logo](sk8-pad/icon.png)
+<img src="sk8-pad/icon.svg" width="200">
 
 flexible drum machine like pads
 ## build
@@ -254,7 +255,7 @@ make pad-linux
 ```
 
 # midi-sk8
-![midi-sk8 logo](midi-sk8/icon.png)
+<img src="midi-sk8/icon.svg" width="200">
 
 flexible MIDI to `skode` for mapping NOTE ON/OFF and pitch bend events
 ## build
