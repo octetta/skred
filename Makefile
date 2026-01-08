@@ -45,7 +45,21 @@ OUT := build/$(TARGET)
 
 EXE = \
 	$(OUT)/skred \
+	$(OUT)/scope \
 	#
+
+exe : $(EXE)
+
+TOOLS = \
+  sk8r-$(TARGET) \
+  #
+
+HIDE = \
+  $(OUT)/sk8-pad \
+  $(OUT)/midi-sk8 \
+  #
+
+tools : $(TOOLS)
 
 $(OUT):
 	mkdir -p $@
@@ -62,11 +76,16 @@ WIN_CC   := x86_64-w64-mingw32-gcc
 WIN_LDFLAGS="-H=windowsgui -s -w -extldflags '-static -static-libgcc -static-libstdc++'"
 LINUX_LDFLAGS="-s -w"
 
-.PHONY: all sk8r-linux sk8r-windows midi-linux midi-windows setup-midi clean
+# .PHONY: all sk8r-linux sk8r-windows midi-linux midi-windows setup-midi clean
 
-# Build Linux version
+$(OUT)/sk8r:
+	cd $(SK8R_DIR) && go build -o ../$(OUT)/sk8r .
+
+# go install fyne.io/tools/cmd/fyne@latest
+
 sk8r-linux:
-	cd $(SK8R_DIR) && go build -o ../$(OUT)/sk8r-linux .
+	cd $(SK8R_DIR) && go build -o ../$(OUT)/sk8r .
+	# cd $(SK8R_DIR) && fyne package -exe ../$(OUT)/sk8r -os linux -tags flatpak -icon icon.png -app-id com.example.app -app-version 0.0.1
 
 # Build macos version
 sk8r-macos:
