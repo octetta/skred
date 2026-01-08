@@ -52,10 +52,11 @@ exe : $(EXE)
 
 TOOLS = \
   sk8r-$(TARGET) \
+  sk8-pad-$(TARGET) \
+  midi-sk8-$(TARGET) \
   #
 
 HIDE = \
-  $(OUT)/sk8-pad \
   $(OUT)/midi-sk8 \
   #
 
@@ -76,18 +77,12 @@ WIN_CC   := x86_64-w64-mingw32-gcc
 WIN_LDFLAGS="-H=windowsgui -s -w -extldflags '-static -static-libgcc -static-libstdc++'"
 LINUX_LDFLAGS="-s -w"
 
-# .PHONY: all sk8r-linux sk8r-windows midi-linux midi-windows setup-midi clean
-
-$(OUT)/sk8r:
-	cd $(SK8R_DIR) && go build -o ../$(OUT)/sk8r .
-
 # go install fyne.io/tools/cmd/fyne@latest
 
 sk8r-linux:
 	cd $(SK8R_DIR) && go build -o ../$(OUT)/sk8r .
 	# cd $(SK8R_DIR) && fyne package -exe ../$(OUT)/sk8r -os linux -tags flatpak -icon icon.png -app-id com.example.app -app-version 0.0.1
 
-# Build macos version
 sk8r-macos:
 	cd $(SK8R_DIR) && \
 	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/sk8r-macos-amd64 . && \
@@ -95,11 +90,12 @@ sk8r-macos:
 	lipo -create -output ../build/sk8r-macos-universal ../$(OUT)/sk8r-macos-amd64 ../$(OUT)/sk8r-macos-arm64
 	cd $(SK8R_DIR) && fyne package -exe ../$(OUT)/sk8r-macos-universal -os darwin -icon icon.png -name ../$(OUT)/sk8r
 
-# Build Windows version (Docker-free cross-compile)
+win: sk8r-windows midi-sk8-windows sk8-pad-windows
+
 sk8r-windows:
-	mkdir -p build
+	mkdir -p build/win
 	cd $(SK8R_DIR) && CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC=$(WIN_CC) \
-	go build -ldflags="-H=windowsgui" -o ../build/sk8r.exe .
+	go build -ldflags="-H=windowsgui" -o ../build/win/sk8r.exe .
 
 # 1. Install system dependencies & tidy modules (Run this once)
 setup-midi:
@@ -107,7 +103,7 @@ setup-midi:
 	cd $(MIDI_DIR) && go mod tidy
 
 # 2. Build for Linux (Native Fedora)
-midi-linux:
+midi-sk8-linux:
 	cd $(MIDI_DIR) && go build -o ../$(OUT)/midi-sk8-linux .
 
 midi-macos:
@@ -118,14 +114,14 @@ midi-macos:
 	lipo -create -output ../$(OUT)/midi-sk8-macos-universal ../$(OUT)/midi-sk8-macos-amd64 ../$(OUT)/midi-sk8-macos-arm64
 	cd $(MIDI_DIR) && fyne package -exe ../$(OUT)/midi-sk8-macos-universal -os darwin -icon icon.png -name ../$(OUT)/midi-sk8
 
-midi-windows:
-	mkdir -p build
+midi-sk8-windows:
+	mkdir -p build/win
 	cd midi-sk8 && CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
 	CC=x86_64-w64-mingw32-gcc \
 	CXX=x86_64-w64-mingw32-g++ \
-	go build -ldflags="-H=windowsgui -s -w -extldflags '-static -static-libgcc -static-libstdc++'" -o ../build/midi-sk8.exe .
+	go build -ldflags="-H=windowsgui -s -w -extldflags '-static -static-libgcc -static-libstdc++'" -o ../build/win/midi-sk8.exe .
 
-pad-linux:
+sk8-pad-linux:
 	mkdir -p $(BUILD_DIR)
 	cd sk8-pad && go build -ldflags="-s -w" -o ../$(OUT)/sk8-pad-linux .
 
@@ -137,25 +133,25 @@ pad-macos:
 	lipo -create -output ../$(OUT)/sk8-pad-macos-universal ../$(OUT)/sk8-pad-macos-amd64 ../build/sk8-pad-macos-arm64
 	cd sk8-pad && fyne package -exe ../$(OUT)/sk8-pad-macos-universal -os darwin -icon icon.png -name ../$(OUT)/sk8-pad
 
-pad-windows:
-	mkdir -p build
+sk8-pad-windows:
+	mkdir -p build/win
 	cd sk8-pad && \
     CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
     CC=x86_64-w64-mingw32-gcc \
     CXX=x86_64-w64-mingw32-g++ \
-    go build -ldflags="-H=windowsgui -s -w -extldflags '-static'" -o ../build/sk8-pad.exe .
+    go build -ldflags="-H=windowsgui -s -w -extldflags '-static'" -o ../build/win/sk8-pad.exe .
 
 repl-linux:
 	mkdir -p $(BUILD_DIR)
 	cd sk8-repl && go build -ldflags="-s -w" -o ../$(OUT)/sk8-repl .
 
 repl-windows:
-	mkdir -p build
+	mkdir -p build/win
 	cd sk8-repl && \
     CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
     CC=x86_64-w64-mingw32-gcc \
     CXX=x86_64-w64-mingw32-g++ \
-    go build -ldflags="-H=windowsgui -s -w -extldflags '-static'" -o ../build/sk8-repl.exe .
+    go build -ldflags="-H=windowsgui -s -w -extldflags '-static'" -o ../build/win/sk8-repl.exe .
 
 EXTRA = \
 	wav2data \
@@ -256,9 +252,9 @@ install-win :
 	cd $(REL) ; \
     cp ../win/skred.exe . ; \
     cp ../win/scope.exe . ; \
-    cp ../build/sk8r.exe . ; \
-    cp ../build/midi-sk8.exe . ; \
-    cp ../build/sk8-pad.exe . ; \
+    cp ../build/win/sk8r.exe . ; \
+    cp ../build/win/midi-sk8.exe . ; \
+    cp ../build/win/sk8-pad.exe . ; \
     cp ../sk/909.sk sk ; \
     cp ../wav/24.wav wav ; \
     upx --best *.exe
@@ -279,7 +275,3 @@ install-macos :
     cp ../wav/24.wav wav ; \
 	rm -f $(REL).zip
 	zip -r $(REL).zip $(REL)
-
-test-windows :
-	x86_64-w64-mingw32-gcc test-windows-audio.c -o tone.exe
-	wine tone.exe
