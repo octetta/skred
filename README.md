@@ -232,50 +232,31 @@ make skred
 
 realtime parameter sliders
 
-## build
-```
-make sk8r-linux
-```
-## run
-```
-./build/sk8r-linux
-```
-
 # sk8-pad
 <img src="sk8-pad/icon.svg" width="100">
 
 flexible drum machine like pads
-## build
-```
-make pad-linux
-```
-## run
-```
-./build/sk8-pad-linux
-```
 
 # midi-sk8
 <img src="midi-sk8/icon.svg" width="100">
 
 flexible MIDI to `skode` for mapping NOTE ON/OFF and pitch bend events
-## build
-```
-make midi-linux
-```
-## run
-```
-./build/midi-sk8-linux
-```
 
 ## credits
 - miniaudio
+- bestline
+
+## inspiration
 - AMY
 - PureData
 - ChucK
 - SonicPi
-## homage
+
+## heroes
 - Robert Moog
-- Dave Smith
+- Wendy Carlos
+- Chuck Moore
+
 ## background
 
 - needs asound on linux
