@@ -247,7 +247,7 @@ flexible MIDI to `skode` for mapping NOTE ON/OFF and pitch bend events
 - bestline
 
 ## inspiration
-- AMY
+- Pokey, SID, AMY
 - PureData
 - ChucK
 - SonicPi
