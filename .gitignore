@@ -20,6 +20,5 @@ tmp
 *.a
 *.a
 scope-shared
-scope
 miniaudio_example.js
 miniaudio_example.wasm
