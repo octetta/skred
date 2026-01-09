@@ -291,6 +291,7 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
                 else if (IS_PUSH(*ptr))      { s->fn(s, PUSH); }
                 else if (IS_POP(*ptr))       { s->fn(s, POP); }
                 else if (IS_STRING(*ptr))    {
+                  action_finish_atom(s);
                   buffer_clear(&s->string[s->string_idx]);
                   s->state = GET_STRING;
                 }
@@ -321,9 +322,9 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
                 
             case GET_STRING:
                 if (IS_STRING_END(*ptr)) {
-                    s->fn(s, GOT_STRING);
                     // Flip buffers: reading from current, writing to next
                     s->string_read_idx = s->string_idx;
+                    s->fn(s, GOT_STRING);
                     s->string_idx = (s->string_idx + 1) % 2;
                     s->state = START;
                 } else {

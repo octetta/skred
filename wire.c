@@ -469,8 +469,8 @@ void pattern_show(wire_t *w, int pattern_pointer) {
     char *line = seq_pattern[pattern_pointer][s];
     if (strlen(line) == 0) break;
     if (first) {
-      w->printf("; y%d %%%d\n",
-        pattern_pointer, seq_modulo[pattern_pointer]);
+      w->printf("; y%d %%%d # step %d\n",
+        pattern_pointer, seq_modulo[pattern_pointer], w->step);
       first = 0;
     }
     w->printf("; {%s} x%d", line, s);
@@ -742,10 +742,13 @@ int wire_function(skode_t *s, int info) {
     case 'x___': if (argc) {
         if (arg[0] == NAN || x < 0) {
           w->step++;
+          x = w->step;
         } else {
           w->step = x;
         }
-        if (x >= 0 && x < SEQ_STEPS_MAX) seq_step_set(w->pattern, w->step, skode_string(w->sk));
+        if (x >= 0 && x < SEQ_STEPS_MAX) {
+          seq_step_set(w->pattern, w->step, skode_string(w->sk));
+        }
       }
       break;
     case 'y___': if (argc) {
