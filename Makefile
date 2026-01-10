@@ -20,31 +20,17 @@ SKRED = $(OUT)/skred
 
 SCOPE = $(OUT)/scope
 
-TOOLS = \
-  sk8r-$(TARGET) \
-  sk8-pad-$(TARGET) \
-  midi-sk8-$(TARGET) \
-  #
+all : $(SKRED)
 
-HIDE = \
-  $(OUT)/midi-sk8 \
-  #
+basic : $(SKRED)
 
-tools : $(TOOLS)
-
-$(OUT):
-	mkdir -p $@
-
-all : $(OUT) basic
-
-basic : $(OUT) $(SKRED)
-
-visual : $(OUT) $(SCOPE)
+visual : $(SCOPE)
 
 $(OUT)/util.o : util.c
 	$(CC) $(COPTS) -c $< -o $@
 
 $(OUT)/skred-mem.o : skred-mem.c
+	mkdir -p $(OUT)
 	$(CC) $(COPTS) -c $< -o $@
 
 $(OUT)/libraylib.a :
@@ -54,6 +40,7 @@ $(OUT)/libraylib.a :
 	cp raylib/src/libraylib.a $(OUT)/
 
 $(SCOPE) : scope.c $(OUT)/skred-mem.o $(OUT)/libraylib.a
+	mkdir -p $(OUT)
 	$(CC) $(COPTS) -D_GNU_SOURCE -DUSE_RAYLIB -L $(OUT) -I raylib/src $^ -o $@ -lraylib $(LIB)
 
 $(OUT)/wav2data : wav2data.c miniwav.o
@@ -86,6 +73,7 @@ $(OUT)/wire.o: wire.c wire.h synth.def skode.h $(OUT)/skode.o
 	$(CC) $(COPTS) -Wno-multichar -c $< -o $@
 
 $(OUT)/skred.o: skred.c skred.h synth.def
+	mkdir -p $(OUT)
 	$(CC) $(COPTS) -c $< -o $@
 
 OBJS = \
@@ -103,7 +91,7 @@ OBJS = \
 	$(OUT)/util.o \
 	#
 
-$(SKRED) : $(OBJS)
+$(SKRED) : $(OBJS) | $(OUT)
 	$(CC) $(COPTS) $(OBJS) -o $@ $(LIB)
 	# $(CC) $(COPTS) $(OBJS) -o $(OUT)/skred $(LIB)
 
@@ -114,6 +102,18 @@ $(OUT)/miniaudio.o: miniaudio.c miniaudio.h
 	$(CC) -c $< -o $@
 
 ### GUI tooling
+
+TOOLS = \
+  sk8r-$(TARGET) \
+  sk8-pad-$(TARGET) \
+  midi-sk8-$(TARGET) \
+  #
+
+HIDE = \
+  $(OUT)/midi-sk8 \
+  #
+
+tools : $(TOOLS)
 
 SK8R_DIR := sk8r
 MIDI_DIR := midi-sk8
@@ -203,12 +203,10 @@ repl-windows:
     CXX=x86_64-w64-mingw32-g++ \
     go build -ldflags="-H=windowsgui -s -w -extldflags '-static'" -o ../build/win/sk8-repl.exe .
 
-check : $(OUT)/skred
-	valgrind --tool=memcheck --leak-check=full ./$(OUT)/skred -n
+check : $(SKRED)
+	valgrind --tool=memcheck --leak-check=full ./$(SKRED) -n
 
 clean :
-	rm -f *.o
-	rm -f $(EXE)
 	rm -rf build
 	cd raylib/src && make clean
 

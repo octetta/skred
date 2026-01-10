@@ -723,8 +723,14 @@ int wire_function(skode_t *s, int info) {
     case 'S___': if (argc) wave_reset(voice, x); break;
     case 't___': if (argc > 3) envelope_set(voice, arg[0], arg[1], arg[2], arg[3]); break;
     case 'T___': {
+#if 1
+        envelope_velocity(voice, 1);
+        if (voice_link_velo_a[voice] >= 0) envelope_velocity(voice_link_velo_a[voice], 1);
+        if (voice_link_velo_b[voice] >= 0) envelope_velocity(voice_link_velo_b[voice], 1);
+#else
         voice_trigger(voice);
         if (voice_link_trig[voice] > 0) voice_trigger(voice_link_trig[voice]);
+#endif
       }
       break;
     case 'v___': if (argc) voice_set(x, &w->voice); break;

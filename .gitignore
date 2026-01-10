@@ -6,7 +6,7 @@ bundle*
 repl
 experimental
 sc
-build
+build/*
 e
 occu-release*.zip
 .sk8_history
