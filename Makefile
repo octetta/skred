@@ -1,20 +1,20 @@
 # defaults for Linux
 
-TARGET := linux
+TARGET = linux
 CC = gcc
-LIB := -lm -lasound -pthread -lpthread -lrt
-COPTS := -D_GNU_SOURCE -Wall -march=native -O3 
+LIB = -lm -lasound -pthread -lpthread -lrt
+COPTS = -D_GNU_SOURCE -Wall -march=native -O3 
 
-UNAME_S := $(shell uname -s)
+UNAME_S = $(shell uname -s)
 
 ifeq ($(UNAME_S), Darwin)
-	CC := clang
-	LIB := -lm -pthread -lpthread -framework CoreAudio -framework CoreFoundation 
-	TARGET := darwin
-	COPTS := -D_GNU_SOURCE -D_IS_OSX_ -Wall -arch arm64 
+	CC = clang
+	LIB = -lm -pthread -lpthread -framework CoreAudio -framework CoreFoundation 
+	TARGET = darwin
+	COPTS = -D_GNU_SOURCE -D_IS_OSX_ -Wall -arch arm64 
 endif
 
-OUT := build/$(TARGET)
+OUT = build/$(TARGET)
 
 SKRED = $(OUT)/skred
 
@@ -26,7 +26,7 @@ basic : $(SKRED)
 
 visual : $(SCOPE)
 
-GUI := sk8r-$(TARGET) sk8-pad-$(TARGET) midi-sk8-$(TARGET)
+GUI = sk8r-$(TARGET) sk8-pad-$(TARGET) midi-sk8-$(TARGET)
 
 gui : $(GUI)
 
@@ -105,10 +105,6 @@ $(OUT)/bestline.o: bestline.c bestline.h
 $(OUT)/miniaudio.o: miniaudio.c miniaudio.h
 	$(CC) -c $< -o $@
 
-SK8R_DIR := sk8r
-MIDI_DIR := midi-sk8
-WIN_CC   := x86_64-w64-mingw32-gcc
-
 # Linker Flags
 # -s -w strips debug info for smaller binaries
 # -H=windowsgui hides the terminal window on Windows launch
@@ -130,45 +126,33 @@ sk8r-macos:
 	lipo -create -output $(OUT)/sk8r-macos-universal $(OUT)/sk8r-macos-amd64 $(OUT)/sk8r-macos-arm64
 	cd sk8r && fyne package -exe ../$(OUT)/sk8r-macos-universal -os darwin -icon icon.png -name ../$(OUT)/sk8r
 
-win : TARGET = windows
-win : OUT = build/$(TARGET)
-win : MESSAGE = HELLO
-win : OBJS = \
-	$(OUT)/skred.o \
-	$(OUT)/miniwav.o \
-	$(OUT)/amysamples.o \
-	$(OUT)/synth.o \
-	$(OUT)/seq.o \
-	$(OUT)/wire.o \
-  $(OUT)/skode.o \
-	$(OUT)/udp.o \
-	$(OUT)/miniaudio.o \
-	$(OUT)/skred-mem.o \
-	$(OUT)/util.o \
-	#
+win : sk8r-windows midi-sk8-windows sk8-pad-windows skred-windows
 
-win: sk8r-windows midi-sk8-windows sk8-pad-windows $(SKRED)
+skred-windows :
+	mkdir -p build/win
+	$(MAKE) -f Makefile.win
+
+WIN_CC := x86_64-w64-mingw32-gcc
 
 sk8r-windows:
-	@echo "--- got $(MESSAGE) ---"
 	mkdir -p build/win
-	cd $(SK8R_DIR) && CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC=$(WIN_CC) \
+	cd sk8r && CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC=$(WIN_CC) \
 	go build -ldflags="-H=windowsgui" -o ../build/win/sk8r.exe .
 
 setup-midi:
 	sudo dnf install mingw64-gcc mingw64-winpthreads-static alsa-lib-devel
-	cd $(MIDI_DIR) && go mod tidy
+	cd midi-sk8 && go mod tidy
 
 midi-sk8-linux:
 	mkdir -p $(OUT)
-	cd $(MIDI_DIR) && go build -o ../$(OUT)/midi-sk8-linux .
+	cd midi-sk8 && go build -o ../$(OUT)/midi-sk8-linux .
 
-midi-sk8r-macos:
+midi-sk8-macos:
 	mkdir -p $(OUT)
-	cd midi-sk8r && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/midi-sk8-macos-amd64 .
-	cd midi-sk8r && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/midi-sk8-macos-arm64 .
+	cd midi-sk8 && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/midi-sk8-macos-amd64 .
+	cd midi-sk8 && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/midi-sk8-macos-arm64 .
 	lipo -create -output ../$(OUT)/midi-sk8-macos-universal ../$(OUT)/midi-sk8-macos-amd64 ../$(OUT)/midi-sk8-macos-arm64
-	cd midi-sk8r && fyne package -exe ../$(OUT)/midi-sk8-macos-universal -os darwin -icon icon.png -name ../$(OUT)/midi-sk8
+	cd midi-sk8 && fyne package -exe ../$(OUT)/midi-sk8-macos-universal -os darwin -icon icon.png -name ../$(OUT)/midi-sk8
 
 midi-sk8-windows:
 	mkdir -p build/win

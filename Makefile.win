@@ -1,16 +1,11 @@
 CC = x86_64-w64-mingw32-gcc
 AR = x86_64-w64-mingw32-ar
 
-OUT = win
-
-SBEXE = skred-bridge.exe
+OUT = build/win
 
 EXE = \
 	$(OUT)/skred.exe \
 	$(OUT)/scope.exe \
-	$(OUT)/wmidi.exe \
-	$(OUT)/skmidi.exe \
-  $(SBEXE) \
   #
 
 all : $(EXE)
@@ -26,38 +21,6 @@ COPTS = \
   -D_GNU_SOURCE \
   -Wall \
   -g
-
-KO = skred-bridge-build
-VFS = $(KO)/skred-bridge.vfs
-KIT = tclkits/tclkit-kit-build
-TCL = tclkit.exe
-
-$(SBEXE): $(OUT)/skmidi.exe skbridge.tcl
-	rm -rf $(KO)
-	mkdir -p $(KO)
-	cp tclkits/tclkit-windows.exe $(KO)/$(TCL)
-	cp sdx-20110317.kit $(KO)/sdx.kit
-	cp win/skmidi.exe $(KO)
-	mkdir -p $(VFS)
-	cp win/skmidi.exe $(VFS)
-	cp skbridge.tcl $(VFS)/main.tcl
-	cd $(KO) ; ../$(KIT) sdx.kit wrap $(SBEXE) -runtime $(TCL) skbridge.tcl
-	echo rm -rf $(KO)
-
-xKO = buttons
-xVFS = $(xKO)/buttons.vfs
-KIT = tclkits/tclkit-kit-build
-TCL = tclkit.exe
-
-buttons.exe: dreammachine
-	rm -rf $(xKO)
-	mkdir -p $(xKO)
-	cp tclkits/tclkit-windows.exe $(xKO)/$(TCL)
-	cp sdx-20110317.kit $(xKO)/sdx.kit
-	mkdir -p $(xVFS)
-	cp dreammachine $(xVFS)/main.tcl
-	cd $(xKO) ; ../$(KIT) sdx.kit wrap buttons.exe -runtime $(TCL) dreammachine
-	echo rm -rf $(xKO)
 
 wav2data : wav2data.c miniwav.o
 	$(CC) -g -D_GNU_SOURCE $^ -o $@
@@ -110,7 +73,7 @@ $(OUT)/skred.exe : $(OBJS)
 	$(CC) $(COPTS) $^ -o $@ $(LIB) -static
 
 $(OUT)/scope.exe : scope.c $(OUT)/skred-mem.o build/win/libraylib.a
-	$(CC) -D_GNU_SOURCE -L build/win -I raylib/src $^ -o $@ -lraylib -lm -lgdi32 -lwinmm -lwinpthread
+	$(CC) -D_GNU_SOURCE -L build/win -I raylib/src $^ -o $@ -lraylib -lm -lgdi32 -lwinmm -lwinpthread -mwindows
 
 $(OUT)/wmidi.exe : wmidi.c 
 	$(CC) $^ -o $@ -lm -lgdi32 -lwinmm
