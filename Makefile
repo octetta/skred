@@ -26,6 +26,10 @@ basic : $(SKRED)
 
 visual : $(SCOPE)
 
+GUI := sk8r-$(TARGET) sk8-pad-$(TARGET) midi-sk8-$(TARGET)
+
+gui : $(GUI)
+
 $(OUT)/util.o : util.c
 	$(CC) $(COPTS) -c $< -o $@
 
@@ -86,9 +90,9 @@ OBJS = \
   $(OUT)/skode.o \
 	$(OUT)/udp.o \
 	$(OUT)/miniaudio.o \
-	$(OUT)/bestline.o \
 	$(OUT)/skred-mem.o \
 	$(OUT)/util.o \
+  $(OUT)/bestline.o \
 	#
 
 $(SKRED) : $(OBJS) | $(OUT)
@@ -101,23 +105,8 @@ $(OUT)/bestline.o: bestline.c bestline.h
 $(OUT)/miniaudio.o: miniaudio.c miniaudio.h
 	$(CC) -c $< -o $@
 
-### GUI tooling
-
-TOOLS = \
-  sk8r-$(TARGET) \
-  sk8-pad-$(TARGET) \
-  midi-sk8-$(TARGET) \
-  #
-
-HIDE = \
-  $(OUT)/midi-sk8 \
-  #
-
-tools : $(TOOLS)
-
 SK8R_DIR := sk8r
 MIDI_DIR := midi-sk8
-BUILD_DIR := build
 WIN_CC   := x86_64-w64-mingw32-gcc
 
 # Linker Flags
@@ -130,39 +119,56 @@ LINUX_LDFLAGS="-s -w"
 # go install fyne.io/tools/cmd/fyne@latest
 
 sk8r-linux:
-	cd $(SK8R_DIR) && go build -o ../$(OUT)/sk8r .
-	# cd $(SK8R_DIR) && fyne package -exe ../$(OUT)/sk8r -os linux -tags flatpak -icon icon.png -app-id com.example.app -app-version 0.0.1
+	mkdir -p $(OUT)
+	cd sk8r && go build -o ../$(OUT)/sk8r-$(TARGET) .
+	# cd sk8r && fyne package -exe ../$(OUT)/sk8r -os linux -tags flatpak -icon icon.png -app-id com.example.app -app-version 0.0.1
 
 sk8r-macos:
-	cd $(SK8R_DIR) && \
-	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/sk8r-macos-amd64 . && \
-	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/sk8r-macos-arm64 . && \
-	lipo -create -output ../build/sk8r-macos-universal ../$(OUT)/sk8r-macos-amd64 ../$(OUT)/sk8r-macos-arm64
-	cd $(SK8R_DIR) && fyne package -exe ../$(OUT)/sk8r-macos-universal -os darwin -icon icon.png -name ../$(OUT)/sk8r
+	mkdir -p $(OUT)
+	cd sk8r && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/sk8r-macos-amd64 .
+	cd sk8r && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/sk8r-macos-arm64 .
+	lipo -create -output $(OUT)/sk8r-macos-universal $(OUT)/sk8r-macos-amd64 $(OUT)/sk8r-macos-arm64
+	cd sk8r && fyne package -exe ../$(OUT)/sk8r-macos-universal -os darwin -icon icon.png -name ../$(OUT)/sk8r
 
-win: sk8r-windows midi-sk8-windows sk8-pad-windows
+win : TARGET = windows
+win : OUT = build/$(TARGET)
+win : MESSAGE = HELLO
+win : OBJS = \
+	$(OUT)/skred.o \
+	$(OUT)/miniwav.o \
+	$(OUT)/amysamples.o \
+	$(OUT)/synth.o \
+	$(OUT)/seq.o \
+	$(OUT)/wire.o \
+  $(OUT)/skode.o \
+	$(OUT)/udp.o \
+	$(OUT)/miniaudio.o \
+	$(OUT)/skred-mem.o \
+	$(OUT)/util.o \
+	#
+
+win: sk8r-windows midi-sk8-windows sk8-pad-windows $(SKRED)
 
 sk8r-windows:
+	@echo "--- got $(MESSAGE) ---"
 	mkdir -p build/win
 	cd $(SK8R_DIR) && CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC=$(WIN_CC) \
 	go build -ldflags="-H=windowsgui" -o ../build/win/sk8r.exe .
 
-# 1. Install system dependencies & tidy modules (Run this once)
 setup-midi:
 	sudo dnf install mingw64-gcc mingw64-winpthreads-static alsa-lib-devel
 	cd $(MIDI_DIR) && go mod tidy
 
-# 2. Build for Linux (Native Fedora)
 midi-sk8-linux:
+	mkdir -p $(OUT)
 	cd $(MIDI_DIR) && go build -o ../$(OUT)/midi-sk8-linux .
 
-midi-macos:
-	mkdir -p $(BUILD_DIR)
-	cd $(MIDI_DIR) && \
-	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/midi-sk8-macos-amd64 . && \
-	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/midi-sk8-macos-arm64 . && \
+midi-sk8r-macos:
+	mkdir -p $(OUT)
+	cd midi-sk8r && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/midi-sk8-macos-amd64 .
+	cd midi-sk8r && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/midi-sk8-macos-arm64 .
 	lipo -create -output ../$(OUT)/midi-sk8-macos-universal ../$(OUT)/midi-sk8-macos-amd64 ../$(OUT)/midi-sk8-macos-arm64
-	cd $(MIDI_DIR) && fyne package -exe ../$(OUT)/midi-sk8-macos-universal -os darwin -icon icon.png -name ../$(OUT)/midi-sk8
+	cd midi-sk8r && fyne package -exe ../$(OUT)/midi-sk8-macos-universal -os darwin -icon icon.png -name ../$(OUT)/midi-sk8
 
 midi-sk8-windows:
 	mkdir -p build/win
@@ -172,11 +178,11 @@ midi-sk8-windows:
 	go build -ldflags="-H=windowsgui -s -w -extldflags '-static -static-libgcc -static-libstdc++'" -o ../build/win/midi-sk8.exe .
 
 sk8-pad-linux:
-	mkdir -p $(BUILD_DIR)
+	mkdir -p $(OUT)
 	cd sk8-pad && go build -ldflags="-s -w" -o ../$(OUT)/sk8-pad-linux .
 
-pad-macos:
-	mkdir -p $(BUILD_DIR)
+sk8-pad-macos:
+	mkdir -p $(OUT)
 	cd sk8-pad && \
 	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/sk8-pad-macos-amd64 . && \
 	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/sk8-pad-macos-arm64 . && \
@@ -191,11 +197,11 @@ sk8-pad-windows:
     CXX=x86_64-w64-mingw32-g++ \
     go build -ldflags="-H=windowsgui -s -w -extldflags '-static'" -o ../build/win/sk8-pad.exe .
 
-repl-linux:
-	mkdir -p $(BUILD_DIR)
+sk8-repl-linux:
+	mkdir -p $(OUT)
 	cd sk8-repl && go build -ldflags="-s -w" -o ../$(OUT)/sk8-repl .
 
-repl-windows:
+sk8-repl-windows:
 	mkdir -p build/win
 	cd sk8-repl && \
     CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \

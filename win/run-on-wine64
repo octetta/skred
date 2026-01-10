@@ -1,3 +1,0 @@
-#!/bin/bash
-#WINEPREFIX=~/.wine64 wine 'Z:\home\stewartj\book\skred\win\skred.exe'
-WINEPREFIX=~/.wine64 wine 'skred.exe'
