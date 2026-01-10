@@ -1,54 +1,24 @@
+# defaults for Linux
+
+TARGET := linux
 CC = gcc
+LIB := -lm -lasound -pthread -lpthread -lrt
+COPTS := -D_GNU_SOURCE -Wall -march=native -O3 
 
 UNAME_S := $(shell uname -s)
 
 ifeq ($(UNAME_S), Darwin)
 	CC := clang
-	LIB := \
-	-lm \
-	-pthread \
-	-lpthread \
-	-framework CoreAudio \
-	-framework CoreFoundation \
-	#
-
+	LIB := -lm -pthread -lpthread -framework CoreAudio -framework CoreFoundation 
 	TARGET := darwin
-
-	COPTS := \
-	  -D_GNU_SOURCE \
-	  -D_IS_OSX_ \
-	  -Wall \
-	  -arch arm64 \
-	  -arch x86_64 \
-	  #
-else
-	LIB := \
-	-lm \
-	-lasound \
-	-pthread \
-	-lpthread \
-	-lrt \
-	#
-
-	TARGET := linux
-
-	COPTS := \
-	-D_GNU_SOURCE \
-	-Wall \
-	-march=native \
-	-O3 \
-	#
-
+	COPTS := -D_GNU_SOURCE -D_IS_OSX_ -Wall -arch arm64 
 endif
 
 OUT := build/$(TARGET)
 
-EXE = \
-	$(OUT)/skred \
-	$(OUT)/scope \
-	#
+SKRED = $(OUT)/skred
 
-exe : $(EXE)
+SCOPE = $(OUT)/scope
 
 TOOLS = \
   sk8r-$(TARGET) \
@@ -64,6 +34,86 @@ tools : $(TOOLS)
 
 $(OUT):
 	mkdir -p $@
+
+all : $(OUT) basic
+
+basic : $(OUT) $(SKRED)
+
+visual : $(OUT) $(SCOPE)
+
+$(OUT)/util.o : util.c
+	$(CC) $(COPTS) -c $< -o $@
+
+$(OUT)/skred-mem.o : skred-mem.c
+	$(CC) $(COPTS) -c $< -o $@
+
+$(OUT)/libraylib.a :
+	mkdir -p $(OUT)
+	cd raylib/src && $(MAKE) clean
+	cd raylib/src && $(MAKE) CC=$(CC) PLATFORM=PLATFORM_DESKTOP RAYLIB_LIBTYPE=STATIC
+	cp raylib/src/libraylib.a $(OUT)/
+
+$(SCOPE) : scope.c $(OUT)/skred-mem.o $(OUT)/libraylib.a
+	$(CC) $(COPTS) -D_GNU_SOURCE -DUSE_RAYLIB -L $(OUT) -I raylib/src $^ -o $@ -lraylib $(LIB)
+
+$(OUT)/wav2data : wav2data.c miniwav.o
+	$(CC) $(COPTS) -D_GNU_SOURCE $^ -o $@
+
+$(OUT)/skode : skode.c skode-example.c bestline.o
+	$(CC) $(COPTS) -Wall -Wno-multichar skode.c skode-example.c bestline.o -o $@
+
+$(OUT)/miniwav.o : miniwav.c miniwav.h
+	$(CC) $(COPTS) -c $< -o $@
+
+$(OUT)/amysamples.o : amysamples.c amysamples.h
+	$(CC) $(COPTS) -c $< -o $@
+
+synth.def: skred.h
+
+$(OUT)/synth.o: synth.c synth.h synth-types.h synth.def
+	$(CC) $(COPTS) -c $< -o $@
+
+$(OUT)/seq.o: seq.c seq.h
+	$(CC) $(COPTS) -c $< -o $@
+
+$(OUT)/udp.o: udp.c udp.h
+	$(CC) $(COPTS) -c $< -o $@
+
+$(OUT)/skode.o: skode.c skode.h
+	$(CC) $(COPTS) -c $< -o $@
+
+$(OUT)/wire.o: wire.c wire.h synth.def skode.h $(OUT)/skode.o
+	$(CC) $(COPTS) -Wno-multichar -c $< -o $@
+
+$(OUT)/skred.o: skred.c skred.h synth.def
+	$(CC) $(COPTS) -c $< -o $@
+
+OBJS = \
+	$(OUT)/skred.o \
+	$(OUT)/miniwav.o \
+	$(OUT)/amysamples.o \
+	$(OUT)/synth.o \
+	$(OUT)/seq.o \
+	$(OUT)/wire.o \
+  $(OUT)/skode.o \
+	$(OUT)/udp.o \
+	$(OUT)/miniaudio.o \
+	$(OUT)/bestline.o \
+	$(OUT)/skred-mem.o \
+	$(OUT)/util.o \
+	#
+
+$(SKRED) : $(OBJS)
+	$(CC) $(COPTS) $(OBJS) -o $@ $(LIB)
+	# $(CC) $(COPTS) $(OBJS) -o $(OUT)/skred $(LIB)
+
+$(OUT)/bestline.o: bestline.c bestline.h
+	$(CC) -c $< -o $@
+
+$(OUT)/miniaudio.o: miniaudio.c miniaudio.h
+	$(CC) -c $< -o $@
+
+### GUI tooling
 
 SK8R_DIR := sk8r
 MIDI_DIR := midi-sk8
@@ -152,86 +202,6 @@ repl-windows:
     CC=x86_64-w64-mingw32-gcc \
     CXX=x86_64-w64-mingw32-g++ \
     go build -ldflags="-H=windowsgui -s -w -extldflags '-static'" -o ../build/win/sk8-repl.exe .
-
-EXTRA = \
-	wav2data \
-	#
-
-all : $(OUT) $(EXE)
-
-$(OUT)/util.o : util.c
-	$(CC) $(COPTS) -c $< -o $@
-
-$(OUT)/skred-mem.o : skred-mem.c
-	$(CC) $(COPTS) -c $< -o $@
-
-build/linux/libraylib.a :
-	mkdir -p build/linux
-	cd raylib/src && make clean && \
-	make PLATFORM=PLATFORM_DESKTOP RAYLIB_LIBTYPE=STATIC && \
-	cp libraylib.a ../../build/linux/
-
-$(OUT)/scope : scope.c $(OUT)/skred-mem.o $(OUT)/libraylib.a
-	$(CC) $(COPTS) -D_GNU_SOURCE -DUSE_RAYLIB -L $(OUT) -I raylib/src $^ -o $@ -lraylib -lm
-
-$(OUT)/wav2data : wav2data.c miniwav.o
-	$(CC) $(COPTS) -D_GNU_SOURCE $^ -o $@
-
-$(OUT)/skode : skode.c skode-example.c bestline.o
-	$(CC) $(COPTS) -Wall -Wno-multichar skode.c skode-example.c bestline.o -o $@
-
-$(OUT)/miniwav.o : miniwav.c miniwav.h
-	$(CC) $(COPTS) -c $< -o $@
-
-$(OUT)/amysamples.o : amysamples.c amysamples.h
-	$(CC) $(COPTS) -c $< -o $@
-
-raylib-quickstart-main/Makefile :
-	sh make-raylib
-	
-synth.def: skred.h
-
-$(OUT)/synth.o: synth.c synth.h synth-types.h synth.def
-	$(CC) $(COPTS) -c $< -o $@
-
-$(OUT)/seq.o: seq.c seq.h
-	$(CC) $(COPTS) -c $< -o $@
-
-$(OUT)/udp.o: udp.c udp.h
-	$(CC) $(COPTS) -c $< -o $@
-
-$(OUT)/skode.o: skode.c skode.h
-	$(CC) $(COPTS) -c $< -o $@
-
-$(OUT)/wire.o: wire.c wire.h synth.def skode.h $(OUT)/skode.o
-	$(CC) $(COPTS) -Wno-multichar -c $< -o $@
-
-$(OUT)/skred.o: skred.c skred.h synth.def
-	$(CC) $(COPTS) -c $< -o $@
-
-OBJS = \
-	$(OUT)/skred.o \
-	$(OUT)/miniwav.o \
-	$(OUT)/amysamples.o \
-	$(OUT)/synth.o \
-	$(OUT)/seq.o \
-	$(OUT)/wire.o \
-  $(OUT)/skode.o \
-	$(OUT)/udp.o \
-	$(OUT)/miniaudio.o \
-	$(OUT)/bestline.o \
-	$(OUT)/skred-mem.o \
-	$(OUT)/util.o \
-	#
-
-$(OUT)/skred : $(OBJS)
-	$(CC) $(COPTS) $(OBJS) -o $(OUT)/skred $(LIB)
-
-$(OUT)/bestline.o: bestline.c bestline.h
-	$(CC) $(COPTS) -c $< -o $@
-
-$(OUT)/miniaudio.o: miniaudio.c miniaudio.h
-	$(CC) $(COPTS) -c $< -o $@
 
 check : $(OUT)/skred
 	valgrind --tool=memcheck --leak-check=full ./$(OUT)/skred -n
