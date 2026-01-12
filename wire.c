@@ -240,17 +240,26 @@ void wire_show(wire_t *w) {
     w->printf(w, "# data len %d\n", w->data_len);
     w->printf(w, "( ");
     int flag = 1;
-    for (int i = 0; i < w->data_len; i++) {
-      if (i < 10) {
-        w->printf(w, "%.8f ", w->data[i]);
-      } else if (i > w->data_len - 10) {
-        w->printf(w, "%.8f ", w->data[i]);
-      } else if (flag) {
-        flag = 0;
+    int show_dots = 0;
+    double *data = skode_data(w->sk);
+    int data_len = skode_data_len(w->sk);
+#define DOT_NUM (3)
+    for (int i = 0; i < data_len; i++) {
+      if (i < DOT_NUM) {
+        show_dots = 0;
+        w->printf(w, "%.8g ", data[i]);
+      } else if (i >= (data_len - DOT_NUM)) {
+        show_dots = 0;
+        w->printf(w, "%.8g ", data[i]);
+      } else {
+        show_dots = 1;
+      }
+      if (flag && show_dots) {
+        flag = 0; // only once
         w->printf(w, " ... ");
       }
     }
-    w->printf(w, ")\n");
+    w->printf(w, ") # %d elements\n", data_len);
   }
   for (int i = 0; i < WIRE_POINTER_MAX; i++) {
     if (wl[i]) {
@@ -777,6 +786,15 @@ int wire_function(skode_t *s, int info) {
     case 'W___': if (argc) {
         wavetable_show(w,x);
         if (scope_enable) sprintf(scope->wave_text, "w%d", x);
+      } else {
+        int c = 0;
+        for (int i=0; i<WAVE_TABLE_MAX; i++) {
+          if (wave_table_data[i]) {
+            w->printf(w, "# w%d %d %g\n", i, wave_size[i], wave_rate[i]);
+            c++;
+          }
+        }
+        if (scope_enable) sprintf(scope->wave_text, "%d waves loaded", c);
       }
       break;
     case 'x___': if (argc) {
@@ -868,7 +886,7 @@ int wire_function(skode_t *s, int info) {
           which = (int)arg[0];
           where = EXT_SAMPLE_000;
         }
-        wave_load(w, which, where, ch, 1);
+        if (argc) wave_load(w, which, where, ch, 1);
       }
       break;
     case '<___': if (arg) {
