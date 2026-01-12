@@ -1076,7 +1076,7 @@ int freq_midi(int voice, float f) {
 int envelope_velocity(int voice, float f);
 
 void voice_reset(int i) {
-  voice_wave_table_index[i] = 0;
+  voice_wave_table_index[i] = -1;
   voice_table_rate[i] = 0;
   voice_table_size[i] = 0;
   voice_sample[i] = 0;

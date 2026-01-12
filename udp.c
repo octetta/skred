@@ -88,13 +88,6 @@ static void *udp_main(void *arg) {
     return NULL;
   }
   util_set_thread_name("udp");
-#if 0
-  // don't remember why i wrote this, but i don't think it's needed with select()
-  struct timeval tv;
-  tv.tv_sec = 1;
-  tv.tv_usec = 0;
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (struct timeval *)&tv, sizeof(struct timeval));
-#endif
   struct sockaddr_in client;
 #ifdef _WIN32
   int client_len = sizeof(client);
@@ -135,13 +128,7 @@ static void *udp_main(void *arg) {
     }
   }
   for (int i = 0; i < UDP_PORT_MAX; i++) {
-    if (user[i].w.data) {
-      free(user[i].w.data);
-      user[i].w.data = NULL;
-      user[i].w.data_len = 0;
-      user[i].w.data_max = 0;
-      user[i].in_use = 0;
-    }
+    // need to free alloc-ed stuff here
   }
   return NULL;
 }

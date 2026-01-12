@@ -233,11 +233,13 @@ int wire_hash(wire_t *w) {
 void wire_show(wire_t *w) {
   if (w != NULL) {
     w->printf(w, "# voice %d\n", w->voice);
-    w->printf(w, "# state %d\n", w->state);
     w->printf(w, "# pattern %d\n", w->pattern);
     w->printf(w, "# scratch %s\n", w->scratch);
+#if 0
+    w->printf(w, "# state %d\n", w->state);
     w->printf(w, "# data max %d\n", w->data_max);
     w->printf(w, "# data len %d\n", w->data_len);
+#endif
     w->printf(w, "( ");
     int flag = 1;
     int show_dots = 0;
@@ -416,7 +418,7 @@ int sk_load(wire_t *w, int voice, int n, int output) {
 int data_load(wire_t *w, int wave_slot) {
   w->printf(w, "# data_load(w, %d)\n", wave_slot);
   if (w == NULL) return 100; // fix todo
-  if (wave_slot < EXT_SAMPLE_000 || wave_slot >= EXT_SAMPLE_999) return ERR_INVALID_EXT_SAMPLE;
+  if (wave_slot < EXT_SAMPLE_000 || wave_slot >= EXT_SAMPLE_999) return -1;
   double *data = skode_data(w->sk);
   int data_len = skode_data_len(w->sk);
   if (data == NULL) {
@@ -458,7 +460,7 @@ int data_load(wire_t *w, int wave_slot) {
 
 int wave_load(wire_t *w, int file_num, int wave_index, int ch, int normalize) {
   if (w == NULL) return 100; // fix todo
-  if (wave_index < EXT_SAMPLE_000 || wave_index >= EXT_SAMPLE_999) return ERR_INVALID_EXT_SAMPLE;
+  if (wave_index < EXT_SAMPLE_000 || wave_index >= EXT_SAMPLE_999) return -1;
   if (wave_readonly[wave_index] == 1) {
     w->printf(w, "# cannot write to w%d r/o\n", wave_index);
     return -1;
@@ -488,7 +490,7 @@ int wave_load(wire_t *w, int file_num, int wave_index, int ch, int normalize) {
   float *table = mw_get_str(name, &len, &wav, ch, out, sizeof(out));
   if (table == NULL) {
     w->printf(w, "# can not read %s\n", name);
-    return ERR_INVALID_EXT_SAMPLE;
+    return -1;
   } else {
     wave_is_miniwav[wave_index] = 1;
     wave_table_data[wave_index] = table;
@@ -1061,9 +1063,6 @@ void wire_init(wire_t *w) {
   w->voice = 0;
   w->pattern = 0;
   w->step = -1;
-  w->data = NULL;
-  w->data_len = 0;
-  w->data_max = 0;
   w->output = 0;
   w->trace = 0;
   w->verbose = 0;

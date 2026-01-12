@@ -32,8 +32,8 @@ typedef struct {
 typedef struct wire_s {
   int voice;
   voice_stack_t stack;
+#if 0
   int state;
-  char scratch[WIRE_SCRATCH_MAX];
   int scratch_pointer;
   float *data;
   int data_max;
@@ -41,6 +41,7 @@ typedef struct wire_s {
   int data_len;
   char data_acc[64];
   int data_acc_ptr;
+#endif
   char queued[QUEUED_MAX];
   int queued_pointer;
   float defer_last;
@@ -50,6 +51,7 @@ typedef struct wire_s {
   int output;
   int trace;
   int verbose;
+  char scratch[WIRE_SCRATCH_MAX];
   int events; // do incoming events go to the logger?
   skode_t *sk;
   int quit;
@@ -60,112 +62,6 @@ typedef struct wire_s {
   int log_max;
   int log_len;
 } wire_t;
-
-enum {
-  FUNC_NULL,
-  FUNC_ERR,
-  FUNC_SYS,
-  FUNC_IMM,
-  //
-  FUNC_VOICE,
-  FUNC_FREQ,
-  FUNC_AMP,
-  FUNC_TRIGGER,
-  FUNC_VELOCITY,
-  FUNC_MUTE,
-  FUNC_AMP_MOD,
-  FUNC_CZ_MOD,
-  FUNC_FREQ_MOD,
-  FUNC_PAN_MOD,
-  FUNC_MIDI,
-  FUNC_MIDI_TRANSPOSE,
-  FUNC_WAVE,
-  FUNC_LOOP,
-  FUNC_DIR,
-  FUNC_INTER,
-  FUNC_PAN,
-  FUNC_ENVELOPE,
-  FUNC_QUANT,
-  FUNC_HOLD,
-  FUNC_RESET,
-  FUNC_FILTER_MODE,
-  FUNC_FILTER_FREQ,
-  FUNC_FILTER_RES,
-  FUNC_COPY,
-  FUNC_RECORD,
-  FUNC_EVENTS,
-  FUNC_SMOOTHER,
-  FUNC_GLISSANDO,
-  FUNC_DATA,
-  // subfunctions
-  FUNC_HELP,
-  FUNC_QUIT,
-  FUNC_STATS0,
-  FUNC_STATS1,
-  FUNC_TRACE,
-  FUNC_DEBUG,
-  FUNC_SCOPE,
-  FUNC_LOAD,
-  FUNC_SAVE,
-  FUNC_WAVE_READ,
-  FUNC_DATA_READ,
-  //
-  FUNC_WAVE_SHOW,
-  FUNC_DELAY,
-  FUNC_COMMENT,
-  FUNC_WHITESPACE,
-  FUNC_METRO,
-  FUNC_SEQ,
-  FUNC_MAIN_SEQ,
-  FUNC_STEP,
-  FUNC_STEP_MUTE,
-  FUNC_STEP_UNMUTE,
-  FUNC_PATTERN,
-  FUNC_WAVE_DEFAULT,
-  FUNC_CZ,
-  FUNC_VOLUME_SET,
-  //
-  FUNC_LINKF,
-  FUNC_LINKA,
-  FUNC_LINKT,
-  //
-  FUNC_UNKNOWN,
-};
-
-enum {
-  ERR_EXPECTED_INT,
-  ERR_EXPECTED_FLOAT,
-  ERR_INVALID_VOICE,
-  ERR_FREQUENCY_OUT_OF_RANGE,
-  ERR_AMPLITUDE_OUT_OF_RANGE,
-  ERR_INVALID_WAVE,
-  ERR_EMPTY_WAVE,
-  ERR_INVALID_DIRECTION,
-  ERR_INVALID_LOOPING,
-  ERR_PAN_OUT_OF_RANGE,
-  ERR_INVALID_DELAY,
-  ERR_INVALID_MODULATOR,
-  ERR_UNKNOWN_FUNC,
-  ERR_UNKNOWN_SYS,
-  ERR_INVALID_TRACE,
-  ERR_INVALID_DEBUG,
-  ERR_INVALID_MUTE,
-  ERR_INVALID_EXT_SAMPLE,
-  ERR_PARSING,
-  ERR_INVALID_PATCH,
-  ERR_INVALID_MIDI_NOTE,
-  ERR_INVALID_MOD,
-  //
-  ERR_INVALID_AMP,
-  ERR_INVALID_FILTER_MODE,
-  ERR_INVALID_FILTER_RES,
-  ERR_INVALID_PAN,
-  ERR_INVALID_QUANT,
-  ERR_INVALID_FREQ,
-  ERR_INVALID_WAVETABLE,
-  // add new stuff before here...
-  ERR_UNKNOWN,
-};
 
 int wire(char *line, wire_t *w);
 void show_threads(wire_t *w);
@@ -183,15 +79,12 @@ int null_printf(const char *fmt, ...);
 
 #define WIRE() { \
   .voice = 0, \
+  .scratch[0] = '\0', \
   .pattern = 0, \
   .step = -1, \
-  .data = NULL, \
-  .data_len = 0, \
-  .data_max = 0, \
   .output = 0, \
   .trace = 0, \
   .verbose = 0, \
-  .scratch[0] = '\0', \
   .events = 0, \
   .sk = NULL, \
   .quit = 0, \
@@ -201,7 +94,6 @@ int null_printf(const char *fmt, ...);
   .log_len = 0, \
   .log_max = 4096, \
 }
-              
 
 void wire_init(wire_t *w);
 
