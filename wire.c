@@ -413,54 +413,72 @@ int sk_load(wire_t *w, int voice, int n, int output) {
   return r;
 }
 
-#define SAVE_WAVE_LEN (8)
-static float *save_wave_list[SAVE_WAVE_LEN]; // to keep from crashing the synth, have a place to store free-ed waves
-static int save_wave_ptr = 0;
-
-int data_load(wire_t *w, int where) {
-  if (where < EXT_SAMPLE_000 || where >= EXT_SAMPLE_999) return ERR_INVALID_EXT_SAMPLE;
+int data_load(wire_t *w, int wave_slot) {
+  w->printf(w, "# data_load(w, %d)\n", wave_slot);
   if (w == NULL) return 100; // fix todo
-  if (w->data == NULL) return 100; // fix todo
-  float *table = w->data;
-  int len = w->data_len;
-    // duped elsewhere todo consolidate
-    if (wave_table_data[where]) {
-      if (save_wave_ptr >= SAVE_WAVE_LEN) {
-        save_wave_ptr = 0;
-      }
-      if (save_wave_list[save_wave_ptr]) {
-        w->printf(w, "# freeing old wave %d\n", save_wave_ptr);
-        free(save_wave_list[save_wave_ptr]);
-      }
-      save_wave_list[save_wave_ptr++] = wave_table_data[where];
-    }
-    wave_table_data[where] = table;
-    wave_size[where] = len;
-    wave_rate[where] = (float)44100.0f;
-    wave_one_shot[where] = 1;
-    wave_loop_enabled[where] = 0;
-    wave_loop_start[where] = 1;
-    wave_loop_end[where] = len;
-    wave_midi_note[where] = 69;
-    wave_offset_hz[where] = (float)len / 44100.0f * 440.0f;
+  if (wave_slot < EXT_SAMPLE_000 || wave_slot >= EXT_SAMPLE_999) return ERR_INVALID_EXT_SAMPLE;
+  double *data = skode_data(w->sk);
+  int data_len = skode_data_len(w->sk);
+  if (data == NULL) {
+    w->printf(w, "# no data\n");
+    return 100; // fix todo
+  }
+  if (data_len <= 0) {
+    w->printf(w, "# no data len\n");
+    return 100;
+  }
+  if (wave_readonly[wave_slot] == 1) {
+    w->printf(w, "# cannot write to w%d r/o\n", wave_slot);
+    return -1;
+  }
+  if (wave_refcount[wave_slot] > 0) {
+    w->printf(w, "# cannot write to w%d ref > 0\n", wave_slot);
+    return -1;
+  } else {
+    wave_free_one(wave_slot);
+  }
+  float *table = calloc(data_len, sizeof(float));
+  for (int i=0; i<data_len; i++) table[i] = (float)data[i];
+  int len = data_len;
+    wave_is_miniwav[wave_slot] = 0;
+    wave_table_data[wave_slot] = table;
+    wave_size[wave_slot] = len;
+    wave_rate[wave_slot] = (float)44100.0f;
+    wave_one_shot[wave_slot] = 1;
+    wave_loop_enabled[wave_slot] = 0;
+    wave_loop_start[wave_slot] = 1;
+    wave_loop_end[wave_slot] = len;
+    wave_midi_note[wave_slot] = 69;
+    wave_offset_hz[wave_slot] = (float)len / 44100.0f * 440.0f;
     char *name = "data";
     int channels = 1;
-    w->printf(w, "# read %d frames from %s to %d (ch:%d sr:%d)\n", len, name, where, channels, 44100);
+    w->printf(w, "# read %d frames from %s to %d (ch:%d sr:%d)\n", len, name, wave_slot, channels, 44100);
   return 0;
 }
 
-int wave_load(wire_t *w, int which, int where, int ch, int normalize) {
-  if (where < EXT_SAMPLE_000 || where >= EXT_SAMPLE_999) return ERR_INVALID_EXT_SAMPLE;
+int wave_load(wire_t *w, int file_num, int wave_index, int ch, int normalize) {
+  if (w == NULL) return 100; // fix todo
+  if (wave_index < EXT_SAMPLE_000 || wave_index >= EXT_SAMPLE_999) return ERR_INVALID_EXT_SAMPLE;
+  if (wave_readonly[wave_index] == 1) {
+    w->printf(w, "# cannot write to w%d r/o\n", wave_index);
+    return -1;
+  }
+  if (wave_refcount[wave_index] > 0) {
+    w->printf(w, "# cannot write to w%d ref > 0\n", wave_index);
+    return -1;
+  } else {
+    wave_free_one(wave_index);
+  }
   char name[1024];
-  sprintf(name, "%d.wav", which);
+  sprintf(name, "%d.wav", file_num);
   FILE *in = fopen(name, "r");
   if (in) fclose(in);
   else {
-    sprintf(name, "wav/%d.wav", which);
+    sprintf(name, "wav/%d.wav", file_num);
     in = fopen(name, "r");
     if (in) fclose(in);
     else {
-      printf("cannot open %d.wav or wav/%d.wav\n", which, which);
+      w->printf(w, "# cannot open %d.wav or wav/%d.wav\n", file_num, file_num);
       return -1;
     }
   }
@@ -472,28 +490,18 @@ int wave_load(wire_t *w, int which, int where, int ch, int normalize) {
     w->printf(w, "# can not read %s\n", name);
     return ERR_INVALID_EXT_SAMPLE;
   } else {
-    if (wave_table_data[where]) {
-      if (save_wave_ptr >= SAVE_WAVE_LEN) {
-        save_wave_ptr = 0;
-      }
-      if (save_wave_list[save_wave_ptr]) {
-        w->printf(w, "# freeing old wave %d\n", save_wave_ptr);
-        free(save_wave_list[save_wave_ptr]);
-      }
-      save_wave_list[save_wave_ptr++] = wave_table_data[where];
-    }
-    wave_is_miniwav[where] = 1;
-    wave_table_data[where] = table;
-    wave_size[where] = len;
-    wave_rate[where] = (float)wav.SamplesRate;
-    wave_one_shot[where] = 1;
-    wave_loop_enabled[where] = 0;
-    wave_loop_start[where] = 1;
-    wave_loop_end[where] = len;
-    wave_midi_note[where] = 69;
-    wave_offset_hz[where] = (float)len / (float)wav.SamplesRate * 440.0f;
+    wave_is_miniwav[wave_index] = 1;
+    wave_table_data[wave_index] = table;
+    wave_size[wave_index] = len;
+    wave_rate[wave_index] = (float)wav.SamplesRate;
+    wave_one_shot[wave_index] = 1;
+    wave_loop_enabled[wave_index] = 0;
+    wave_loop_start[wave_index] = 1;
+    wave_loop_end[wave_index] = len;
+    wave_midi_note[wave_index] = 69;
+    wave_offset_hz[wave_index] = (float)len / (float)wav.SamplesRate * 440.0f;
     w->printf(w, "# read %d frames from %s to %d (ch:%d sr:%d)\n",
-      len, name, where, wav.Channels, wav.SamplesRate);
+      len, name, wave_index, wav.Channels, wav.SamplesRate);
     normalize_preserve_zero(table, len);
   }
   return 0;
@@ -580,6 +588,8 @@ void scope_wave_update(const float *table, int size) {
 int wavetable_show(wire_t *w, int n) {
   if (n >= 0 && n < WAVE_TABLE_MAX && wave_table_data[n] && wave_size[n]) {
     float *table = wave_table_data[n];
+    int readonly = wave_readonly[n];
+    int refcount = wave_refcount[n];
     int size = wave_size[n];
     int crossing = 0;
     int zero = 0;
@@ -600,11 +610,18 @@ int wavetable_show(wire_t *w, int n) {
     }
     w->printf(w, "# w%d size:%d", n, size);
     w->printf(w, " +hz:%g midi:%g", wave_offset_hz[n], wave_midi_note[n]);
+    if (readonly) {
+      w->printf(w, " r/o");
+    } else {
+      w->printf(w, " r/w ref:%d", refcount);
+    }
     w->puts(w, "");
     if (scope_enable) {
       downsample_block_average_min_max(table, size, scope->wave_data, SCOPE_WAVE_WIDTH, scope->wave_min, scope->wave_max);
       scope->wave_len = SCOPE_WAVE_WIDTH;
     }
+  } else {
+    w->printf(w, "# w%d nil\n", n);
   }
   return 0;
 }
@@ -786,11 +803,11 @@ int wire_function(skode_t *s, int info) {
     case 'W___': if (argc) {
         wavetable_show(w,x);
         if (scope_enable) sprintf(scope->wave_text, "w%d", x);
-      } else {
+      } else if (argc == 0) {
         int c = 0;
         for (int i=0; i<WAVE_TABLE_MAX; i++) {
-          if (wave_table_data[i]) {
-            w->printf(w, "# w%d %d %g\n", i, wave_size[i], wave_rate[i]);
+          if (wave_table_data[i] && wave_readonly[i] == 0) {
+            wavetable_show(w, i);
             c++;
           }
         }
@@ -837,10 +854,10 @@ int wire_function(skode_t *s, int info) {
     case 'g>l_': if (argc) skode_global_to_local(w->sk, x); break;
     case '/m__': synth_voice_bench(voice); break;
     case '/q__': w->quit = -1; return 0;
-    case '/d__': if (argc == 0) {
-        if (w->debug) w->debug = 0; else w->debug = 1;
-      } else {
-        w->debug = x;
+    case '/d__': {
+        int wave_slot = EXT_SAMPLE_000;
+        if (argc) wave_slot = (int)arg[0];
+        data_load(w, wave_slot);
       }
       break;
     case '/i__': if (argc == 0) {
@@ -875,18 +892,18 @@ int wire_function(skode_t *s, int info) {
               // sub -1 for scope_channel = -1 (all channels)
     case '/l__': if (argc) { sk_load(w, voice, x, w->output); } break;
     case '/w__': {
-        int which = 0;
-        int where = EXT_SAMPLE_000;
+        int file_num = 0;
+        int wave_slot = EXT_SAMPLE_000;
         int ch = -1;
         if (argc >= 2) {
-          which = (int)arg[0];
-          where = (int)arg[1];
+          file_num = (int)arg[0];
+          wave_slot = (int)arg[1];
           if (argc > 2) ch = (int)arg[2];
         } else if (argc == 1) {
-          which = (int)arg[0];
-          where = EXT_SAMPLE_000;
+          file_num = (int)arg[0];
+          wave_slot = EXT_SAMPLE_000;
         }
-        if (argc) wave_load(w, which, where, ch, 1);
+        if (argc) wave_load(w, file_num, wave_slot, ch, 1);
       }
       break;
     case '<___': if (arg) {
@@ -1042,8 +1059,6 @@ void wire_init(wire_t *w) {
     first = 0;
   }
   w->voice = 0;
-  w->state = W_PROTOCOL;
-  w->last_func = FUNC_NULL;
   w->pattern = 0;
   w->step = -1;
   w->data = NULL;
@@ -1051,7 +1066,6 @@ void wire_init(wire_t *w) {
   w->data_max = 0;
   w->output = 0;
   w->trace = 0;
-  w->debug = 0;
   w->verbose = 0;
   w->scratch[0] = '\0';
   w->events = 0;

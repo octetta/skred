@@ -79,6 +79,7 @@ int voice_trigger(int voice);
 int wave_default(int voice);
 void wave_table_init(void);
 void wave_free(void);
+void wave_free_one(int i);
 void voice_init(void);
 
 char *synth_stats(void);

@@ -50,7 +50,6 @@ float tempo_base = 0.0f;
 
 void tempo_set(float);
 
-int debug = 0;
 int trace = 0;
 
 int console_voice = 0;
@@ -202,7 +201,6 @@ int main(int argc, char *argv[]) {
       if (argv[i][0] == '-') {
         switch (argv[i][1]) {
           case 'n': use_edit = 0; break;
-          case 'd': debug = 1; break;
           case 't': trace = 1; break;
           case 'p': udp_port = (int)strtol(&(argv[i][2]), NULL, 0); break;
           case 'l': load_patch_number = (int)strtol(&argv[i][2], NULL, 0); break;
@@ -309,7 +307,6 @@ int main(int argc, char *argv[]) {
 
   wire_t w = WIRE();
   w.output = 1;
-  w.debug = debug;
   w.trace = trace;
   //
   w.log_enable = 1;

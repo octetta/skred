@@ -3,7 +3,8 @@
 TARGET = linux
 CC = gcc
 LIB = -lm -lasound -pthread -lpthread -lrt
-COPTS = -D_GNU_SOURCE -Wall -march=native -O3 
+COPTS = -D_GNU_SOURCE -Wall -march=native -O3
+# COPTS = -D_GNU_SOURCE -Wall -march=native -g # -O3
 
 UNAME_S = $(shell uname -s)
 

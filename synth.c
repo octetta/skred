@@ -37,7 +37,7 @@
 #include <stdio.h>
 
 void synth_init(void) {
-  if (debug) {
+  if (0) {
 #define ARRAY(type, name, size, init) printf("%s : %d\n", #name, name##__len__);
 #include "synth.def"
 #undef ARRAY
@@ -274,6 +274,11 @@ float osc_next(int voice, float phase_inc) {
 }
 
 void osc_set_wave_table_index(int voice, int wave) {
+  // if we were using a r/w wave table, adjust ref count
+  int old = voice_wave_table_index[voice];
+  if (old == wave) return;
+  if (wave_readonly[old] == 0) wave_refcount[old]--;
+  if (wave_readonly[wave] == 0) wave_refcount[wave]++;
   if (wave_table_data[wave] && wave_size[wave] && wave_rate[wave] > 0.0) {
     voice_wave_table_index[voice] = wave;
     int update_freq = 0;
@@ -1188,6 +1193,8 @@ void wave_table_init(void) {
     wave_size[i] = 0;
     wave_is_miniwav[i] = 0;
     wave_direction[i] = 0;
+    wave_readonly[i] = 0;
+    wave_refcount[i] = 0;
   }
 
   uint64_t white_noise;
@@ -1214,6 +1221,7 @@ void wave_table_init(void) {
     wave_one_shot[w] = 0;
     wave_loop_start[w] = 0;
     wave_loop_end[w] = size-1;
+    wave_readonly[w] = 1;
     int off = 0;
     float phase = 0;
     float delta = 1.0f / (float)size;
@@ -1253,6 +1261,7 @@ void wave_table_init(void) {
     wave_loop_start[i] = 0;
     wave_loop_end[i] = s-1;
     wave_direction[i] = 1; // my korg waveforms are backwards?
+    wave_readonly[i] = 1;
   }
 
   // load AMY samples
@@ -1277,20 +1286,27 @@ void wave_table_init(void) {
     wave_loop_end[j] = (int)pcm_map[i].loopend;
     wave_midi_note[j] = (int)pcm_map[i].midinote;
     wave_offset_hz[j] = midi2hz((float)pcm_map[i].midinote);
+    wave_readonly[j] = 1;
   }
   //printf("# load AMY samples (%d to %d)\n", AMY_SAMPLE_00, j);
 }
 
-void wave_free(void) {
-  for (int i = 0; i < WAVE_TABLE_MAX; i++) {
-    if (wave_table_data[i]) {
-      if (wave_is_miniwav[i]) {
-        mw_free(wave_table_data[i]);
-      } else {
-        free(wave_table_data[i]);
-      }
-      wave_size[i] = 0;
+void wave_free_one(int i) {
+  if (wave_table_data[i]) {
+    if (wave_is_miniwav[i]) {
+      //printf("mw_free [%d]\n", i);
+      mw_free(wave_table_data[i]);
+    } else {
+      //printf("free [%d]\n", i);
+      free(wave_table_data[i]);
     }
+    wave_table_data[i] = NULL;
+    wave_size[i] = 0;
+    wave_refcount[i] = 0;
   }
+}
+
+void wave_free(void) {
+  for (int i = 0; i < WAVE_TABLE_MAX; i++) wave_free_one(i);
 }
 

@@ -99,7 +99,6 @@ typedef struct {
   int voice;
 } queued_t;
 
-extern int debug;
 extern int scope_enable;
 extern float tempo_time_per_step;
 extern float tempo_bpm;

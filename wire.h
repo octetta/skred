@@ -45,12 +45,9 @@ typedef struct wire_s {
   int queued_pointer;
   float defer_last;
   uint64_t defer_sample_time;
-  int last_func;
-  int last_sub_func;
   int pattern;
   int step;
   int output;
-  int debug;
   int trace;
   int verbose;
   int events; // do incoming events go to the logger?
@@ -170,17 +167,6 @@ enum {
   ERR_UNKNOWN,
 };
 
-enum {
-  W_PROTOCOL = 0,
-  W_SCRATCH,
-  W_DATA,
-  W_DATA_0,
-  W_DATA_1,
-  W_DATA_2,
-  W_DATA_3,
-  W_DATA_4,
-};
-
 int wire(char *line, wire_t *w);
 void show_threads(wire_t *w);
 void system_show(wire_t *w);
@@ -197,8 +183,6 @@ int null_printf(const char *fmt, ...);
 
 #define WIRE() { \
   .voice = 0, \
-  .state = W_PROTOCOL, \
-  .last_func = FUNC_NULL, \
   .pattern = 0, \
   .step = -1, \
   .data = NULL, \
@@ -206,7 +190,6 @@ int null_printf(const char *fmt, ...);
   .data_max = 0, \
   .output = 0, \
   .trace = 0, \
-  .debug = 0, \
   .verbose = 0, \
   .scratch[0] = '\0', \
   .events = 0, \
