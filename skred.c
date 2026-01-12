@@ -311,9 +311,14 @@ int main(int argc, char *argv[]) {
   w.output = 1;
   w.debug = debug;
   w.trace = trace;
+  //
+  w.log_enable = 1;
 
   if (execute_from_start[0] != '\0') {
+    w.log_len = 0;
+    w.log[0] = '\0';
     int n = wire(execute_from_start, &w);
+    if (w.log_len) printf("%s", w.log);
     if (n < 0) main_running = 0;
   }
 
@@ -347,7 +352,10 @@ int main(int argc, char *argv[]) {
 #ifndef _WIN32
     if (use_edit) { bestlineHistoryAdd(line); }
 #endif
+    w.log_len = 0;
+    w.log[0] = '\0';
     int n = wire(line, &w);
+    if (w.log_len) printf("%s", w.log);
 #ifndef _WIN32
     if (use_edit) { free(line); }
 #endif

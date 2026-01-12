@@ -29,7 +29,7 @@ typedef struct {
 
 #include "skode.h"
 
-typedef struct {
+typedef struct wire_s {
   int voice;
   voice_stack_t stack;
   int state;
@@ -56,8 +56,12 @@ typedef struct {
   int events; // do incoming events go to the logger?
   skode_t *sk;
   int quit;
-  int (*puts)(const char *s);
-  int (*printf)(const char *fmt, ...);
+  int (*puts)(struct wire_s *w, const char *s);
+  int (*printf)(struct wire_s *w, const char *fmt, ...);
+  int log_enable;
+  char log[4096];
+  int log_max;
+  int log_len;
 } wire_t;
 
 enum {
@@ -185,8 +189,8 @@ int sk_load(wire_t *w, int voice, int n, int output);
 int wavetable_show(wire_t *w, int n);
 char *wire_err_str(int n);
 
-int wire_puts(const char *s);
-int wire_printf(const char *fmt, ...);
+int wire_puts(wire_t *, const char *s);
+int wire_printf(wire_t *, const char *fmt, ...);
 
 int null_puts(const char *s);
 int null_printf(const char *fmt, ...);
@@ -210,6 +214,9 @@ int null_printf(const char *fmt, ...);
   .quit = 0, \
   .puts = wire_puts, \
   .printf = wire_printf, \
+  .log_enable = 0, \
+  .log_len = 0, \
+  .log_max = 4096, \
 }
               
 

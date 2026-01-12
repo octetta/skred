@@ -6,8 +6,18 @@
 #include <stdarg.h>
 #include <stdio.h>
 
-int wire_puts(const char *s) { puts(s); return 0; }
-int wire_printf(const char *fmt, ...) {
+int wire_puts(wire_t *w, const char *s) {
+  //puts("PUTS");
+  if (!w || w->log_enable == 0) return 0;
+  strncat(w->log, s, w->log_max);
+  strncat(w->log, "\n", w->log_max);
+  w->log_len = strlen(w->log);
+  return 0;
+}
+
+int wire_printf(wire_t *w, const char *fmt, ...) {
+  if (!w || w->log_enable == 0) return 0;
+  //puts("PRINTF");
   char buf[4096];
   va_list ap;
   va_start(ap, fmt);
@@ -15,7 +25,10 @@ int wire_printf(const char *fmt, ...) {
   va_end(ap);
   if (len > 0) {
     size_t out_len = (len >= (int)sizeof(buf)) ? sizeof(buf)-1 : (size_t)len;
-    printf("%.*s", (int)out_len, buf);
+    if (out_len) {
+      strncat(w->log, buf, w->log_max);
+      w->log_len = strlen(w->log);
+    }
   }
   return 0;
 }
@@ -95,7 +108,9 @@ void save_wav(wire_t *w, char *filename, float *samples, long num_samples, int *
   int *record_safe;
 
   record_safe = (int *)malloc(sizeof(int)*max);
-  if (record_safe == NULL) { w->puts("OUCH"); return; } // nowhere to keep state
+  if (record_safe == NULL) {
+    w->puts(w, "OUCH"); return;
+  } // nowhere to keep state
   
   int num_channels = 0;  // 32 pairs = 64 channels
 
@@ -111,7 +126,7 @@ void save_wav(wire_t *w, char *filename, float *samples, long num_samples, int *
 
   FILE *f = fopen(filename, "wb");
   if (!f) {
-    w->puts("# can't open file\n");
+    w->puts(w, "# can't open file\n");
     return;
   }
 
@@ -188,6 +203,24 @@ void save_wav(wire_t *w, char *filename, float *samples, long num_samples, int *
 #include "synth-types.h"
 #include "synth.h"
 
+void voice_show(wire_t *w, int v, char c, int verbose) {
+  char s[1024];
+  char e[8] = "";
+  if (c != ' ') sprintf(e, " # *");
+  voice_format(v, s, verbose);
+  if (strlen(s)) w->printf(w, "; %s%s\n", s, e);
+}
+
+int voice_show_all(wire_t *w, int voice, int verbose) {
+  for (int i=0; i<VOICE_MAX; i++) {
+    if (voice_amp[i] == 0) continue;
+    char t = ' ';
+    if (i == voice) t = '*';
+    voice_show(w, i, t, verbose);
+  }
+  return 0;
+}
+
 #define WIRE_POINTER_MAX (100)
 static wire_t *wl[WIRE_POINTER_MAX];
 
@@ -199,29 +232,29 @@ int wire_hash(wire_t *w) {
 
 void wire_show(wire_t *w) {
   if (w != NULL) {
-    w->printf("# voice %d\n", w->voice);
-    w->printf("# state %d\n", w->state);
-    w->printf("# pattern %d\n", w->pattern);
-    w->printf("# scratch %s\n", w->scratch);
-    w->printf("# data max %d\n", w->data_max);
-    w->printf("# data len %d\n", w->data_len);
-    w->printf("( ");
+    w->printf(w, "# voice %d\n", w->voice);
+    w->printf(w, "# state %d\n", w->state);
+    w->printf(w, "# pattern %d\n", w->pattern);
+    w->printf(w, "# scratch %s\n", w->scratch);
+    w->printf(w, "# data max %d\n", w->data_max);
+    w->printf(w, "# data len %d\n", w->data_len);
+    w->printf(w, "( ");
     int flag = 1;
     for (int i = 0; i < w->data_len; i++) {
       if (i < 10) {
-        w->printf("%.8f ", w->data[i]);
+        w->printf(w, "%.8f ", w->data[i]);
       } else if (i > w->data_len - 10) {
-        w->printf("%.8f ", w->data[i]);
+        w->printf(w, "%.8f ", w->data[i]);
       } else if (flag) {
         flag = 0;
-        w->printf(" ... ");
+        w->printf(w, " ... ");
       }
     }
-    w->printf(")\n");
+    w->printf(w, ")\n");
   }
   for (int i = 0; i < WIRE_POINTER_MAX; i++) {
     if (wl[i]) {
-      w->printf("# wl[%d] {.voice=%d .pattern=%d .step=%d. .events=%d}\n",
+      w->printf(w, "# wl[%d] {.voice=%d .pattern=%d .step=%d. .events=%d}\n",
         wire_hash(wl[i]),
         wl[i]->voice,
         wl[i]->pattern,
@@ -239,22 +272,22 @@ void system_show(wire_t *w) {
     w = &wprime;
     wire_init(w);
   }
-  w->printf("# udp_port %d\n", udp_info());
+  w->printf(w, "# udp_port %d\n", udp_info());
 }
 
 void show_stats(wire_t *w) {
   // do something useful
-  w->printf("# rec_state : %d rec_ptr %ld\n", rec_state, rec_ptr);
-  w->printf("# synth frames per callback %d : %gms\n",
+  w->printf(w, "# rec_state : %d rec_ptr %ld\n", rec_state, rec_ptr);
+  w->printf(w, "# synth frames per callback %d : %gms\n",
     synth_frames_per_callback, (float)synth_frames_per_callback / (float)MAIN_SAMPLE_RATE * 1000.0f);
-  w->printf("# seq frames per callback %d : %gms\n",
+  w->printf(w, "# seq frames per callback %d : %gms\n",
     seq_frames_per_callback, (float)seq_frames_per_callback / (float)MAIN_SAMPLE_RATE * 1000.0f);
   for (int i = 0; i < QUEUE_SIZE; i++) {
     if (work_queue[i].state != Q_FREE) {
 #ifdef _WIN32
-      w->printf("# [%d] (%d) @%lld {%s}\n", i, work_queue[i].state, work_queue[i].when, work_queue[i].what);
+      w->printf(w, "# [%d] (%d) @%lld {%s}\n", i, work_queue[i].state, work_queue[i].when, work_queue[i].what);
 #else
-      w->printf("# [%d] (%d) @%ld {%s}\n", i, work_queue[i].state, work_queue[i].when, work_queue[i].what);
+      w->printf(w, "# [%d] (%d) @%ld {%s}\n", i, work_queue[i].state, work_queue[i].when, work_queue[i].what);
 #endif
     }
   }
@@ -290,18 +323,18 @@ void show_threads(wire_t *w) {
           PWSTR threadName = NULL;
           HRESULT hr = GetThreadDescription(hThread, &threadName);
           if (FAILED(hr)) {
-            w->printf("# %lu <GetThreadDescription failed>\n", te32.th32ThreadID);
+            w->printf(w, "# %lu <GetThreadDescription failed>\n", te32.th32ThreadID);
           } else if (threadName == NULL || wcslen(threadName) == 0) {
-            w->printf("# %lu <unnamed>\n", te32.th32ThreadID);
+            w->printf(w, "# %lu <unnamed>\n", te32.th32ThreadID);
           } else {
             char narrowName[256];
             WideCharToMultiByte(CP_UTF8, 0, threadName, -1, narrowName, sizeof(narrowName), NULL, NULL);
-            w->printf("# %lu %s\n", te32.th32ThreadID, narrowName);
+            w->printf(w, "# %lu %s\n", te32.th32ThreadID, narrowName);
             LocalFree(threadName);
           }
           CloseHandle(hThread);
         } else {
-          w->printf("# %lu <cannot open thread>\n", te32.th32ThreadID);
+          w->printf(w, "# %lu <cannot open thread>\n", te32.th32ThreadID);
         }
       }
     } while (Thread32Next(hSnapshot, &te32));
@@ -332,7 +365,7 @@ void show_threads(wire_t *w) {
       }
       fclose(f);
     }
-    w->printf("# %s %s\n", entry->d_name, name);
+    w->printf(w, "# %s %s\n", entry->d_name, name);
   }
 
   closedir(dir);
@@ -359,10 +392,10 @@ int sk_load(wire_t *w, int voice, int n, int output) {
     while (fgets(line, sizeof(line), in) != NULL) {
       size_t len = strlen(line);
       if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
-      if (output) w->printf("# %s\n", line);
+      if (output) w->printf(w, "# %s\n", line);
       r = wire(line, &wprime);
       if (r != 0) {
-        if (output) w->printf("# error in patch\n");
+        if (output) w->printf(w, "# error in patch\n");
         break;
       }
     }
@@ -387,7 +420,7 @@ int data_load(wire_t *w, int where) {
         save_wave_ptr = 0;
       }
       if (save_wave_list[save_wave_ptr]) {
-        w->printf("# freeing old wave %d\n", save_wave_ptr);
+        w->printf(w, "# freeing old wave %d\n", save_wave_ptr);
         free(save_wave_list[save_wave_ptr]);
       }
       save_wave_list[save_wave_ptr++] = wave_table_data[where];
@@ -403,7 +436,7 @@ int data_load(wire_t *w, int where) {
     wave_offset_hz[where] = (float)len / 44100.0f * 440.0f;
     char *name = "data";
     int channels = 1;
-    w->printf("# read %d frames from %s to %d (ch:%d sr:%d)\n", len, name, where, channels, 44100);
+    w->printf(w, "# read %d frames from %s to %d (ch:%d sr:%d)\n", len, name, where, channels, 44100);
   return 0;
 }
 
@@ -424,9 +457,10 @@ int wave_load(wire_t *w, int which, int where, int ch, int normalize) {
   }
   wav_t wav;
   int len;
-  float *table = mw_get(name, &len, &wav, ch);
+  char out[4096];
+  float *table = mw_get_str(name, &len, &wav, ch, out, sizeof(out));
   if (table == NULL) {
-    w->printf("# can not read %s\n", name);
+    w->printf(w, "# can not read %s\n", name);
     return ERR_INVALID_EXT_SAMPLE;
   } else {
     if (wave_table_data[where]) {
@@ -434,7 +468,7 @@ int wave_load(wire_t *w, int which, int where, int ch, int normalize) {
         save_wave_ptr = 0;
       }
       if (save_wave_list[save_wave_ptr]) {
-        w->printf("# freeing old wave %d\n", save_wave_ptr);
+        w->printf(w, "# freeing old wave %d\n", save_wave_ptr);
         free(save_wave_list[save_wave_ptr]);
       }
       save_wave_list[save_wave_ptr++] = wave_table_data[where];
@@ -449,7 +483,7 @@ int wave_load(wire_t *w, int which, int where, int ch, int normalize) {
     wave_loop_end[where] = len;
     wave_midi_note[where] = 69;
     wave_offset_hz[where] = (float)len / (float)wav.SamplesRate * 440.0f;
-    w->printf("# read %d frames from %s to %d (ch:%d sr:%d)\n",
+    w->printf(w, "# read %d frames from %s to %d (ch:%d sr:%d)\n",
       len, name, where, wav.Channels, wav.SamplesRate);
     normalize_preserve_zero(table, len);
   }
@@ -469,13 +503,13 @@ void pattern_show(wire_t *w, int pattern_pointer) {
     char *line = seq_pattern[pattern_pointer][s];
     if (strlen(line) == 0) break;
     if (first) {
-      w->printf("; y%d %%%d # step %d\n",
+      w->printf(w, "; y%d %%%d # step %d\n",
         pattern_pointer, seq_modulo[pattern_pointer], w->step);
       first = 0;
     }
-    w->printf("; {%s} x%d", line, s);
-    if (seq_pattern_mute[pattern_pointer][s]) w->printf(" @%d", pattern_pointer);
-    w->puts("");
+    w->printf(w, "; {%s} x%d", line, s);
+    if (seq_pattern_mute[pattern_pointer][s]) w->printf(w, " @%d", pattern_pointer);
+    w->puts(w, "");
   }
 }
 
@@ -555,9 +589,9 @@ int wavetable_show(wire_t *w, int n) {
         crossing++;
       }
     }
-    w->printf("# w%d size:%d", n, size);
-    w->printf(" +hz:%g midi:%g", wave_offset_hz[n], wave_midi_note[n]);
-    w->puts("");
+    w->printf(w, "# w%d size:%d", n, size);
+    w->printf(w, " +hz:%g midi:%g", wave_offset_hz[n], wave_midi_note[n]);
+    w->puts(w, "");
     if (scope_enable) {
       downsample_block_average_min_max(table, size, scope->wave_data, SCOPE_WAVE_WIDTH, scope->wave_min, scope->wave_max);
       scope->wave_len = SCOPE_WAVE_WIDTH;
@@ -612,12 +646,12 @@ int wire_function(skode_t *s, int info) {
   int voice = w->voice;
   int x = (int)arg[0];
   if (w->trace) {
-    w->printf("# WIRE_FUNCTION ");
-    w->printf("%s", skode_atom_string(s));
+    w->printf(w, "# WIRE_FUNCTION ");
+    w->printf(w, "%s", skode_atom_string(s));
     if (argc) {
-      for (int i=0; i<argc; i++) w->printf(" %g", arg[i]);
+      for (int i=0; i<argc; i++) w->printf(w, " %g", arg[i]);
     }
-    w->puts("");
+    w->puts(w, "");
   }
   switch (atom) {
     case 'a___': if (argc) amp_set(voice, arg[0]); break;
@@ -769,16 +803,16 @@ int wire_function(skode_t *s, int info) {
     case 'Z___': if (argc) {
         seq_state_all(x);
       } else if (w->output) {
-        w->printf("; M%g\n", tempo_bpm * 4.0f);
+        w->printf(w, "; M%g\n", tempo_bpm * 4.0f);
         for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(w, p);
       }
       break;
-    case '?___': voice_show(voice, ' ', w->verbose); break;
-    case '\\___': voice_show(voice, ' ', 1); break;
-    case '??__': voice_show_all(voice, w->verbose); break;
+    case '?___': voice_show(w, voice, ' ', w->verbose); break;
+    case '\\___': voice_show(w, voice, ' ', 1); break;
+    case '??__': voice_show_all(w, voice, w->verbose); break;
     case '?s__':
       {
-        w->printf("# %s\n", skode_string(w->sk));
+        w->printf(w, "# %s\n", skode_string(w->sk));
       }
       break;
     case 'l>g_': if (argc) skode_local_to_global(w->sk, x); break;
@@ -808,7 +842,7 @@ int wire_function(skode_t *s, int info) {
         system_show(w);
         show_threads(w);
         audio_show(w);
-        w->printf("%s", synth_stats());
+        w->printf(w, "%s", synth_stats());
       }
       break;
     case '/S__': if (w->output) {
@@ -867,7 +901,7 @@ int wire_function(skode_t *s, int info) {
 #else
           sprintf(name, "skred-%d-%lld.wav", pid, ms);
 #endif
-          w->printf("# file %s (%ld frames)\n", name, rec_ptr);
+          w->printf(w, "# file %s (%ld frames)\n", name, rec_ptr);
           save_wav(w, name, recording, rec_ptr/VOICE_MAX/AUDIO_CHANNELS, voice_record, VOICE_MAX);
         }
       }
@@ -881,9 +915,9 @@ int wire_function(skode_t *s, int info) {
     case '/wex': if (argc && x >= 200 && x <=999) wave_table_dynamic_expand(x);
     default:
       if (w->trace) {
-        w->printf("# WIRE_UNKNOWN_FUNCTION %d [%x] :: %d", info, atom, argc);
-        w->printf(" v%d", w->voice);
-        w->puts("");
+        w->printf(w, "# WIRE_UNKNOWN_FUNCTION %d [%x] :: %d", info, atom, argc);
+        w->printf(w, " v%d", w->voice);
+        w->puts(w, "");
       }
       break;
   }
@@ -901,9 +935,9 @@ int wire_defer(skode_t *s, int info) {
   uint64_t qt = (uint64_t)(t * (float)MAIN_SAMPLE_RATE) + dst;
   if (w->trace) {
 #ifdef _WIN32
-    w->printf("# WIRE_DEFER %c %g(%lld/%lld) '%s' (%g)\n",
+    w->printf(w, "# WIRE_DEFER %c %g(%lld/%lld) '%s' (%g)\n",
 #else
-    w->printf("# WIRE_DEFER %c %g(%ld/%ld) '%s' (%g)\n",
+    w->printf(w, "# WIRE_DEFER %c %g(%ld/%ld) '%s' (%g)\n",
 #endif
       mode,
       t, qt, dst,
@@ -917,14 +951,14 @@ int wire_defer(skode_t *s, int info) {
 
 int wire_chunk_end(skode_t *s, int info) {
   wire_t *w = (wire_t*)skode_user(s);
-  if (w->trace) w->printf("# CHUNK_END %d\n", info);
+  if (w->trace) w->printf(w, "# CHUNK_END %d\n", info);
   w->defer_last = 0;
   w->defer_sample_time = 0;
   return 0;
 }
 
 int wire_unknown(wire_t *w, skode_t *s, int info) {
-  w->printf("# WIRE_UNKNOWN %d\n", info);
+  w->printf(w, "# WIRE_UNKNOWN %d\n", info);
   return 0;
 }
 
@@ -934,10 +968,10 @@ int wire_cb(skode_t *s, int info) {
     case FUNCTION: return wire_function(s, info);
     case DEFER: return wire_defer(s, info);
     case CHUNK_END: return wire_chunk_end(s, info);
-    case PUSH: { voice_push(&w->stack, w->voice); w->printf("pushed v%d\n", w->voice); } break;
+    case PUSH: { voice_push(&w->stack, w->voice); w->printf(w, "pushed v%d\n", w->voice); } break;
     case POP: { w->voice = voice_pop(&w->stack); } break;
-    case GOT_STRING: { if (w->trace) w->printf("# -> {%s}\n", skode_string(s)); } break;
-    case GOT_ARRAY: { if (w->trace) w->printf("# -> (..%d..)\n", skode_data_len(s)); } break;
+    case GOT_STRING: { if (w->trace) w->printf(w, "# -> {%s}\n", skode_string(s)); } break;
+    case GOT_ARRAY: { if (w->trace) w->printf(w, "# -> (..%d..)\n", skode_data_len(s)); } break;
     default: return wire_unknown(w, s, info);
   }
   return 0;
@@ -968,15 +1002,15 @@ int audio_show(wire_t *w) {
     w = &wprime;
     wire_init(w);
   }
-  w->printf("# synth backend is running\n");
-  w->printf("# synth total voice count %d\n", VOICE_MAX);
+  w->printf(w, "# synth backend is running\n");
+  w->printf(w, "# synth total voice count %d\n", VOICE_MAX);
   int active = 0;
   for (int i = 0; i < VOICE_MAX; i++) if (voice_amp[i] != 0) active++;
-  w->printf("# synth active voice count %d\n", active);
+  w->printf(w, "# synth active voice count %d\n", active);
 #ifdef _WIN32
-  w->printf("# synth sample count %lld\n", synth_sample_count);
+  w->printf(w, "# synth sample count %lld\n", synth_sample_count);
 #else
-  w->printf("# synth sample count %ld\n", synth_sample_count);
+  w->printf(w, "# synth sample count %ld\n", synth_sample_count);
 #endif
   return 0;
 }
@@ -1007,4 +1041,8 @@ void wire_init(wire_t *w) {
   w->quit = 0;
   w->puts = wire_puts;
   w->printf = wire_printf;
+  w->log_enable = 0;
+  w->log_max = 4096;
+  w->log_len = 0;
+  w->log[0] = '\0';
 }

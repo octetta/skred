@@ -60,37 +60,6 @@ int mw_frames(char *name) {
     return -1;    
 }
 
-FILE *mw_header(char *name, wav_t *wav) {
-  if (!wav) return NULL;
-  FILE *in = fopen(name, "rb");
-  if (in) {
-    int n = fread(wav, sizeof(wav_t), 1, in);
-    if (n > 0) {
-      while (1) {
-        puts("#1");
-        if (strncmp(wav->RIFFChunkID, "RIFF", 4) != 0) break;
-        puts("#2");
-        if (strncmp(wav->Format, "WAVE", 4) != 0) break;
-        puts("#3");
-        printf("#3 %s\n", wav->FormatSubchunkID);
-        if (strncmp(wav->FormatSubchunkID, "fmt ", 4) != 0) break;
-        puts("#4");
-        if (wav->Channels > 2) break;
-        puts("#5");
-        if (wav->SamplesRate != 44100) break;
-        puts("#6");
-        if (wav->BitsPerSample != 16) break;
-        puts("#7");
-        if (strncmp(wav->DataSubchunkID, "data", 4) != 0) break;
-        puts("#8");
-        return in;
-      }
-      fclose(in);
-    }
-  }
-  return NULL;
-}
-
 float *mw_free(float *f) {
     if (f) free(f);
     return NULL;
@@ -100,7 +69,7 @@ float *mw_free(float *f) {
 
 float _mw_safe[] = {0,0};
 
-float *mw_get(char *filename, int *frames_out, wav_t *w, int ch) {
+float *mw_get_str(char *filename, int *frames_out, wav_t *w, int ch, char *out, int len) {
   ma_result result;
   ma_decoder decoder;
   ma_decoder_config decoderConfig;
@@ -110,7 +79,7 @@ float *mw_get(char *filename, int *frames_out, wav_t *w, int ch) {
 
   result = ma_decoder_init_file(filename, &decoderConfig, &decoder);
   if (result != MA_SUCCESS) {
-    printf("Could not load file: %s\n", filename);
+    snprintf(out, len, "Could not load file: %s\n", filename);
     *frames_out = 0;
     return NULL;
   }
@@ -120,7 +89,7 @@ float *mw_get(char *filename, int *frames_out, wav_t *w, int ch) {
   if (result == MA_SUCCESS) {
     // pSamples is now your interleaved float32 array
     // frameCount * channels = total number of floats
-    printf("Loaded %llu frames / %d channels / %d sample rate\n",
+    snprintf(out, len, "Loaded %llu frames / %d channels / %d sample rate\n",
       frameCount,
       decoder.outputChannels,
       decoder.outputSampleRate);
@@ -144,4 +113,8 @@ float *mw_get(char *filename, int *frames_out, wav_t *w, int ch) {
   w->Channels = decoder.outputChannels;
   *frames_out = frameCount;
   return pSamples;
+}
+
+float *mw_get(char *filename, int *frames_out, wav_t *w, int ch) {
+  return mw_get_str(filename, frames_out, w, ch, NULL, 0);
 }

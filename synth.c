@@ -45,11 +45,11 @@ void synth_init(void) {
 
 #ifdef USE_PRE
 
-  printf("# synth_init :: USE_PRE\n");
+  //printf("# synth_init :: USE_PRE\n");
 
 #else
 
-  printf("# synth_init :: USE_MALLOC\n");
+  //printf("# synth_init :: USE_MALLOC\n");
 #define ARRAY(type, name, size, init) name = (type*)malloc(size * sizeof(type));
 #include "synth.def"
 #undef ARRAY
@@ -64,12 +64,12 @@ void synth_init(void) {
 void synth_free(void) {
 #ifdef USE_PRE
 
-  printf("# synth_free :: USE_PRE\n");
+  //printf("# synth_free :: USE_PRE\n");
   //
   
 #else
   
-  printf("# synth_free :: USE_FREE\n");
+  //printf("# synth_free :: USE_FREE\n");
 
 #define ARRAY(type, name, size, init) free(name);
 #include "synth.def"
@@ -807,25 +807,6 @@ char *voice_format(int v, char *out, int verbose) {
   return out;
 }
 
-
-void voice_show(int v, char c, int verbose) {
-  char s[1024];
-  char e[8] = "";
-  if (c != ' ') sprintf(e, " # *");
-  voice_format(v, s, verbose);
-  if (strlen(s)) printf("; %s%s\n", s, e);
-}
-
-int voice_show_all(int voice, int verbose) {
-  for (int i=0; i<VOICE_MAX; i++) {
-    if (voice_amp[i] == 0) continue;
-    char t = ' ';
-    if (i == voice) t = '*';
-    voice_show(i, t, verbose);
-  }
-  return 0;
-}
-
 int amp_set(int voice, float f) {
   if (f >= 0) {
     //voice_use_amp_envelope[voice] = 0;
@@ -1213,6 +1194,7 @@ void wave_table_init(void) {
   audio_rng_init(&white_noise, 1);
   for (int w = WAVE_TABLE_SINE; w <= WAVE_TABLE_NOISE_ALT; w++) {
     int size = SIZE_SINE;
+#if 0
     char *name = "?";
     switch (w) {
       case WAVE_TABLE_SINE:  name = "sine"; break;
@@ -1225,6 +1207,7 @@ void wave_table_init(void) {
       default: name = "?"; break;
     }
     printf("# make w%d %s\n", w, name);
+#endif
     wave_table_data[w] = (float *)malloc(size * sizeof(float));
     wave_size[w] = size;
     wave_rate[w] = MAIN_SAMPLE_RATE;
@@ -1252,7 +1235,7 @@ void wave_table_init(void) {
     }
   }
 
-  printf("# load retro waves (%d to %d)\n", WAVE_TABLE_KRG1, WAVE_TABLE_KRG32-1);
+  //printf("# load retro waves (%d to %d)\n", WAVE_TABLE_KRG1, WAVE_TABLE_KRG32-1);
 
   korg_init();
 
@@ -1277,7 +1260,7 @@ void wave_table_init(void) {
   for (int i = 0; i < PCM_SAMPLES; i++) {
     j = i + AMY_SAMPLE_00;
     if (j > AMY_SAMPLE_99-1) {
-      printf("# too many PCM samples... exit early\n");
+      //printf("# too many PCM samples... exit early\n");
       break;
     }
     table = malloc(pcm_map[i].length * sizeof(float));
@@ -1295,7 +1278,7 @@ void wave_table_init(void) {
     wave_midi_note[j] = (int)pcm_map[i].midinote;
     wave_offset_hz[j] = midi2hz((float)pcm_map[i].midinote);
   }
-  printf("# load AMY samples (%d to %d)\n", AMY_SAMPLE_00, j);
+  //printf("# load AMY samples (%d to %d)\n", AMY_SAMPLE_00, j);
 }
 
 void wave_free(void) {
