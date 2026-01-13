@@ -48,7 +48,7 @@ typedef struct wire_s {
   uint64_t defer_sample_time;
   int pattern;
   int step;
-  int output;
+  //int output;
   int trace;
   int verbose;
   char scratch[WIRE_SCRATCH_MAX];
@@ -67,7 +67,7 @@ int wire(char *line, wire_t *w);
 void show_threads(wire_t *w);
 void system_show(wire_t *w);
 int audio_show(wire_t *w);
-int sk_load(wire_t *w, int voice, int n, int output);
+int sk_load(wire_t *w, int voice, int n);
 int wavetable_show(wire_t *w, int n);
 char *wire_err_str(int n);
 
@@ -82,7 +82,6 @@ int null_printf(const char *fmt, ...);
   .scratch[0] = '\0', \
   .pattern = 0, \
   .step = -1, \
-  .output = 0, \
   .trace = 0, \
   .verbose = 0, \
   .events = 0, \
@@ -94,6 +93,9 @@ int null_printf(const char *fmt, ...);
   .log_len = 0, \
   .log_max = 4096, \
 }
+
+//  .output = 0, 
+
 
 void wire_init(wire_t *w);
 

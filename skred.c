@@ -284,7 +284,7 @@ int main(int argc, char *argv[]) {
 
   system_show(NULL);
 
-  if (load_patch_number >= 0) sk_load(NULL, 0, load_patch_number, 0);
+  if (load_patch_number >= 0) sk_load(NULL, 0, load_patch_number);
 
   if (scope_enable) {
     scope->buffer_len = SCOPE_WIDTH_IN_SAMPLES;
@@ -306,14 +306,11 @@ int main(int argc, char *argv[]) {
   }
 
   wire_t w = WIRE();
-  w.output = 1;
+  //w.output = 1;
   w.trace = trace;
-  //
   w.log_enable = 1;
 
   if (execute_from_start[0] != '\0') {
-    w.log_len = 0;
-    w.log[0] = '\0';
     int n = wire(execute_from_start, &w);
     if (w.log_len) printf("%s", w.log);
     if (n < 0) main_running = 0;

@@ -341,7 +341,7 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
                     buffer_push(&s->num, *ptr);
                 } else if (IS_SEPARATOR(*ptr)) {
                     if (s->num.len > 0) {
-                        s->data[s->data_len++] = skode_strtod(buffer_str(&s->num));
+                        if (s->data_len < (s->data_cap-1)) s->data[s->data_len++] = skode_strtod(buffer_str(&s->num));
                         buffer_clear(&s->num);
                     }
                 }
@@ -492,6 +492,17 @@ char skode_defer_mode(skode_t *s) { return s->defer_mode; }
 char *skode_atom_string(skode_t *s) { return atom_string(s->atom_num); }
 double *skode_data(skode_t *s) { return s->data; }
 int skode_data_len(skode_t *s) { return s->data_len; }
+void skode_data_resize(skode_t *s, int len) {
+  if (s->data) {
+    free(s->data);
+    s->data = NULL;
+    s->data_len = 0;
+    s->data_cap = 0;
+  }
+  s->data = (double *)calloc(len, sizeof(double));
+  if (s->data) s->data_cap = len;
+}
+int skode_data_cap(skode_t *s) { return s->data_cap; }
 
 void skode_arg_clear(skode_t *s) { s->arg_len = 0; }
 

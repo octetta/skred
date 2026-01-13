@@ -383,7 +383,7 @@ void show_threads(wire_t *w) {
 #endif
 }
 
-int sk_load(wire_t *w, int voice, int n, int output) {
+int sk_load(wire_t *w, int voice, int n) {
   wire_t wprime;
   if (w == NULL) {
     w = &wprime;
@@ -403,10 +403,10 @@ int sk_load(wire_t *w, int voice, int n, int output) {
     while (fgets(line, sizeof(line), in) != NULL) {
       size_t len = strlen(line);
       if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
-      if (output) w->printf(w, "# %s\n", line);
+      w->printf(w, "# %s\n", line);
       r = wire(line, &wprime);
       if (r != 0) {
-        if (output) w->printf(w, "# error in patch\n");
+        w->printf(w, "# error in patch\n");
         break;
       }
     }
@@ -736,7 +736,14 @@ int wire_function(skode_t *s, int info) {
       break;
     // TODO re-allocate the data/array buffer with the arg
     case '/D__':
-      if (argc) {}
+      if (argc) {
+        // free and re-allocate...
+        if (x > 0) skode_data_resize(w->sk, x);
+      }
+      w->printf(w, "# /D data %p cap %d len %d\n",
+        skode_data(w->sk),
+        skode_data_cap(w->sk),
+        skode_data_len(w->sk));
       break;
     case 'I___': if (argc) {} break; // TODO en/dis-able send timestamp wire to the event logger
     case 'L___': if (argc) { voice_link_trig[voice] = x; } break;
@@ -835,11 +842,11 @@ int wire_function(skode_t *s, int info) {
       break;
     case 'z___': if (argc) {
         seq_state_set(w->pattern, x);
-      } else if (w->output) pattern_show(w, w->pattern);
+      } else pattern_show(w, w->pattern);
       break;
     case 'Z___': if (argc) {
         seq_state_all(x);
-      } else if (w->output) {
+      } else {
         w->printf(w, "; M%g\n", tempo_bpm * 4.0f);
         for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(w, p);
       }
@@ -862,12 +869,6 @@ int wire_function(skode_t *s, int info) {
         data_load(w, wave_slot);
       }
       break;
-    case '/i__': if (argc == 0) {
-        if (w->output) w->output = 0; else w->output = 1;
-      } else {
-        w->output = x;
-      }
-      break;
     case '/t__': if (argc == 0) x = (w->trace) ? 0 : 1;
       w->trace = x;
       skode_trace_set(s, x > 1);
@@ -875,14 +876,14 @@ int wire_function(skode_t *s, int info) {
     case '/v__': if (argc == 0) x = (w->verbose) ? 0 : 1;
       w->verbose = x;
       break;
-    case '/s__': if (w->output) {
+    case '/s__': {
         system_show(w);
         show_threads(w);
         audio_show(w);
         w->printf(w, "%s", synth_stats());
       }
       break;
-    case '/S__': if (w->output) {
+    case '/S__': {
         show_stats(w);
         wire_show(w);
       }
@@ -892,7 +893,7 @@ int wire_function(skode_t *s, int info) {
               // sub q for scope_quit = 0
               // sub 0..VOICE_MAX-1 for scope_channel = n
               // sub -1 for scope_channel = -1 (all channels)
-    case '/l__': if (argc) { sk_load(w, voice, x, w->output); } break;
+    case '/l__': if (argc) { sk_load(w, voice, x); } break;
     case '/w__': {
         int file_num = 0;
         int wave_slot = EXT_SAMPLE_000;
@@ -1063,7 +1064,6 @@ void wire_init(wire_t *w) {
   w->voice = 0;
   w->pattern = 0;
   w->step = -1;
-  w->output = 0;
   w->trace = 0;
   w->verbose = 0;
   w->scratch[0] = '\0';
