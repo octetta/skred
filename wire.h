@@ -25,33 +25,17 @@ typedef struct {
   float args[8];
 } value_t;
 
-#define WIRE_SCRATCH_MAX (1024)
-
 #include "skode.h"
 
 typedef struct wire_s {
   int voice;
   voice_stack_t stack;
-#if 0
-  int state;
-  int scratch_pointer;
-  float *data;
-  int data_max;
-  int data_pointer;
-  int data_len;
-  char data_acc[64];
-  int data_acc_ptr;
-#endif
-  char queued[QUEUED_MAX];
-  int queued_pointer;
-  float defer_last;
   uint64_t defer_sample_time;
+  float defer_last;
   int pattern;
   int step;
-  //int output;
   int trace;
   int verbose;
-  char scratch[WIRE_SCRATCH_MAX];
   int events; // do incoming events go to the logger?
   skode_t *sk;
   int quit;
@@ -80,7 +64,6 @@ int null_printf(const char *fmt, ...);
 
 #define WIRE() { \
   .voice = 0, \
-  .scratch[0] = '\0', \
   .pattern = 0, \
   .step = -1, \
   .trace = 0, \

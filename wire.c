@@ -234,12 +234,7 @@ void wire_show(wire_t *w) {
   if (w != NULL) {
     w->printf(w, "# voice %d\n", w->voice);
     w->printf(w, "# pattern %d\n", w->pattern);
-    w->printf(w, "# scratch %s\n", w->scratch);
-#if 0
-    w->printf(w, "# state %d\n", w->state);
-    w->printf(w, "# data max %d\n", w->data_max);
-    w->printf(w, "# data len %d\n", w->data_len);
-#endif
+    w->printf(w, "# scratch %s\n", skode_string(w->sk));
     w->printf(w, "( ");
     int flag = 1;
     int show_dots = 0;
@@ -992,7 +987,7 @@ int wire_defer(skode_t *s, int info) {
   if (w->defer_sample_time == 0) w->defer_sample_time = synth_sample_count;
   uint64_t dst = w->defer_sample_time;
   char mode = skode_defer_mode(s);
-  float t = skode_defer_num(s) + w->defer_last;
+  float t = skode_defer_num(s);
   if (mode == '+') t *= (tempo_time_per_step * 4.0f);
   t += w->defer_last;
   uint64_t qt = (uint64_t)(t * (float)MAIN_SAMPLE_RATE) + dst;
@@ -1093,7 +1088,6 @@ void wire_init(wire_t *w) {
   w->step = -1;
   w->trace = 0;
   w->verbose = 0;
-  w->scratch[0] = '\0';
   w->events = 0;
   w->sk = NULL;
   w->quit = 0;
