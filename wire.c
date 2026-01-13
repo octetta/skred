@@ -383,7 +383,7 @@ void show_threads(wire_t *w) {
 #endif
 }
 
-int sk_load(wire_t *w, int voice, int n, int output) {
+int sk_load(wire_t *w, int voice, int n) {
   wire_t wprime;
   if (w == NULL) {
     w = &wprime;
@@ -403,10 +403,10 @@ int sk_load(wire_t *w, int voice, int n, int output) {
     while (fgets(line, sizeof(line), in) != NULL) {
       size_t len = strlen(line);
       if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
-      if (output) w->printf(w, "# %s\n", line);
+      w->printf(w, "# %s\n", line);
       r = wire(line, &wprime);
       if (r != 0) {
-        if (output) w->printf(w, "# error in patch\n");
+        w->printf(w, "# error in patch\n");
         break;
       }
     }
@@ -415,10 +415,13 @@ int sk_load(wire_t *w, int voice, int n, int output) {
   return r;
 }
 
-int data_load(wire_t *w, int wave_slot) {
-  w->printf(w, "# data_load(w, %d)\n", wave_slot);
+int data_load(wire_t *w, int wave_slot, float rate, float offset) {
   if (w == NULL) return 100; // fix todo
-  if (wave_slot < EXT_SAMPLE_000 || wave_slot >= EXT_SAMPLE_999) return -1;
+  w->printf(w, "# data_load(w, %d, %g, %g)\n", wave_slot, rate, offset);
+  if (wave_slot < 0 || wave_slot >= EXT_SAMPLE_999) {
+    w->printf(w, "# invalid slot %d\n", wave_slot);
+    return -1;
+  }
   double *data = skode_data(w->sk);
   int data_len = skode_data_len(w->sk);
   if (data == NULL) {
@@ -433,6 +436,10 @@ int data_load(wire_t *w, int wave_slot) {
     w->printf(w, "# cannot write to w%d r/o\n", wave_slot);
     return -1;
   }
+  if (rate <= 0) {
+    w->printf(w, "# invalid rate %g > 0\n", rate);
+    return -1;
+  }
   if (wave_refcount[wave_slot] > 0) {
     w->printf(w, "# cannot write to w%d ref > 0\n", wave_slot);
     return -1;
@@ -445,13 +452,18 @@ int data_load(wire_t *w, int wave_slot) {
     wave_is_miniwav[wave_slot] = 0;
     wave_table_data[wave_slot] = table;
     wave_size[wave_slot] = len;
-    wave_rate[wave_slot] = (float)44100.0f;
+    wave_rate[wave_slot] = rate;
     wave_one_shot[wave_slot] = 1;
     wave_loop_enabled[wave_slot] = 0;
     wave_loop_start[wave_slot] = 1;
     wave_loop_end[wave_slot] = len;
-    wave_midi_note[wave_slot] = 69;
-    wave_offset_hz[wave_slot] = (float)len / 44100.0f * 440.0f;
+    if (offset > 0) {
+      wave_offset_hz[wave_slot] = (float)len / rate * 440.0f;
+      wave_midi_note[wave_slot] = 69;
+    } else {
+      wave_offset_hz[wave_slot] = 0.0f;
+      wave_midi_note[wave_slot] = 0;
+    }
     char *name = "data";
     int channels = 1;
     w->printf(w, "# read %d frames from %s to %d (ch:%d sr:%d)\n", len, name, wave_slot, channels, 44100);
@@ -611,7 +623,10 @@ int wavetable_show(wire_t *w, int n) {
       }
     }
     w->printf(w, "# w%d size:%d", n, size);
-    w->printf(w, " +hz:%g midi:%g", wave_offset_hz[n], wave_midi_note[n]);
+    w->printf(w, " rate:%g +hz:%g midi:%g",
+      wave_rate[n],
+      wave_offset_hz[n],
+      wave_midi_note[n]);
     if (readonly) {
       w->printf(w, " r/o");
     } else {
@@ -736,7 +751,14 @@ int wire_function(skode_t *s, int info) {
       break;
     // TODO re-allocate the data/array buffer with the arg
     case '/D__':
-      if (argc) {}
+      if (argc) {
+        // free and re-allocate...
+        if (x > 0) skode_data_resize(w->sk, x);
+      }
+      w->printf(w, "# /D data %p cap %d len %d\n",
+        skode_data(w->sk),
+        skode_data_cap(w->sk),
+        skode_data_len(w->sk));
       break;
     case 'I___': if (argc) {} break; // TODO en/dis-able send timestamp wire to the event logger
     case 'L___': if (argc) { voice_link_trig[voice] = x; } break;
@@ -835,11 +857,11 @@ int wire_function(skode_t *s, int info) {
       break;
     case 'z___': if (argc) {
         seq_state_set(w->pattern, x);
-      } else if (w->output) pattern_show(w, w->pattern);
+      } else pattern_show(w, w->pattern);
       break;
     case 'Z___': if (argc) {
         seq_state_all(x);
-      } else if (w->output) {
+      } else {
         w->printf(w, "; M%g\n", tempo_bpm * 4.0f);
         for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(w, p);
       }
@@ -858,14 +880,12 @@ int wire_function(skode_t *s, int info) {
     case '/q__': w->quit = -1; return 0;
     case '/d__': {
         int wave_slot = EXT_SAMPLE_000;
+        float rate = 44100.0;
+        float offset = 0.0;
         if (argc) wave_slot = (int)arg[0];
-        data_load(w, wave_slot);
-      }
-      break;
-    case '/i__': if (argc == 0) {
-        if (w->output) w->output = 0; else w->output = 1;
-      } else {
-        w->output = x;
+        if (argc > 1) rate = arg[1];
+        if (argc > 2) offset = arg[2];
+        data_load(w, wave_slot, rate, offset);
       }
       break;
     case '/t__': if (argc == 0) x = (w->trace) ? 0 : 1;
@@ -875,14 +895,14 @@ int wire_function(skode_t *s, int info) {
     case '/v__': if (argc == 0) x = (w->verbose) ? 0 : 1;
       w->verbose = x;
       break;
-    case '/s__': if (w->output) {
+    case '/s__': {
         system_show(w);
         show_threads(w);
         audio_show(w);
         w->printf(w, "%s", synth_stats());
       }
       break;
-    case '/S__': if (w->output) {
+    case '/S__': {
         show_stats(w);
         wire_show(w);
       }
@@ -892,7 +912,7 @@ int wire_function(skode_t *s, int info) {
               // sub q for scope_quit = 0
               // sub 0..VOICE_MAX-1 for scope_channel = n
               // sub -1 for scope_channel = -1 (all channels)
-    case '/l__': if (argc) { sk_load(w, voice, x, w->output); } break;
+    case '/l__': if (argc) { sk_load(w, voice, x); } break;
     case '/w__': {
         int file_num = 0;
         int wave_slot = EXT_SAMPLE_000;
@@ -1022,6 +1042,8 @@ int wire(char *line, wire_t *w) {
     w->sk = skode_new(wire_cb, (void *)w);
     skode_set_global(w->sk, global_var);
   }
+  w->log_len = 0;
+  w->log[0] = '\0';
   wl[wire_hash(w)] = w;
 
   if (w->events) mpsc_queue_send(&mq, line);
@@ -1063,7 +1085,6 @@ void wire_init(wire_t *w) {
   w->voice = 0;
   w->pattern = 0;
   w->step = -1;
-  w->output = 0;
   w->trace = 0;
   w->verbose = 0;
   w->scratch[0] = '\0';
