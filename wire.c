@@ -415,9 +415,9 @@ int sk_load(wire_t *w, int voice, int n) {
   return r;
 }
 
-int data_load(wire_t *w, int wave_slot, float rate, float offset) {
+int data_load(wire_t *w, int wave_slot, int one_shot, float rate, float offset) {
   if (w == NULL) return 100; // fix todo
-  w->printf(w, "# data_load(w, %d, %g, %g)\n", wave_slot, rate, offset);
+  w->printf(w, "# data_load(w, %d, %d, %g, %g)\n", wave_slot, one_shot, rate, offset);
   if (wave_slot < 0 || wave_slot >= EXT_SAMPLE_999) {
     w->printf(w, "# invalid slot %d\n", wave_slot);
     return -1;
@@ -453,7 +453,7 @@ int data_load(wire_t *w, int wave_slot, float rate, float offset) {
     wave_table_data[wave_slot] = table;
     wave_size[wave_slot] = len;
     wave_rate[wave_slot] = rate;
-    wave_one_shot[wave_slot] = 1;
+    wave_one_shot[wave_slot] = (one_shot != 0);
     wave_loop_enabled[wave_slot] = 0;
     wave_loop_start[wave_slot] = 1;
     wave_loop_end[wave_slot] = len;
@@ -880,13 +880,19 @@ int wire_function(skode_t *s, int info) {
     case '/q__': w->quit = -1; return 0;
     case '/d__': {
         int wave_slot = EXT_SAMPLE_000;
+        int one_shot = 0;
         float rate = 44100.0;
         float offset = 0.0;
         if (argc) wave_slot = (int)arg[0];
         if (argc > 1) rate = arg[1];
-        if (argc > 2) offset = arg[2];
-        data_load(w, wave_slot, rate, offset);
+        if (argc > 2) rate = arg[2];
+        if (argc > 3) offset = arg[3];
+        data_load(w, wave_slot, one_shot, rate, offset);
       }
+      break;
+    case '/f__':
+      if (argc) { w->flag = x; }
+      else { w->printf(w, "# /f%d\n", w->flag); }
       break;
     case '/t__': if (argc == 0) x = (w->trace) ? 0 : 1;
       w->trace = x;

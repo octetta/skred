@@ -61,6 +61,7 @@ typedef struct wire_s {
   char log[4096];
   int log_max;
   int log_len;
+  int flag;
 } wire_t;
 
 int wire(char *line, wire_t *w);

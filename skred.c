@@ -317,6 +317,9 @@ int main(int argc, char *argv[]) {
 
   if (scope_enable) scope->voice_text[0] = '\0';
 
+  if (use_edit) { w.flag = 1; }
+  else { w.flag = 0; }
+
   while (main_running) {
     if (scope_enable) {
       voice_format(current_voice, scope->voice_text, 0);
@@ -324,12 +327,19 @@ int main(int argc, char *argv[]) {
 
     char *line = NULL;
 
+    int used_best_line = 0;
+
 #ifndef _WIN32
     if (use_edit) {
-      line = bestlineWithHistory("# ", NULL);
+      if (w.flag) {
+        line = bestlineWithHistory("# ", NULL);
+        used_best_line = 1;
+      } else {
+        char buffer[1024];
+        line = fgets(buffer, sizeof(buffer), stdin);
+      }
     } else {
       char buffer[1024];
-      //printf("# ");
       line = fgets(buffer, sizeof(buffer), stdin);
     }
 #else
@@ -343,12 +353,16 @@ int main(int argc, char *argv[]) {
     }
     if (strlen(line) == 0) continue;
 #ifndef _WIN32
-    if (use_edit) { bestlineHistoryAdd(line); }
+    if (use_edit) {
+      if (used_best_line) bestlineHistoryAdd(line);
+    }
 #endif
     int n = wire(line, &w);
     if (w.log_len) printf("%s", w.log);
 #ifndef _WIN32
-    if (use_edit) { free(line); }
+    if (use_edit) {
+      if (used_best_line) free(line);
+    }
 #endif
     if (n < 0) break; // request to stop or error
     if (n > 0) printf("# ERR:%d\n", n);
