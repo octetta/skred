@@ -415,10 +415,13 @@ int sk_load(wire_t *w, int voice, int n) {
   return r;
 }
 
-int data_load(wire_t *w, int wave_slot) {
-  w->printf(w, "# data_load(w, %d)\n", wave_slot);
+int data_load(wire_t *w, int wave_slot, float rate, float offset) {
   if (w == NULL) return 100; // fix todo
-  if (wave_slot < EXT_SAMPLE_000 || wave_slot >= EXT_SAMPLE_999) return -1;
+  w->printf(w, "# data_load(w, %d, %g, %g)\n", wave_slot, rate, offset);
+  if (wave_slot < 0 || wave_slot >= EXT_SAMPLE_999) {
+    w->printf(w, "# invalid slot %d\n", wave_slot);
+    return -1;
+  }
   double *data = skode_data(w->sk);
   int data_len = skode_data_len(w->sk);
   if (data == NULL) {
@@ -433,6 +436,10 @@ int data_load(wire_t *w, int wave_slot) {
     w->printf(w, "# cannot write to w%d r/o\n", wave_slot);
     return -1;
   }
+  if (rate <= 0) {
+    w->printf(w, "# invalid rate %g > 0\n", rate);
+    return -1;
+  }
   if (wave_refcount[wave_slot] > 0) {
     w->printf(w, "# cannot write to w%d ref > 0\n", wave_slot);
     return -1;
@@ -445,13 +452,18 @@ int data_load(wire_t *w, int wave_slot) {
     wave_is_miniwav[wave_slot] = 0;
     wave_table_data[wave_slot] = table;
     wave_size[wave_slot] = len;
-    wave_rate[wave_slot] = (float)44100.0f;
+    wave_rate[wave_slot] = rate;
     wave_one_shot[wave_slot] = 1;
     wave_loop_enabled[wave_slot] = 0;
     wave_loop_start[wave_slot] = 1;
     wave_loop_end[wave_slot] = len;
-    wave_midi_note[wave_slot] = 69;
-    wave_offset_hz[wave_slot] = (float)len / 44100.0f * 440.0f;
+    if (offset > 0) {
+      wave_offset_hz[wave_slot] = (float)len / rate * 440.0f;
+      wave_midi_note[wave_slot] = 69;
+    } else {
+      wave_offset_hz[wave_slot] = 0.0f;
+      wave_midi_note[wave_slot] = 0;
+    }
     char *name = "data";
     int channels = 1;
     w->printf(w, "# read %d frames from %s to %d (ch:%d sr:%d)\n", len, name, wave_slot, channels, 44100);
@@ -611,7 +623,10 @@ int wavetable_show(wire_t *w, int n) {
       }
     }
     w->printf(w, "# w%d size:%d", n, size);
-    w->printf(w, " +hz:%g midi:%g", wave_offset_hz[n], wave_midi_note[n]);
+    w->printf(w, " rate:%g +hz:%g midi:%g",
+      wave_rate[n],
+      wave_offset_hz[n],
+      wave_midi_note[n]);
     if (readonly) {
       w->printf(w, " r/o");
     } else {
@@ -865,8 +880,12 @@ int wire_function(skode_t *s, int info) {
     case '/q__': w->quit = -1; return 0;
     case '/d__': {
         int wave_slot = EXT_SAMPLE_000;
+        float rate = 44100.0;
+        float offset = 0.0;
         if (argc) wave_slot = (int)arg[0];
-        data_load(w, wave_slot);
+        if (argc > 1) rate = arg[1];
+        if (argc > 2) offset = arg[2];
+        data_load(w, wave_slot, rate, offset);
       }
       break;
     case '/t__': if (argc == 0) x = (w->trace) ? 0 : 1;
@@ -1023,6 +1042,8 @@ int wire(char *line, wire_t *w) {
     w->sk = skode_new(wire_cb, (void *)w);
     skode_set_global(w->sk, global_var);
   }
+  w->log_len = 0;
+  w->log[0] = '\0';
   wl[wire_hash(w)] = w;
 
   if (w->events) mpsc_queue_send(&mq, line);

@@ -306,7 +306,6 @@ int main(int argc, char *argv[]) {
   }
 
   wire_t w = WIRE();
-  //w.output = 1;
   w.trace = trace;
   w.log_enable = 1;
 
@@ -346,8 +345,6 @@ int main(int argc, char *argv[]) {
 #ifndef _WIN32
     if (use_edit) { bestlineHistoryAdd(line); }
 #endif
-    w.log_len = 0;
-    w.log[0] = '\0';
     int n = wire(line, &w);
     if (w.log_len) printf("%s", w.log);
 #ifndef _WIN32
