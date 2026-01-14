@@ -31,7 +31,7 @@ void tempo_set(float m) {
   tempo_time_per_step = time_per_step;
 }
 
-void seq(int frame_count) {
+void seq(int frame_count, int (*pattern_fn)(void *arg), int (*defer_fn)(void *arg)) {
   // static int voice = 0;
   // static voice_stack_t vs;
   // static int state = 0;

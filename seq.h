@@ -30,7 +30,7 @@ typedef struct {
   int voice;
 } queued_t;
 
-void seq(int num_frames);
+void seq(int frame_count, int (*pattern_fn)(void *arg), int (*defer_fn)(void *arg));
 void seq_init(void);
 void pattern_reset(int p);
 int queue_item(uint64_t when, char *what, int voice);

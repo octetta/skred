@@ -78,6 +78,14 @@ void synth_callback_free(void) {
   rec_max = 0;
 }
 
+int pattern_cb(void *arg) {
+  return 0;
+}
+
+int defer_cb(void *arg) {
+  return 0;
+}
+
 void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
   static int first = 1;
   static int num_channels = 1;
@@ -90,7 +98,7 @@ void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint
   synth((float *)output, (float *)input, (int)frame_count, (int)pDevice->playback.channels, pDevice->pUserData);
   sprintf(scope->debug_text, "%d %d %ld", frame_count, rec_state, rec_ptr);
   // copy frame buffer to shared memory?
-  seq((int)frame_count);
+  seq((int)frame_count, pattern_cb, defer_cb);
   if (rec_state) {
     float *f = one_skred_frame;
     for (int i = 0; i < frame_count * num_channels * VOICE_MAX; i+=2) {
