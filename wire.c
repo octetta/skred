@@ -773,9 +773,11 @@ int wire_function(skode_t *s, int info) {
     case 'm___': if (argc) { wave_mute(voice, x); } break;
     case 'M___': if (argc) { tempo_set(arg[0]); } break;
     case 'n___': if (argc) {
-        freq_midi(voice, arg[0]);
-        if (voice_link_midi_a[voice] >= 0) freq_midi(voice_link_midi_a[voice], arg[0]);
-        if (voice_link_midi_b[voice] >= 0) freq_midi(voice_link_midi_b[voice], arg[0]);
+        float note = arg[0];
+        if (isnan(note)) note = voice_last_midi_note[voice];
+        freq_midi(voice, note);
+        if (voice_link_midi_a[voice] >= 0) freq_midi(voice_link_midi_a[voice], note);
+        if (voice_link_midi_b[voice] >= 0) freq_midi(voice_link_midi_b[voice], note);
       }
       break;
     case 'N___': if (argc) {

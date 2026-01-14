@@ -679,6 +679,10 @@ char *voice_format(int v, char *out, int verbose) {
       voice_user_amp[v]);
     ptr += n;
   }
+  {
+    n = sprintf(ptr, " n%g", voice_last_midi_note[v]);
+    ptr += n;
+  }
   if (verbose || voice_midi_transpose[v] || voice_midi_cents[v]) {
     n = sprintf(ptr, " N%g,%g", voice_midi_transpose[v], voice_midi_cents[v]);
     ptr += n;
@@ -1069,6 +1073,7 @@ int wave_default(int voice) {
 
 int freq_midi(int voice, float note) {
   if (note >= 0.0 && note <= 127.0) {
+    voice_last_midi_note[voice] = note;
     if (voice_midi_transpose[voice]) note += voice_midi_transpose[voice];
     float g = midi2hz(note, voice_midi_cents[voice]);
     return freq_set(voice, g);
@@ -1102,6 +1107,7 @@ void voice_reset(int i) {
   voice_amp_envelope[i].is_active = 0;
   voice_freq[i] = 440.0f;
   voice_midi_note[i] = 69.0f;
+  voice_last_midi_note[i] = 69.0f;
   voice_midi_transpose[i] = 0;
   voice_midi_cents[i] = 0;
   voice_link_midi_a[i] = -1;
