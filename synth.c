@@ -256,7 +256,7 @@ float osc_next(int voice, float phase_inc) {
     
     // Get sample
     int idx;
-    if (voice_cz_mode[voice]) {
+    if (voice_cz_mode[voice] && voice_cz_mod_osc[voice] >= 0) {
         int dv = voice_cz_mod_osc[voice];
         float dm = (dv >= 0) ? voice_sample[dv] * voice_cz_mod_depth[voice] : 1.0f;
         idx = (int)cz_phasor(voice_cz_mode[voice], phase, 
@@ -864,7 +864,6 @@ int wave_dir(int voice, int state) {
 }
 
 int pan_mod_set(int voice, int o, float f) {
-  if (voice_invalid(voice) || voice_invalid(o)) return SYNTH_INVALID_VOICE;
   voice_pan_mod_osc[voice] = o;
   voice_pan_mod_depth[voice] = f;
   return 0;
@@ -880,14 +879,12 @@ int wave_set(int voice, int wave) {
 }
 
 int amp_mod_set(int voice, int o, float f) {
-  if (voice_invalid(voice) || voice_invalid(o)) return SYNTH_INVALID_VOICE;
   voice_amp_mod_osc[voice] = o;
   voice_amp_mod_depth[voice] = f;
   return 0;
 }
 
 int freq_mod_set(int voice, int o, float f) {
-  if (voice_invalid(voice) || voice_invalid(o)) return SYNTH_INVALID_VOICE;
   voice_freq_mod_osc[voice] = o;
   voice_freq_mod_depth[voice] = f;
   voice_freq_scale[voice] = (float)voice_table_size[voice] / (float)voice_table_size[o];

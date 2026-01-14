@@ -692,7 +692,7 @@ int wire_function(skode_t *s, int info) {
   }
   switch (atom) {
     case 'a___': if (argc) amp_set(voice, arg[0]); break;
-    case 'A___': if (argc == 1) {
+    case 'A___': if (argc < 2) {
         amp_mod_set(voice, -1, 0);
       } else if (argc > 1) {
         amp_mod_set(voice, x, arg[1]);
@@ -708,8 +708,8 @@ int wire_function(skode_t *s, int info) {
         cz_set(voice, x, arg[1]);
       }
       break;
-    case 'C___': if (argc <= 1) {
-        cmod_set(voice, x, -1);
+    case 'C___': if (argc < 2) {
+        cmod_set(voice, -1, 0);
       } else if (argc > 1) {
         cmod_set(voice, x, arg[1]);
       }
@@ -718,7 +718,7 @@ int wire_function(skode_t *s, int info) {
       break;
     case 'f___': if (argc) freq_set(voice, arg[0]); break;
     case 'F___': if (argc <= 1) {
-        freq_mod_set(voice, x, -1);
+        freq_mod_set(voice, -1, 0);
       } else if (argc > 1) {
         freq_mod_set(voice, x, arg[1]);
       }
@@ -787,8 +787,8 @@ int wire_function(skode_t *s, int info) {
         if (argc > 1) voice_midi_cents[voice] = arg[1];
       } break;
     case 'p___': if (argc) pan_set(voice, arg[0]); break;
-    case 'P___': if (argc <= 1) {
-        pan_mod_set(voice, x, -1);
+    case 'P___': if (argc < 2) {
+        pan_mod_set(voice, -1, 0);
       } else if (argc > 1) {
         pan_mod_set(voice, x, arg[1]);
       }
