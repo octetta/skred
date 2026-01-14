@@ -295,7 +295,11 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
                   buffer_clear(&s->string[s->string_idx]);
                   s->state = GET_STRING;
                 }
-                else if (IS_ARRAY(*ptr))     { buffer_clear(&s->num); s->data_len = 0; s->state = GET_ARRAY; }
+                else if (IS_ARRAY(*ptr))     {
+                  buffer_clear(&s->num);
+                  s->data_len = 0;
+                  s->state = GET_ARRAY;
+                }
                 else if (IS_VARIABLE(*ptr))  { s->state = GET_VARIABLE; }
                 else if (IS_COMMENT(*ptr))   { s->state = GET_COMMENT; }
                 else if (IS_CHUNK_END(*ptr)) { action_chunk_end(s); s->state = START; }
@@ -485,6 +489,7 @@ void *skode_user(skode_t *s) { return s->user; }
 char *skode_string(skode_t *s) { return buffer_str(&s->string[s->string_read_idx]); }
 int skode_string_len(skode_t *s) { return s->string[s->string_read_idx].len; }
 void skode_chunk_mode(skode_t *s, int mode) { s->mode = mode; }
+int skode_chunk_mode_get(skode_t *s) { return s->mode; }
 void skode_trace_set(skode_t *s, int n) { s->trace = n; }
 double skode_defer_num(skode_t *s) { return s->defer_num; }
 char *skode_defer_string(skode_t *s) { return buffer_str(&s->defer); }
