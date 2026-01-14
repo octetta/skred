@@ -25,10 +25,6 @@
 //#include <time.h>
 #include <unistd.h>
 
-#ifndef _WIN32
-#include "bestline.h"
-#endif
-
 #include "skred.h"
 #include "skred-mem.h"
 #include "scope-shared.h"
@@ -44,9 +40,13 @@ scope_buffer_t *scope = &scope_safety;
 #include "synth-types.h"
 #include "synth.h"
 
+#if 1
+// this are used in wire.c and seq.c so there's a messy relationship
+// probably should be in seq.h
 float tempo_time_per_step = 60.0f;
 float tempo_bpm = 120.0f / 4.0f;
 float tempo_base = 0.0f;
+#endif
 
 void tempo_set(float);
 
@@ -188,7 +188,48 @@ void ms_to_timespec(int64_t ms, int64_t *sec, int64_t *ns) {
 }
 #endif
 
-char my_data[] = "hello";
+#ifndef _WIN32
+#include "bestline.h"
+#endif
+
+void sload(int use_edit) {
+#ifndef _WIN32
+  if (use_edit) bestlineHistoryLoad(HISTORY_FILE);
+#endif
+}
+
+char *sgets(char *prompt, int max, int edit, int store) {
+  char *buffer = (char *)malloc(max);
+  char *line = buffer;
+#ifndef _WIN32
+  if (edit) {
+    line = bestlineWithHistory(prompt, NULL);
+    if (store) bestlineHistoryAdd(line);
+  } else {
+    line = fgets(buffer, max, stdin);
+  }
+#else
+  line = fgets(buffer, max, stdin);
+#endif
+  if (1) {
+    int n = strlen(line);
+    int f0 = -1;
+    int f1 = -1;
+    for (int i=n-1; i>=0; i--) {
+      if (line[i] == '\n') f0 = i;
+      if (line[i] == '\r') f1 = i;
+    }
+    if (f0 >= 0) printf("HAS \\n [%d]\n", f0);
+    if (f1 >= 0) printf("HAS \\r [%d]\n", f0);
+  }
+  return line;
+}
+
+void ssave(int use_edit) {
+#ifndef _WIN32
+  if (use_edit) { bestlineHistorySave(HISTORY_FILE); }
+#endif
+}
 
 int main(int argc, char *argv[]) {
   int load_patch_number = -1;
@@ -229,6 +270,7 @@ int main(int argc, char *argv[]) {
   
   show_threads(NULL);
   
+  sload(use_edit);
 #ifndef _WIN32
   bestlineHistoryLoad(HISTORY_FILE);
 #endif
@@ -320,56 +362,33 @@ int main(int argc, char *argv[]) {
   if (use_edit) { w.flag = 1; }
   else { w.flag = 0; }
 
+  char *line = NULL;
+
   while (main_running) {
     if (scope_enable) {
       voice_format(current_voice, scope->voice_text, 0);
     }
 
-    char *line = NULL;
+    if (line) free(line); // get rid of previous malloc-ed line
+    line = NULL;
 
-    int used_best_line = 0;
-
-#ifndef _WIN32
-    if (use_edit) {
-      if (w.flag) {
-        line = bestlineWithHistory("# ", NULL);
-        used_best_line = 1;
-      } else {
-        char buffer[1024];
-        line = fgets(buffer, sizeof(buffer), stdin);
-      }
-    } else {
-      char buffer[1024];
-      line = fgets(buffer, sizeof(buffer), stdin);
-    }
-#else
-      char buffer[1024];
-      if (use_edit) printf("# ");
-      line = fgets(buffer, sizeof(buffer), stdin);
-#endif
+    line = sgets("# ", 1024, use_edit, w.flag);
     if (line == NULL) {
       main_running = 0;
       break;
     }
     if (strlen(line) == 0) continue;
-#ifndef _WIN32
-    if (use_edit) {
-      if (used_best_line) bestlineHistoryAdd(line);
-    }
-#endif
+
     int n = wire(line, &w);
     if (w.log_len) printf("%s", w.log);
-#ifndef _WIN32
-    if (use_edit) {
-      if (used_best_line) free(line);
-    }
-#endif
     if (n < 0) break; // request to stop or error
     if (n > 0) printf("# ERR:%d\n", n);
+    use_edit = w.flag;
+    trace = w.trace;
   }
-#ifndef _WIN32
-  if (use_edit) { bestlineHistorySave(HISTORY_FILE); }
-#endif
+
+  ssave(use_edit);
+  if (line) free(line); // get rid of previous malloc-ed line
 
   // turn down volume smoothly to avoid clicks
   volume_set(0);
