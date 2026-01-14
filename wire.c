@@ -234,12 +234,7 @@ void wire_show(wire_t *w) {
   if (w != NULL) {
     w->printf(w, "# voice %d\n", w->voice);
     w->printf(w, "# pattern %d\n", w->pattern);
-    w->printf(w, "# scratch %s\n", w->scratch);
-#if 0
-    w->printf(w, "# state %d\n", w->state);
-    w->printf(w, "# data max %d\n", w->data_max);
-    w->printf(w, "# data len %d\n", w->data_len);
-#endif
+    w->printf(w, "# scratch %s\n", skode_string(w->sk));
     w->printf(w, "( ");
     int flag = 1;
     int show_dots = 0;
@@ -415,9 +410,9 @@ int sk_load(wire_t *w, int voice, int n) {
   return r;
 }
 
-int data_load(wire_t *w, int wave_slot, float rate, float offset) {
+int data_load(wire_t *w, int wave_slot, int one_shot, float rate, float offset) {
   if (w == NULL) return 100; // fix todo
-  w->printf(w, "# data_load(w, %d, %g, %g)\n", wave_slot, rate, offset);
+  w->printf(w, "# data_load(w, %d, %d, %g, %g)\n", wave_slot, one_shot, rate, offset);
   if (wave_slot < 0 || wave_slot >= EXT_SAMPLE_999) {
     w->printf(w, "# invalid slot %d\n", wave_slot);
     return -1;
@@ -453,7 +448,7 @@ int data_load(wire_t *w, int wave_slot, float rate, float offset) {
     wave_table_data[wave_slot] = table;
     wave_size[wave_slot] = len;
     wave_rate[wave_slot] = rate;
-    wave_one_shot[wave_slot] = 1;
+    wave_one_shot[wave_slot] = (one_shot != 0);
     wave_loop_enabled[wave_slot] = 0;
     wave_loop_start[wave_slot] = 1;
     wave_loop_end[wave_slot] = len;
@@ -880,13 +875,19 @@ int wire_function(skode_t *s, int info) {
     case '/q__': w->quit = -1; return 0;
     case '/d__': {
         int wave_slot = EXT_SAMPLE_000;
+        int one_shot = 0;
         float rate = 44100.0;
         float offset = 0.0;
         if (argc) wave_slot = (int)arg[0];
         if (argc > 1) rate = arg[1];
-        if (argc > 2) offset = arg[2];
-        data_load(w, wave_slot, rate, offset);
+        if (argc > 2) rate = arg[2];
+        if (argc > 3) offset = arg[3];
+        data_load(w, wave_slot, one_shot, rate, offset);
       }
+      break;
+    case '/f__':
+      if (argc) { w->flag = x; }
+      else { w->printf(w, "# /f%d\n", w->flag); }
       break;
     case '/t__': if (argc == 0) x = (w->trace) ? 0 : 1;
       w->trace = x;
@@ -986,7 +987,7 @@ int wire_defer(skode_t *s, int info) {
   if (w->defer_sample_time == 0) w->defer_sample_time = synth_sample_count;
   uint64_t dst = w->defer_sample_time;
   char mode = skode_defer_mode(s);
-  float t = skode_defer_num(s) + w->defer_last;
+  float t = skode_defer_num(s);
   if (mode == '+') t *= (tempo_time_per_step * 4.0f);
   t += w->defer_last;
   uint64_t qt = (uint64_t)(t * (float)MAIN_SAMPLE_RATE) + dst;
@@ -1087,7 +1088,6 @@ void wire_init(wire_t *w) {
   w->step = -1;
   w->trace = 0;
   w->verbose = 0;
-  w->scratch[0] = '\0';
   w->events = 0;
   w->sk = NULL;
   w->quit = 0;
