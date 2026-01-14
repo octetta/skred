@@ -20,7 +20,6 @@ extern float rec_sec;
 extern long rec_ptr;
 extern float *recording;
 
-
 enum {
   WAVE_TABLE_SINE,     // 0
   WAVE_TABLE_SQR,      // 1
@@ -92,19 +91,7 @@ enum {
   Q_USING = 3,
 };
 
-typedef struct {
-  int state;
-  uint64_t when;
-  char what[QUEUED_MAX];
-  int voice;
-} queued_t;
-
 extern int scope_enable;
-extern float tempo_time_per_step;
-extern float tempo_bpm;
-extern float tempo_base;
-
-extern int console_voice;
 extern int scope_pattern_pointer;
 
 #endif

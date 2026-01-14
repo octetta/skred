@@ -1,6 +1,13 @@
 #ifndef _SEQ_H_
 #define _SEQ_H_
 
+typedef struct {
+  int state;
+  uint64_t when;
+  char what[QUEUED_MAX];
+  int voice;
+} queued_t;
+
 void seq(int num_frames);
 void seq_init(void);
 void pattern_reset(int p);

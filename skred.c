@@ -40,28 +40,15 @@ scope_buffer_t *scope = &scope_safety;
 #include "synth-types.h"
 #include "synth.h"
 
-#if 1
-// this are used in wire.c and seq.c so there's a messy relationship
-// probably should be in seq.h
-float tempo_time_per_step = 60.0f;
-float tempo_bpm = 120.0f / 4.0f;
-float tempo_base = 0.0f;
-#endif
-
-void tempo_set(float);
+#include "seq.h"
 
 int trace = 0;
-
-int console_voice = 0;
 
 #include "udp.h"
 
 int main_running = 1;
 
 #include "wire.h"
-
-
-#include "seq.h"
 
 #if 0
 void seq_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {

@@ -19,6 +19,10 @@ int seq_counter[PATTERNS_MAX];
 int seq_state[PATTERNS_MAX];
 int seq_modulo[PATTERNS_MAX];
 
+float tempo_time_per_step = 60.0f;
+float tempo_bpm = 120.0f / 4.0f;
+float tempo_base = 0.0f;
+
 void tempo_set(float m) {
   tempo_base = m;
   tempo_bpm = m / 4.0;
