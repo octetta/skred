@@ -1,6 +1,26 @@
 #ifndef _SEQ_H_
 #define _SEQ_H_
 
+#define PATTERNS_MAX (16)
+#define SEQ_STEPS_MAX (256)
+#define STEP_MAX (256)
+
+enum {
+  SEQ_STOPPED = 0,
+  SEQ_RUNNING = 1,
+  SEQ_PAUSED = 2,
+};
+
+#define QUEUED_MAX (1024)
+#define QUEUE_SIZE (1024)
+
+enum {
+  Q_FREE = 0,
+  Q_PREP = 1,
+  Q_READY = 2,
+  Q_USING = 3,
+};
+
 typedef struct {
   int state;
   uint64_t when;
@@ -29,6 +49,9 @@ extern int seq_counter[PATTERNS_MAX];
 extern int seq_state[PATTERNS_MAX];
 extern int seq_pattern_mute[PATTERNS_MAX][SEQ_STEPS_MAX];
 extern char seq_pattern[PATTERNS_MAX][SEQ_STEPS_MAX][STEP_MAX];
+
+extern float tempo_bpm;
+extern float tempo_time_per_step;
 
 extern queued_t work_queue[QUEUE_SIZE];
 

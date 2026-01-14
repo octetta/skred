@@ -71,26 +71,6 @@ enum {
   WAVE_TABLE_MAX
 };
 
-#define PATTERNS_MAX (16)
-#define SEQ_STEPS_MAX (256)
-#define STEP_MAX (256)
-
-enum {
-  SEQ_STOPPED = 0,
-  SEQ_RUNNING = 1,
-  SEQ_PAUSED = 2,
-};
-
-#define QUEUED_MAX (1024)
-#define QUEUE_SIZE (1024)
-
-enum {
-  Q_FREE = 0,
-  Q_PREP = 1,
-  Q_READY = 2,
-  Q_USING = 3,
-};
-
 extern int scope_enable;
 extern int scope_pattern_pointer;
 
