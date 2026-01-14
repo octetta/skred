@@ -779,9 +779,12 @@ int wire_function(skode_t *s, int info) {
       }
       break;
     case 'N___': if (argc) {
-        voice_midi_transpose[voice] = arg[0];
+        if (isnan(arg[0])) {
+          // do nothing
+        } else {
+          voice_midi_transpose[voice] = arg[0];
+        }
         if (argc > 1) voice_midi_cents[voice] = arg[1];
-        else voice_midi_cents[voice] = 0;
       } break;
     case 'p___': if (argc) pan_set(voice, arg[0]); break;
     case 'P___': if (argc <= 1) {
