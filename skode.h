@@ -37,6 +37,7 @@ void *skode_user(skode_t *s);
 char *skode_string(skode_t *s);
 int skode_string_len(skode_t *s);
 void skode_chunk_mode(skode_t *s, int mode);
+int skode_chunk_mode_get(skode_t *s);
 double skode_defer_num(skode_t *s);
 char *skode_defer_string(skode_t *s);
 char skode_defer_mode(skode_t *s);

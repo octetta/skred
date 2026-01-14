@@ -889,6 +889,10 @@ int wire_function(skode_t *s, int info) {
       if (argc) { w->flag = x; }
       else { w->printf(w, "# /f%d\n", w->flag); }
       break;
+    case '/c__':
+      if (argc) { skode_chunk_mode(w->sk, x); }
+      else { w->printf(w, "# /c%d\n", skode_chunk_mode_get(w->sk)); }
+      break;
     case '/t__': if (argc == 0) x = (w->trace) ? 0 : 1;
       w->trace = x;
       skode_trace_set(s, x > 1);
