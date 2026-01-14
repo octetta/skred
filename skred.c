@@ -15,14 +15,7 @@
    phase distortion modulation source, phase distortion depth -> phase distortion amount
 */
 
-//#include <errno.h>
-//#include <pthread.h>
-//#include <stdint.h>
 #include <stdio.h>
-//#include <stdlib.h>
-//#include <string.h>
-//#include <sys/time.h>
-//#include <time.h>
 #include <unistd.h>
 
 #include "skred.h"
@@ -44,9 +37,6 @@ scope_buffer_t *scope = &scope_safety;
 int trace = 0;
 
 #include "udp.h"
-
-int main_running = 1;
-
 #include "wire.h"
 
 #if 0
@@ -71,7 +61,6 @@ long rec_ptr = 0;
 float rec_sec = (float)REC_IN_SEC;
 long rec_max = REC_IN_SEC * MAIN_SAMPLE_RATE * AUDIO_CHANNELS * VOICE_MAX;
 float one_skred_frame[ONE_FRAME_MAX * AUDIO_CHANNELS * VOICE_MAX];
-//float recording[REC_IN_SEC * MAIN_SAMPLE_RATE * AUDIO_CHANNELS * VOICE_MAX];
 float *recording = NULL;
 
 void synth_callback_init(float max_sec) {
@@ -124,16 +113,9 @@ void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint
       //scope->buffer_pointer %= scope->buffer_len;
     }
   }
-#ifdef _WIN32
-  //
-#endif
-#if 0
-#else
-  // scope2
+  // scope --- is this still needed???
   volatile uint32_t *futex_word = (volatile uint32_t *)&scope->frame_count;
   __atomic_add_fetch(futex_word, frame_count, __ATOMIC_SEQ_CST);
-#endif
-  //
 }
 
 void sleep_float(double seconds) {
@@ -145,34 +127,6 @@ void sleep_float(double seconds) {
 }
 
 
-int current_voice = 0;
-
-
-#if 0
-void float_to_timespec(double seconds, int64_t *sec, int64_t *nano_sec) {
-    double int_part;
-    double frac = modf(seconds, &int_part);
-
-    *sec  = (int64_t)int_part;
-    *nano_sec = (int64_t)llround(frac * 1e9);
-
-    // Normalize in case rounding pushed us to 1 second
-    if (*nano_sec >= 1000000000) {
-        *sec += 1;
-        *nano_sec -= 1000000000;
-    }
-    if (*nano_sec < 0) {
-        *sec -= 1;
-        *nano_sec += 1000000000;
-    }
-}
-
-void ms_to_timespec(int64_t ms, int64_t *sec, int64_t *ns) {
-  if (sec == NULL || ns == NULL) return;
-  *sec = ms / 1000;
-  *ns = (ms % 1000) * 1000000L;
-}
-#endif
 
 #ifndef _WIN32
 #include "bestline.h"
@@ -257,9 +211,6 @@ int main(int argc, char *argv[]) {
   show_threads(NULL);
   
   sload(use_edit);
-#ifndef _WIN32
-  bestlineHistoryLoad(HISTORY_FILE);
-#endif
 
   perf_start();
 
@@ -337,6 +288,8 @@ int main(int argc, char *argv[]) {
   w.trace = trace;
   w.log_enable = 1;
 
+  int main_running = 1;
+
   if (execute_from_start[0] != '\0') {
     int n = wire(execute_from_start, &w);
     if (w.log_len) printf("%s", w.log);
@@ -349,6 +302,8 @@ int main(int argc, char *argv[]) {
   else { w.flag = 0; }
 
   char *line = NULL;
+
+  int current_voice = 0;
 
   while (main_running) {
     if (scope_enable) {
