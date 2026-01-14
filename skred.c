@@ -39,7 +39,6 @@ scope_buffer_t *scope = &scope_safety;
 
 #include "synth-types.h"
 #include "synth.h"
-
 #include "seq.h"
 
 int trace = 0;

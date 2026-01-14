@@ -1,6 +1,8 @@
 #ifndef _SEQ_H_
 #define _SEQ_H_
 
+#define SEQ_FRAMES_PER_CALLBACK (128)
+
 #define PATTERNS_MAX (16)
 #define SEQ_STEPS_MAX (256)
 #define STEP_MAX (256)

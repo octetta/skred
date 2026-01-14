@@ -3,8 +3,6 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-#include "skred.h"
-
 #include "synth-types.h"
 
 #include "miniwav.h"

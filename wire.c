@@ -3,6 +3,9 @@
 #include "seq.h"
 #include "miniwav.h"
 
+#include "synth-types.h"
+#include "synth.h"
+
 #include <stdarg.h>
 #include <stdio.h>
 
@@ -198,10 +201,6 @@ void save_wav(wire_t *w, char *filename, float *samples, long num_samples, int *
   fclose(f);
   free(record_safe);
 }
-
-#include "skred.h"
-#include "synth-types.h"
-#include "synth.h"
 
 void voice_show(wire_t *w, int v, char c, int verbose) {
   char s[1024];
