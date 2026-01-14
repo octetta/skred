@@ -1,4 +1,3 @@
-#include "wire.h"
 #include "synth-types.h"
 #include "synth.h"
 #include "seq.h"
@@ -31,23 +30,15 @@ void tempo_set(float m) {
   tempo_time_per_step = time_per_step;
 }
 
-void seq(int frame_count, int (*pattern_fn)(void *arg), int (*defer_fn)(void *arg)) {
-  // static int voice = 0;
-  // static voice_stack_t vs;
-  // static int state = 0;
-  
+void seq(int frame_count, void (*queue_fn)(int voice, char *arg), void (*pattern_fn)(int voice, char *arg)) {
   // run expired (ready) queued things...
-  static wire_t v = WIRE();
   for (int q = 0; q < QUEUE_SIZE; q++) {
     if ((work_queue[q].state == Q_READY) && (work_queue[q].when <= (synth_sample_count + frame_count))) {
       work_queue[q].state = Q_USING;
-      v.voice = work_queue[q].voice;
-      wire(work_queue[q].what, &v);
+      queue_fn(work_queue[q].voice, work_queue[q].what);
       work_queue[q].state = Q_FREE;
     }
   }
-
-  static wire_t w = WIRE();
 
   int advance = 0;
   static double clock_sec = 0.0f;
@@ -71,7 +62,9 @@ void seq(int frame_count, int (*pattern_fn)(void *arg), int (*defer_fn)(void *ar
         }
       }
       seq_counter[p]++;
-      if (seq_pattern_mute[p][seq_pointer[p]] == 0) wire(seq_pattern[p][seq_pointer[p]], &w);
+      if (seq_pattern_mute[p][seq_pointer[p]] == 0) {
+        pattern_fn(0, seq_pattern[p][seq_pointer[p]]);
+      }
       seq_pointer[p]++;
       switch (seq_pattern[p][seq_pointer[p]][0]) {
         case '\0':
