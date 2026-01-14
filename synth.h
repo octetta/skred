@@ -58,7 +58,7 @@ int voice_copy(int v, int n);
 int wave_set(int voice, int wave);
 int wave_mute(int voice, int state);
 int wave_dir(int voice, int state);
-int freq_midi(int voice, float f);
+int freq_midi(int voice, float note);
 int amp_mod_set(int voice, int o, float f);
 int envelope_velocity(int voice, float f);
 int envelope_set(int voice, float a, float d, float s, float r);

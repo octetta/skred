@@ -679,8 +679,8 @@ char *voice_format(int v, char *out, int verbose) {
       voice_user_amp[v]);
     ptr += n;
   }
-  if (verbose || voice_midi_transpose[v]) {
-    n = sprintf(ptr, " N%g", voice_midi_transpose[v]);
+  if (verbose || voice_midi_transpose[v] || voice_midi_cents[v]) {
+    n = sprintf(ptr, " N%g,%g", voice_midi_transpose[v], voice_midi_cents[v]);
     ptr += n;
   }
   if (verbose || voice_link_midi_a[v] >= 0 || voice_link_midi_b[v] >= 0) {
@@ -1037,9 +1037,17 @@ int voice_copy(int v, int n) {
   return 0;
 }
 
-float midi2hz(float f) {
-  float g = 440.0f * powf(2.0f, (f - 69.0f) / 12.0f);
-  return g;
+double midi2hz(float midi_note, double cents) {
+    // 440Hz is the standard reference for MIDI note 69 (A4)
+    const double reference_pitch = 440.0;
+    const float reference_note = 69;
+
+    // We add the cents divided by 100 to the note number 
+    // to get a "fractional" MIDI note.
+    double fractional_note = (double)midi_note + (cents / 100.0);
+
+    // Calculate frequency: f = 440 * 2^((n - 69) / 12)
+    return reference_pitch * pow(2.0, (fractional_note - reference_note) / 12.0);
 }
 
 int voice_set(int n, int *old_voice) {
@@ -1054,7 +1062,7 @@ int voice_trigger(int voice) {
 }
 
 int wave_default(int voice) {
-  float g = midi2hz((float)voice_midi_note[voice]);
+  float g = midi2hz((float)voice_midi_note[voice], 0);
   voice_freq[voice] = g;
   voice_note[voice] = (float)voice_midi_note[voice];
   osc_set_freq(voice, g);
@@ -1062,10 +1070,10 @@ int wave_default(int voice) {
   return 0;
 }
 
-int freq_midi(int voice, float f) {
-  if (f >= 0.0 && f <= 127.0) {
-    if (voice_midi_transpose[voice]) f += voice_midi_transpose[voice];
-    float g = midi2hz(f);
+int freq_midi(int voice, float note) {
+  if (note >= 0.0 && note <= 127.0) {
+    if (voice_midi_transpose[voice]) note += voice_midi_transpose[voice];
+    float g = midi2hz(note, voice_midi_cents[voice]);
     return freq_set(voice, g);
   }
   return 100; // <-- LAZY  ERR_INVALID_MIDI_NOTE;
@@ -1098,6 +1106,7 @@ void voice_reset(int i) {
   voice_freq[i] = 440.0f;
   voice_midi_note[i] = 69.0f;
   voice_midi_transpose[i] = 0;
+  voice_midi_cents[i] = 0;
   voice_link_midi_a[i] = -1;
   voice_link_midi_b[i] = -1;
   voice_link_velo_a[i] = -1;
@@ -1283,7 +1292,7 @@ void wave_table_init(void) {
     wave_loop_start[j] = (int)pcm_map[i].loopstart;
     wave_loop_end[j] = (int)pcm_map[i].loopend;
     wave_midi_note[j] = (int)pcm_map[i].midinote;
-    wave_offset_hz[j] = midi2hz((float)pcm_map[i].midinote);
+    wave_offset_hz[j] = midi2hz((float)pcm_map[i].midinote, 0);
     wave_readonly[j] = 1;
   }
   //printf("# load AMY samples (%d to %d)\n", AMY_SAMPLE_00, j);

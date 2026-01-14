@@ -778,7 +778,11 @@ int wire_function(skode_t *s, int info) {
         if (voice_link_midi_b[voice] >= 0) freq_midi(voice_link_midi_b[voice], arg[0]);
       }
       break;
-    case 'N___': if (argc) { voice_midi_transpose[voice] = arg[0]; } break;
+    case 'N___': if (argc) {
+        voice_midi_transpose[voice] = arg[0];
+        if (argc > 1) voice_midi_cents[voice] = arg[1];
+        else voice_midi_cents[voice] = 0;
+      } break;
     case 'p___': if (argc) pan_set(voice, arg[0]); break;
     case 'P___': if (argc <= 1) {
         pan_mod_set(voice, x, -1);
