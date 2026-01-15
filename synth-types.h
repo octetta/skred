@@ -94,6 +94,9 @@ typedef struct {
     uint64_t sample_release; // sample count when note is released
     int is_active;            // envelope state
     float velocity; // multiply envelope by this value
+    float amplitude_at_release;
+    float current_amplitude;
+    float amplitude_at_trigger; // The "floor" for the current attack
 } envelope_t;
 
 #endif

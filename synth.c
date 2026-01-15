@@ -382,8 +382,14 @@ void envelope_init(int v, float attack_time, float decay_time,
     voice_amp_envelope[v].is_active = 0;
 }
 
-// Trigger the envelope (note on)
 void amp_envelope_trigger(int v, float f) {
+    // If the voice was already active, capture its current level to avoid a pop
+    if (voice_amp_envelope[v].is_active) {
+        voice_amp_envelope[v].amplitude_at_trigger = voice_amp_envelope[v].current_amplitude;
+    } else {
+        voice_amp_envelope[v].amplitude_at_trigger = 0.0f;
+    }
+
     voice_amp_envelope[v].sample_start = synth_sample_count;
     voice_amp_envelope[v].sample_release = 0;
     voice_amp_envelope[v].velocity = f;
@@ -392,45 +398,62 @@ void amp_envelope_trigger(int v, float f) {
 
 // Release the envelope (note off)
 void amp_envelope_release(int v) {
-    if (voice_amp_envelope[v].is_active) {
+    if (voice_amp_envelope[v].is_active && voice_amp_envelope[v].sample_release == 0) {
         voice_amp_envelope[v].sample_release = synth_sample_count;
+        // CRITICAL: Capture the exact height the envelope was at 
+        // when the key was lifted.
+        voice_amp_envelope[v].amplitude_at_release = voice_amp_envelope[v].current_amplitude;
     }
 }
 
-// Get the current amplitude (0 to 1) at given sample count
 float amp_envelope_step(int v) {
     if (!voice_amp_envelope[v].is_active) return 0;
 
+    float out = 0.0f;
     float samples_since_start = (float)(synth_sample_count - voice_amp_envelope[v].sample_start);
 
-    // Attack phase
+// 1. Attack phase (Legato-aware)
     if (samples_since_start < voice_amp_envelope[v].attack_time) {
-        return samples_since_start / voice_amp_envelope[v].attack_time; // linear ramp up
-    }
-
-    // Decay phase
-    float decay_start = voice_amp_envelope[v].attack_time;
-    if (samples_since_start < decay_start + voice_amp_envelope[v].decay_time) {
-        float samples_in_decay = samples_since_start - decay_start;
+        float attack_progress = samples_since_start / voice_amp_envelope[v].attack_time;
+        float start_val = voice_amp_envelope[v].amplitude_at_trigger;
+        
+        if (0) {
+        // Linear interpolation: start_val -> 1.0
+        out = start_val + (attack_progress * (1.0f - start_val));
+        } else {
+          float curved_progress = attack_progress * attack_progress; // Makes it "snap" in
+          out = start_val + (curved_progress * (1.0f - start_val));
+        }
+    } 
+    // 2. Decay phase
+    else if (samples_since_start < (voice_amp_envelope[v].attack_time + voice_amp_envelope[v].decay_time)) {
+        float samples_in_decay = samples_since_start - voice_amp_envelope[v].attack_time;
         float decay_progress = samples_in_decay / voice_amp_envelope[v].decay_time;
-        return 1.0f - decay_progress * (1.0f - voice_amp_envelope[v].sustain_level); // linear decay to sustain
+        out = 1.0f - decay_progress * (1.0f - voice_amp_envelope[v].sustain_level);
+    }
+    // 3. Sustain / Release Logic
+    else {
+        if (voice_amp_envelope[v].sample_release == 0) {
+            out = voice_amp_envelope[v].sustain_level;
+        } else {
+            // RELEASE PHASE
+            float samples_since_release = (float)(synth_sample_count - voice_amp_envelope[v].sample_release);
+            
+            if (samples_since_release < voice_amp_envelope[v].release_time) {
+                float release_progress = samples_since_release / voice_amp_envelope[v].release_time;
+                
+                // FIX: Ramp down from the captured amplitude_at_release, NOT sustain_level
+                out = voice_amp_envelope[v].amplitude_at_release * (1.0f - release_progress);
+            } else {
+                voice_amp_envelope[v].is_active = 0;
+                out = 0.0f;
+            }
+        }
     }
 
-    // Sustain phase
-    if (voice_amp_envelope[v].sample_release == 0) {
-        return voice_amp_envelope[v].sustain_level;
-    }
-
-    // Release phase
-    float samples_since_release = (float)(synth_sample_count - voice_amp_envelope[v].sample_release);
-    if (samples_since_release < voice_amp_envelope[v].release_time) {
-        float release_progress = samples_since_release / voice_amp_envelope[v].release_time;
-        return voice_amp_envelope[v].sustain_level * (1.0f - release_progress); // linear ramp down
-    }
-
-    // Envelope finished
-    voice_amp_envelope[v].is_active = 0;
-    return 0.0f;
+    // Store the result so the Release function can "capture" it
+    voice_amp_envelope[v].current_amplitude = out;
+    return out * voice_amp_envelope[v].velocity;
 }
 
 #include <time.h>
