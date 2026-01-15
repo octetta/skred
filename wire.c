@@ -543,44 +543,53 @@ void pattern_show(wire_t *w, int pattern_pointer) {
 void tempo_set(float m);
 
 void downsample_block_average_min_max(
-  const float *source, int source_len, float *dest, int dest_len,
-  float *min, float *max) {
-  if (dest_len >= source_len) {
-    // If dest is same size or larger, just copy
-    for (int i = 0; i < dest_len && i < source_len; i++) {
-      dest[i] = source[i];
-      if (min) min[i] = source[i];
-      if (max) max[i] = source[i];
+    const float *source, int source_len, float *dest, int dest_len,
+    float *min, float *max) {
+    
+    if (source_len <= 0 || dest_len <= 0) return;
+
+    // CASE 1: STRETCH (source is smaller than display)
+    if (dest_len > source_len) {
+        float step = (float)(source_len - 1) / (float)(dest_len - 1);
+        for (int i = 0; i < dest_len; i++) {
+            int src_idx = (int)(i * step);
+            float val = source[src_idx];
+            
+            dest[i] = val;
+            if (min) min[i] = val;
+            if (max) max[i] = val;
+        }
+        return;
     }
-    return;
-  }
 
-  float block_size = (float)source_len / (float)dest_len;
+    // CASE 2: DOWNSAMPLE (source is larger than display)
+    float block_size = (float)source_len / (float)dest_len;
 
-  for (int i = 0; i < dest_len; i++) {
-    float start = (float)i * block_size;
-    float end = (float)(i + 1) * block_size;
+    for (int i = 0; i < dest_len; i++) {
+        int start_idx = (int)(i * block_size);
+        int end_idx = (int)((i + 1) * block_size);
+        
+        // Ensure we don't go out of bounds
+        if (end_idx > source_len) end_idx = source_len;
+        if (start_idx >= source_len) start_idx = source_len - 1;
 
-    int start_idx = (int)start;
-    int end_idx = (int)end;
-    if (end_idx >= source_len) end_idx = source_len - 1;
+        float sum = 0;
+        int count = 0;
+        float this_min = source[start_idx];
+        float this_max = source[start_idx];
 
-    float sum = 0;
-    int count = 0;
+        for (int j = start_idx; j < end_idx; j++) {
+            float val = source[j];
+            sum += val;
+            count++;
+            if (val < this_min) this_min = val;
+            if (val > this_max) this_max = val; // Fixed: was this_min
+        }
 
-    float this_min = source[start_idx];
-    float this_max = this_min;
-    // Average all values in this block
-    for (int j = start_idx; j <= end_idx; j++) {
-      sum += source[j];
-      count++;
-      if (source[j] < this_min) this_min = source[j];
-      if (source[j] > this_min) this_max = source[j];
+        if (min) min[i] = this_min;
+        if (max) max[i] = this_max;
+        dest[i] = (count > 0) ? sum / (float)count : 0;
     }
-    if (min) min[i] = this_min;
-    if (max) max[i] = this_max;
-    dest[i] = (count > 0) ? sum / (float)count : 0;
-  }
 }
 
 void downsample_block_average(const float *source, int source_len, float *dest, int dest_len) {
