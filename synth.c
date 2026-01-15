@@ -417,11 +417,12 @@ float amp_envelope_step(int v) {
         float attack_progress = samples_since_start / voice_amp_envelope[v].attack_time;
         float start_val = voice_amp_envelope[v].amplitude_at_trigger;
         
-        if (0) {
-        // Linear interpolation: start_val -> 1.0
-        out = start_val + (attack_progress * (1.0f - start_val));
+        if (voice_amp_envelope_mode[v] != 0) {
+          // Linear interpolation: start_val -> 1.0
+          out = start_val + (attack_progress * (1.0f - start_val));
         } else {
-          float curved_progress = attack_progress * attack_progress; // Makes it "snap" in
+          float curved_progress = attack_progress * attack_progress;
+          // Makes it "snap" in
           out = start_val + (curved_progress * (1.0f - start_val));
         }
     } 
@@ -799,6 +800,8 @@ char *voice_format(int v, char *out, int verbose) {
       voice_amp_envelope[v].s,
       voice_amp_envelope[v].r);
     ptr += n;
+    n = sprintf(ptr, " k%d", voice_amp_envelope_mode[v]);
+    ptr += n;
   }
   if (verbose) {
     n = sprintf(ptr, "\n#");
@@ -1127,6 +1130,7 @@ void voice_reset(int i) {
   voice_quantize[i] = 0;
   voice_direction[i] = 0;
   envelope_init(i, 0.0f, 0.0f, 1.0f, 0.0f);
+  voice_amp_envelope_mode[i] = 0; // exp
   voice_amp_envelope[i].is_active = 0;
   voice_freq[i] = 440.0f;
   voice_midi_note[i] = 69.0f;

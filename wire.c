@@ -776,6 +776,7 @@ int wire_function(skode_t *s, int info) {
       }
       break;
     case 'K___': if (argc) { mmf_set_freq(voice, arg[0]); } break;
+    case 'k___': if (argc) { voice_amp_envelope_mode[voice] = x; } break;
     case 'l___': if (argc) {
         envelope_velocity(voice, arg[0]);
         if (voice_link_velo_a[voice] >= 0) envelope_velocity(voice_link_velo_a[voice], arg[0]);
