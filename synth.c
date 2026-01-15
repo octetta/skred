@@ -1234,7 +1234,6 @@ void wave_table_init(void) {
   audio_rng_init(&white_noise, 1);
   for (int w = WAVE_TABLE_SINE; w <= WAVE_TABLE_NOISE_ALT; w++) {
     int size = SIZE_SINE;
-#if 0
     char *name = "?";
     switch (w) {
       case WAVE_TABLE_SINE:  name = "sine"; break;
@@ -1246,8 +1245,7 @@ void wave_table_init(void) {
       case WAVE_TABLE_NOISE_ALT: name = "noise-alt"; break; // not used, here for laziness in experiment
       default: name = "?"; break;
     }
-    printf("# make w%d %s\n", w, name);
-#endif
+    strncpy(wave_name[w], name, WAVE_NAME_MAX);
     wave_table_data[w] = (float *)malloc(size * sizeof(float));
     wave_size[w] = size;
     wave_rate[w] = MAIN_SAMPLE_RATE;
@@ -1280,7 +1278,9 @@ void wave_table_init(void) {
 
   korg_init();
 
+  int tmp = 0;
   for (int i = WAVE_TABLE_KRG1; i < WAVE_TABLE_KRG32; i++) {
+    snprintf(wave_name[i], WAVE_NAME_MAX, "krg-%d", tmp++);
     int k = i - WAVE_TABLE_KRG1;
     int s = kwave_size[k];
     table = malloc(s * sizeof(float));
@@ -1299,8 +1299,10 @@ void wave_table_init(void) {
 
   // load AMY samples
   int j = AMY_SAMPLE_99;
+  tmp = 0;
   for (int i = 0; i < PCM_SAMPLES; i++) {
     j = i + AMY_SAMPLE_00;
+    snprintf(wave_name[j], WAVE_NAME_MAX, "amy-%d", tmp++);
     if (j > AMY_SAMPLE_99-1) {
       //printf("# too many PCM samples... exit early\n");
       break;

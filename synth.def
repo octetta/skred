@@ -11,6 +11,7 @@ ARRAY(float, wave_direction, WAVE_TABLE_MAX, {})
 ARRAY(int, wave_is_miniwav, WAVE_TABLE_MAX, {})
 ARRAY(int, wave_refcount, WAVE_TABLE_MAX, {})
 ARRAY(int, wave_readonly, WAVE_TABLE_MAX, {})
+ARRAY(wave_name_t , wave_name, WAVE_TABLE_MAX, {})
 
 ARRAY(float, voice_phase, VOICE_MAX, {})
 ARRAY(float, voice_phase_inc, VOICE_MAX, {})

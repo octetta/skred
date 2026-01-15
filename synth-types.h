@@ -99,4 +99,7 @@ typedef struct {
     float amplitude_at_trigger; // The "floor" for the current attack
 } envelope_t;
 
+#define WAVE_NAME_MAX (16+1)
+typedef char wave_name_t[WAVE_NAME_MAX];
+
 #endif

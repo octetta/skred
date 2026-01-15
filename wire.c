@@ -443,6 +443,7 @@ int data_load(wire_t *w, int wave_slot, int one_shot, float rate, float offset) 
   float *table = calloc(data_len, sizeof(float));
   for (int i=0; i<data_len; i++) table[i] = (float)data[i];
   int len = data_len;
+    snprintf(wave_name[wave_slot], WAVE_NAME_MAX, "data[%d]", data_len);
     wave_is_miniwav[wave_slot] = 0;
     wave_table_data[wave_slot] = table;
     wave_size[wave_slot] = len;
@@ -498,6 +499,7 @@ int wave_load(wire_t *w, int file_num, int wave_index, int ch, int normalize) {
     w->printf(w, "# can not read %s\n", name);
     return -1;
   } else {
+    strncpy(wave_name[wave_index], name, WAVE_NAME_MAX);
     wave_is_miniwav[wave_index] = 1;
     wave_table_data[wave_index] = table;
     wave_size[wave_index] = len;
@@ -626,6 +628,7 @@ int wavetable_show(wire_t *w, int n) {
     } else {
       w->printf(w, " r/w ref:%d", refcount);
     }
+    w->printf(w, " '%s'", wave_name[n]);
     w->puts(w, "");
     if (scope_enable) {
       downsample_block_average_min_max(table, size, scope->wave_data, SCOPE_WAVE_WIDTH, scope->wave_min, scope->wave_max);
