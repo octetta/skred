@@ -1284,8 +1284,8 @@ void wave_table_init(void) {
 
   int tmp = 0;
   for (int i = WAVE_TABLE_KRG1; i < WAVE_TABLE_KRG32; i++) {
-    snprintf(wave_name[i], WAVE_NAME_MAX, "krg-%d", tmp++);
     int k = i - WAVE_TABLE_KRG1;
+    strncpy(wave_name[i], kwave_name[k], WAVE_NAME_MAX);
     int s = kwave_size[k];
     table = malloc(s * sizeof(float));
     for (int j = 0 ; j < s; j++) {
