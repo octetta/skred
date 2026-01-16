@@ -1,4 +1,4 @@
 all: resize
 
 resize: resize.c
-	$(CC) -g resize.c -o resize -lm
+	$(CC) -DEXE -g resize.c -o resize -lm
