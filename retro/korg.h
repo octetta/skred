@@ -1,3 +1,4 @@
+#if 0
 /*
 Wave ROM organization:
 
@@ -181,22 +182,22 @@ void korg_init(void) {
   kwave[31] = kw31;
   kwave[32] = kw32;
   //
-  kwave_name[0] = "korg-strings";
-  kwave_name[1] = "korg-clarinet";
-  kwave_name[2] = "korg-apiano";
-  kwave_name[3] = "korg-epiano";
-  kwave_name[4] = "korg-epiano-hard";
-  kwave_name[5] = "korg-clavi";
-  kwave_name[6] = "korg-organ";
-  kwave_name[7] = "korg-brass";
-  kwave_name[8] = "korg-sax";
-  kwave_name[9] = "korg-violin";
-  kwave_name[10] = "korg-aguitar";
-  kwave_name[11] = "korg-dguitar";
-  kwave_name[12] = "korg-ebass";
-  kwave_name[13] = "korg-dbass";
-  kwave_name[14] = "korg-bell";
-  kwave_name[15] = "korg-whistle";
+  kwave_name[0] = "krg-strings";
+  kwave_name[1] = "krg-clarinet";
+  kwave_name[2] = "krg-apiano";
+  kwave_name[3] = "krg-epiano";
+  kwave_name[4] = "krg-epiano-hard";
+  kwave_name[5] = "krg-clavi";
+  kwave_name[6] = "krg-organ";
+  kwave_name[7] = "krg-brass";
+  kwave_name[8] = "krg-sax";
+  kwave_name[9] = "krg-violin";
+  kwave_name[10] = "krg-aguitar";
+  kwave_name[11] = "krg-dguitar";
+  kwave_name[12] = "krg-ebass";
+  kwave_name[13] = "krg-dbass";
+  kwave_name[14] = "krg-bell";
+  kwave_name[15] = "krg-whistle";
   // exp
   kwave_name[16] = "exp-01";
   kwave_name[17] = "exp-02";
@@ -222,3 +223,18 @@ void korg_init(void) {
   }
   kwave_size[32] = sizeof(kw32) / sizeof(int16_t);
 }
+#endif
+
+#ifndef _KORG_H_
+#define _KORG_H_
+
+#define KWAVEMAX (33)
+
+extern int16_t *kwave[KWAVEMAX];
+extern int kwave_size[KWAVEMAX];
+extern double kwave_freq[KWAVEMAX];
+extern char *kwave_name[KWAVEMAX];
+
+void korg_init(void);
+
+#endif

@@ -7,9 +7,9 @@
 
 #define SIZE 2048
 
-int reconstruct_high_res_table(int16_t* source_8bit, int16_t* target_16bit) {
-  double real[SIZE/2];
-  double imag[SIZE/2];
+int reconstruct_high_res_table(int16_t *source, int16_t *target, int size) {
+  double *real = (double *)calloc(size+1, sizeof(double));
+  double *imag = (double *)calloc(size+1, sizeof(double));
 
   int c = 0;
 
@@ -18,8 +18,8 @@ int reconstruct_high_res_table(int16_t* source_8bit, int16_t* target_16bit) {
     real[n] = 0; imag[n] = 0;
     for (int i = 0; i < SIZE; i++) {
       double angle = (2.0 * M_PI * n * i) / SIZE;
-      real[n] += source_8bit[i] * cos(angle);
-      imag[n] += source_8bit[i] * sin(angle);
+      real[n] += source[i] * cos(angle);
+      imag[n] += source[i] * sin(angle);
     }
     // Normalize
     real[n] /= (SIZE / 2.0);
@@ -52,19 +52,30 @@ int reconstruct_high_res_table(int16_t* source_8bit, int16_t* target_16bit) {
 
   // 4. BAKE: Final 16-bit normalization
   for (int i = 0; i < SIZE; i++) {
-    target_16bit[i] = (int16_t)((temp_buffer[i] / max_val) * 32767);
+    target[i] = (int16_t)((temp_buffer[i] / max_val) * 32767);
   }
+  free(real);
+  free(imag);
   return c;
 }
 
-int main(int argc, char *argv[]) {
-  int16_t dest[SIZE];
+void resize(void) {
+  int size = SIZE;
+  int16_t *dest = calloc(size, sizeof(int16_t));
   int16_t *source;
   korg_init();
   for (int i=0; i<KWAVEMAX; i++) {
     source = kwave[i];
-    int c = reconstruct_high_res_table(source, dest);
-    printf("[%d] %d\n", i, c);
+    int c = reconstruct_high_res_table(source, dest, size);
+    //printf("[%d] %d\n", i, c);
+    for (int j=0; j>size; j++) {
+      kwave[i][j] = dest[j];
+    }
   }
+  free(dest);
+}
+
+int main(int argc, char *argv[]) {
+  resize();
   return 0;
 }
