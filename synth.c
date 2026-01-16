@@ -1195,7 +1195,7 @@ int mmf_set_res(int n, float res) {
 }
 
 #define SIZE_SINE (4096)
-#include "retro/korg.h"
+#include "retro/retro.h"
 #include "amysamples.h"
 
 void normalize_preserve_zero(float *data, int length) {
@@ -1280,7 +1280,7 @@ void wave_table_init(int flag) {
 
   //printf("# load retro waves (%d to %d)\n", WAVE_TABLE_KRG1, WAVE_TABLE_KRG32-1);
 
-  korg_init();
+  retro_init();
   if (flag) resize();
 
   int tmp = 0;
@@ -1298,7 +1298,7 @@ void wave_table_init(int flag) {
     wave_one_shot[i] = 0;
     wave_loop_start[i] = 0;
     wave_loop_end[i] = s-1;
-    wave_direction[i] = 1; // my korg waveforms are backwards?
+    wave_direction[i] = 1; // krg retro waveforms are backwards?
     wave_readonly[i] = 1;
   }
 

@@ -62,7 +62,7 @@ $(OUT)/amysamples.o : amysamples.c amysamples.h
 
 synth.def: skred.h
 
-$(OUT)/korg.o: retro/korg.c retro/korg.h
+$(OUT)/retro.o: retro/retro.c retro/retro.h
 	$(CC) $(COPTS) -c $< -o $@
 
 $(OUT)/synth.o: synth.c synth.h synth-types.h synth.def
@@ -88,7 +88,7 @@ OBJS = \
 	$(OUT)/skred.o \
 	$(OUT)/miniwav.o \
 	$(OUT)/amysamples.o \
-	$(OUT)/korg.o \
+	$(OUT)/retro.o \
 	$(OUT)/synth.o \
 	$(OUT)/seq.o \
 	$(OUT)/wire.o \

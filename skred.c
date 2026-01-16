@@ -187,7 +187,7 @@ int main(int argc, char *argv[]) {
   char execute_from_start[1024] = "";
   int use_edit = 1;
   use_edit = use_edit; // avoid unused warning on win32 compile
-  int flag = 0; // don't resample korg waves...
+  int flag = 0; // don't resample retro waves...
   if (argc > 1) {
     for (int i=1; i<argc; i++) {
       if (argv[i][0] == '-') {

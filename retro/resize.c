@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#include "korg.h"
+#include "retro.h"
 
 #if 0
 #include <math.h>

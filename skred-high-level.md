@@ -11,7 +11,7 @@ a voice has:
     - 4 = triangle
     - 5 = low periodic noise
     - 6 = high periodic noise
-    - 32 to 62 = korg dw8000 waveforms
+    - 32 to 62 = retro-80's waveforms
     - 100 to 166 = AMY's samples (drums, etc)
     - 200 to 999 = places for user loaded WAV files
   - loop?

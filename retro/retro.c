@@ -151,10 +151,10 @@ char *kwave_name[KWAVEMAX];
 
 void resize(void);
 
-void korg_init(void) {
+void retro_init(void) {
   static int first = 1;
   if (first == 0) return;
-  printf("korg_init()\n");
+  printf("retro_init()\n");
   first = 0;
   kwave[0] = kw00;
   kwave[1] = kw01;
@@ -295,7 +295,7 @@ void resize(void) {
   int size = 2048;
   int16_t *dest = calloc(size, sizeof(int16_t));
   int16_t *source;
-  korg_init();
+  retro_init();
   for (int i=0; i<KWAVEMAX; i++) {
     source = kwave[i];
     int c = reconstruct_high_res_table(source, dest, size);

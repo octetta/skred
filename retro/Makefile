@@ -1,4 +1,4 @@
 all: resize
 
-resize: resize.c korg.c korg.h
-	$(CC) -DEXE -g resize.c korg.c -o resize -lm
+resize: resize.c retro.c retro.h
+	$(CC) -DEXE -g resize.c retro.c -o resize -lm

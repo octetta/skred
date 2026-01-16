@@ -1,3 +1,4 @@
 [tools]
 elixir = "latest"
 erlang = "latest"
+ripgrep = "latest"
