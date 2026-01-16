@@ -46,6 +46,11 @@ typedef struct wire_s {
   int log_max;
   int log_len;
   int flag;
+  //
+  int udp;
+  int which;
+  uint32_t ip;
+  uint16_t port;
 } wire_t;
 
 int wire(char *line, wire_t *w);

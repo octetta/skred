@@ -117,7 +117,20 @@ static void *udp_main(void *arg) {
         // in the future, this should get ip and port and use for
         // context amongst multiple udp clients
         int which = get_connection_index(&client, UDP_PORT_MAX);
-        wire(line, &user[which].w);
+        wire_t *w = &user[which].w;
+        if (w->udp == 0) {
+          struct sockaddr_in *addr = &client;
+          w->udp = 1;
+          w->which = which;
+          w->ip = addr->sin_addr.s_addr;
+          w->port = addr->sin_port;
+        }
+        wire(line, w);
+        //
+        if (w->log_len) {
+          sendto(sock, w->log, w->log_len, 0, (struct sockaddr *)&client, client_len);
+        }
+        //
       } else {
         if (errno == EAGAIN) continue;
       }
@@ -152,3 +165,34 @@ void udp_stop(void) {
 int udp_info(void) {
   return udp_port;
 }
+
+//
+
+int udp_send_to(int fd, void *c, int len, void *addr, unsigned int client_len) {
+    struct sockaddr *client;
+    client = addr;
+    //printf("fd=%d c=%p len=%d client=%p client_len=%d\n",
+    //    fd, c, len, client, client_len);
+    int n = sendto(fd, c, len, 0, client, client_len);
+    if (n < 0) {
+        //printf("n = %d\n", n);
+        perror("# sendto()");
+    }
+    return n;
+}
+
+#if 0
+static struct sockaddr_in client;
+static unsigned int client_len = sizeof(client);
+static char client_read_something = 0;
+
+int udp_send(int fd, void *c, int len) {
+    if (client_read_something) {
+        int n = sendto(fd, c, len, 0,
+            (struct sockaddr *)&client,
+            client_len);
+        return n;
+    }
+    return 0;
+}
+#endif
