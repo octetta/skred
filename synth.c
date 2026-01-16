@@ -1222,7 +1222,7 @@ void normalize_preserve_zero(float *data, int length) {
   }
 }
 
-void wave_table_init(void) {
+void wave_table_init(int flag) {
   float *table;
 
   for (int i = 0 ; i < WAVE_TABLE_MAX; i++) {
@@ -1281,6 +1281,7 @@ void wave_table_init(void) {
   //printf("# load retro waves (%d to %d)\n", WAVE_TABLE_KRG1, WAVE_TABLE_KRG32-1);
 
   korg_init();
+  if (flag) resize();
 
   int tmp = 0;
   for (int i = WAVE_TABLE_KRG1; i < WAVE_TABLE_KRG32; i++) {

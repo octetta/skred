@@ -9,5 +9,7 @@ extern double kwave_freq[KWAVEMAX];
 extern char *kwave_name[KWAVEMAX];
 
 void korg_init(void);
+void resize(void);
+int reconstruct_high_res_table(int16_t *source, int16_t *target, int size);
 
 #endif

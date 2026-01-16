@@ -187,12 +187,14 @@ int main(int argc, char *argv[]) {
   char execute_from_start[1024] = "";
   int use_edit = 1;
   use_edit = use_edit; // avoid unused warning on win32 compile
+  int flag = 0; // don't resample korg waves...
   if (argc > 1) {
     for (int i=1; i<argc; i++) {
       if (argv[i][0] == '-') {
         switch (argv[i][1]) {
           case 'n': use_edit = 0; break;
           case 't': trace = 1; break;
+          case 'f': flag = (int)strtol(&(argv[i][2]), NULL, 0); break;
           case 'p': udp_port = (int)strtol(&(argv[i][2]), NULL, 0); break;
           case 'l': load_patch_number = (int)strtol(&argv[i][2], NULL, 0); break;
           case '1': requested_synth_frames_per_callback = (int)strtol(&argv[i][2], NULL, 0); break;
@@ -203,6 +205,13 @@ int main(int argc, char *argv[]) {
           } break;
           default:
             printf("# unknown switch '%s'\n", argv[i]);
+            printf("# -n = no command line edit\n");
+            printf("# -t = trace on\n");
+            printf("# -p# = set UDP port to # (0=off)\n");
+            printf("# -l# = load sk patch #\n");
+            printf("# -1# = set synth frames per callback to #\n");
+            printf("# -2# = set seq frames per callback to #\n");
+            printf("# -e'wire' = run 'wire' at start\n");
             exit(1);
             break;
         }
@@ -226,7 +235,7 @@ int main(int argc, char *argv[]) {
 
   synth_callback_init(REC_IN_SEC);
   synth_init();
-  wave_table_init();
+  wave_table_init(flag);
   voice_init();
   tempo_set(120.0);
   seq_init();

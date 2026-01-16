@@ -77,7 +77,7 @@ float midi2hz(float f);
 int voice_set(int n, int *old_voice);
 int voice_trigger(int voice);
 int wave_default(int voice);
-void wave_table_init(void);
+void wave_table_init(int flag);
 void wave_free(void);
 void wave_free_one(int i);
 void voice_init(void);
