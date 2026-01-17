@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <math.h>
 /*
-Wave ROM organization:
+k wave ROM organization:
 
 Each ROM contains 4 waves, 8bit unsigned format, with the following data:
 2048 samples octave 0
@@ -208,21 +208,24 @@ void retro_init(void) {
   kwave_name[14] = "krg-bell";
   kwave_name[15] = "krg-whistle";
   // exp
-  kwave_name[16] = "exp-01";
-  kwave_name[17] = "exp-02";
-  kwave_name[18] = "exp-03";
-  kwave_name[19] = "exp-04";
-  kwave_name[20] = "exp-05";
-  kwave_name[21] = "exp-06";
-  kwave_name[22] = "exp-07";
-  kwave_name[23] = "exp-08";
-  kwave_name[24] = "exp-09";
-  kwave_name[25] = "exp-10";
-  kwave_name[26] = "exp-11";
-  kwave_name[27] = "exp-12";
-  kwave_name[28] = "exp-13";
-  kwave_name[29] = "exp-14";
-  kwave_name[30] = "exp-15";
+  kwave_name[16] = "exp-aco-01";
+  kwave_name[17] = "exp-aco-02";
+  kwave_name[18] = "exp-aco-03";
+  kwave_name[19] = "exp-aco-04";
+  
+  kwave_name[20] = "exp-per-05";
+  kwave_name[21] = "exp-per-06";
+  kwave_name[22] = "exp-per-07";
+  kwave_name[23] = "exp-per-08";
+  
+  kwave_name[24] = "exp-for-09";
+  kwave_name[25] = "exp-for-10";
+  kwave_name[26] = "exp-for-11";
+  kwave_name[27] = "exp-for-12";
+  
+  kwave_name[28] = "exp-ppg-13";
+  kwave_name[29] = "exp-ppg-14";
+  kwave_name[30] = "exp-ppg-15";
   kwave_name[31] = "exp-16";
   kwave_name[32] = "out";
 

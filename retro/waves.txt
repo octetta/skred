@@ -21,3 +21,8 @@ EXP-1		1-4
 EXP-3		5-8
 EXP-2		9-12
 EXP-4		13-16
+
+17–20 EXP-1 Acoustic Ext. Enhanced Reed/Pipe sounds (Oboe, Clarinet variants).
+21–24 EXP-2 Percussive  Bell-like textures, Tines, and "Harp" transients.
+25–28 EXP-3 Formant "Aah" and "Ooh" vocal waveforms. Great with the VCF.
+29–32 EXP-4 Digital Harsh "PPG-style" digital saws and resonant noise.
