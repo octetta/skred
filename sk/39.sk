@@ -1,9 +1,9 @@
 S100 # reset all voicds
 Z0 # stop all patterns
 
-v21w131/a20
-v20w145a20
-v0w117a5
+v21w231/a20
+v20w245a20
+v0w217a5
 
 M240
 
@@ -34,6 +34,6 @@ y0 %2
 ; {v0n71} x8
 ; {v0n70} x9
 
-v0w113a2
-v1w163a4
+v0w213a2
+v1w263a4
 

@@ -3,8 +3,8 @@ S100
 
 M80
 
-v0 w108 f440 h82 a20  # bass
-v1 w105 f440 h58 a20     # snare
+v0 w208 f440 h82 a20  # bass
+v1 w205 f440 h58 a20     # snare
 
 y0               # select pattern 0
 {v0T +.125 v0T} x0   # store to step 0

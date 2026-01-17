@@ -3,11 +3,11 @@ S100
 
 M360
 
-v0 w108 f440 a20  # bass
-v1 w105 f440 a20  # snare
+v0 w208 f440 a20  # bass
+v1 w205 f440 a20  # snare
 
-:w3,200
-v2 w200 a20 # cymbal or hi-hat?
+:w3,300
+v2 w300 a20 # cymbal or hi-hat?
 
 y0 # select pattern 0
 %8 # every other beat

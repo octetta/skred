@@ -4,14 +4,14 @@ S100
 M201
 V3
 
-:w32,201
-:w33,202
+:w32,301
+:w33,302
 
-v0 w201 f440 a20  # bass
-v1 w202 f440 a20  # snare
+v0 w301 f440 a20  # bass
+v1 w302 f440 a20  # snare
 
-:w3,200
-v2 w200 a20 # cymbal or hi-hat?
+:w3,300
+v2 w300 a20 # cymbal or hi-hat?
 
 y0 # select pattern 0
 %8 # every other beat
