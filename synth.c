@@ -1302,6 +1302,24 @@ void wave_table_init(int flag) {
     wave_readonly[i] = 1;
   }
 
+  for (int i = EW_00; i <= EW_00+77; i++) {
+    int k = i - EW_00;
+    //strncpy(wave_name[i], kwave_name[k], WAVE_NAME_MAX);
+    int s = ewave_size[k];
+    table = malloc(s * sizeof(float));
+    for (int j = 0 ; j < s; j++) {
+      table[j] = (float)ewave[k][j] / (float)32767;
+    }
+    wave_table_data[i] = table;
+    wave_size[i] = s;
+    wave_rate[i] = MAIN_SAMPLE_RATE;
+    wave_one_shot[i] = 0;
+    wave_loop_start[i] = 0;
+    wave_loop_end[i] = s-1;
+    wave_direction[i] = 0;
+    wave_readonly[i] = 1;
+  }
+
   // load AMY samples
   int j = AMY_SAMPLE_99;
   tmp = 0;

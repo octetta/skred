@@ -50,6 +50,14 @@ enum {
   WAVE_TABLE_KRG31, // 40
   WAVE_TABLE_KRG32, // 41, // was 63
 
+  EW_00 = 50,
+  EW_01,
+  EW_02,
+  EW_03,
+  EW_04,
+  EW_05,
+  EW_99 = 50+99,
+
   AMY_SAMPLE_00 = 200,    // was 100
   AMY_SAMPLE_99 = 200+99, // was 199
 

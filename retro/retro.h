@@ -8,6 +8,11 @@ extern int kwave_size[KWAVEMAX];
 extern double kwave_freq[KWAVEMAX];
 extern char *kwave_name[KWAVEMAX];
 
+extern int16_t *ewave[KWAVEMAX];
+extern int ewave_size[KWAVEMAX];
+extern double ewave_freq[KWAVEMAX];
+//extern char *ewave_name[KWAVEMAX];
+
 void retro_init(void);
 void resize(void);
 int reconstruct_high_res_table(int16_t *source, int16_t *target, int size);
