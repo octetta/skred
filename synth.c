@@ -1284,7 +1284,7 @@ void wave_table_init(int flag) {
   if (flag) resize();
 
   int tmp = 0;
-  for (int i = WAVE_TABLE_KRG1; i < WAVE_TABLE_KRG32; i++) {
+  for (int i = WAVE_TABLE_KRG1; i <= WAVE_TABLE_KRG32; i++) {
     int k = i - WAVE_TABLE_KRG1;
     strncpy(wave_name[i], kwave_name[k], WAVE_NAME_MAX);
     int s = kwave_size[k];

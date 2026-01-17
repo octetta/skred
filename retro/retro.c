@@ -208,25 +208,25 @@ void retro_init(void) {
   kwave_name[14] = "krg-bell";
   kwave_name[15] = "krg-whistle";
   // exp
-  kwave_name[16] = "exp-aco-01";
-  kwave_name[17] = "exp-aco-02";
-  kwave_name[18] = "exp-aco-03";
-  kwave_name[19] = "exp-aco-04";
+  kwave_name[16] = "exp-1-aco-01";
+  kwave_name[17] = "exp-1-aco-02";
+  kwave_name[18] = "exp-1-aco-03";
+  kwave_name[19] = "exp-1-aco-04";
   
-  kwave_name[20] = "exp-per-05";
-  kwave_name[21] = "exp-per-06";
-  kwave_name[22] = "exp-per-07";
-  kwave_name[23] = "exp-per-08";
+  kwave_name[20] = "exp-2-per-05";
+  kwave_name[21] = "exp-2-per-06";
+  kwave_name[22] = "exp-2-per-07";
+  kwave_name[23] = "exp-2-per-08";
   
-  kwave_name[24] = "exp-for-09";
-  kwave_name[25] = "exp-for-10";
-  kwave_name[26] = "exp-for-11";
-  kwave_name[27] = "exp-for-12";
+  kwave_name[24] = "exp-3-for-09";
+  kwave_name[25] = "exp-3-for-10";
+  kwave_name[26] = "exp-3-for-11";
+  kwave_name[27] = "exp-3-for-12";
   
-  kwave_name[28] = "exp-ppg-13";
-  kwave_name[29] = "exp-ppg-14";
-  kwave_name[30] = "exp-ppg-15";
-  kwave_name[31] = "exp-16";
+  kwave_name[28] = "exp-4-ppg-13";
+  kwave_name[29] = "exp-4-ppg-14";
+  kwave_name[30] = "exp-4-ppg-15";
+  kwave_name[31] = "exp-4-ppg-16";
   kwave_name[32] = "out";
 
   for (int i=0; i<KWAVEMAX; i++) {
