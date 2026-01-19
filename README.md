@@ -13,7 +13,7 @@ flexibility and live performance.
 
 Instead of fixed, hardwired signal paths, it lets you
 freely interconnect voices in a modular playground —
-route anything to anything, and reshape sounds on the fly.
+route (nearly) anything to anything, and reshape sounds on the fly.
 
 It skips ultra-polished features like pristine interpolation
 in favor of raw responsiveness and real-time control.
