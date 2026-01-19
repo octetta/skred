@@ -60,6 +60,7 @@ void skode_local_to_global(skode_t *s, int n);
 void skode_global_to_local(skode_t *s, int n);
 void skode_data_resize(skode_t *s, int len);
 int skode_data_cap(skode_t *s);
+double skode_get_local(skode_t *s, int n);
 
 #endif
 

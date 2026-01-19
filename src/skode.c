@@ -549,6 +549,13 @@ double skode_arg_push_many(skode_t *s, double *a, int n) {
     return 0;
 }
 
+double skode_get_local(skode_t *s, int n) { 
+  if (n >= 0 && n < VAR_MAX) {
+    return s->global_var[n];
+  }
+  return NAN;
+}
+
 void skode_set_local(skode_t *s, int n, double x) { 
     if (n >= 0 && n < VAR_MAX) {
         s->global_var[n] = x;

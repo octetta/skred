@@ -1002,7 +1002,15 @@ int wire_function(skode_t *s, int info) {
     case '%___': if (arg) seq_modulo_set(w->pattern, x); break;
     case '!___': if (arg) seq_mute_set(w->pattern, x, 0); break;
     case '@___': if (arg) seq_mute_set(w->pattern, x, 1); break;
-    case '=___': if (argc>1) skode_set_local(w->sk, x, arg[1]); break;
+    case '=___':
+      if (argc>1) skode_set_local(w->sk, x, arg[1]);
+      else {
+        for (int i=0; i<10; i++) {
+          double f = skode_get_local(w->sk, i);
+          w->printf(w, "# $%d %g\n", i, f);
+        }
+      }
+      break;
     case '/wex': if (argc && x >= 200 && x <=999) wave_table_dynamic_expand(x);
     default:
       if (w->trace) {
