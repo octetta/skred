@@ -42,11 +42,11 @@ v0F1,1        # use v1 modulator to change v0' frequency
 # behind the scenes
 
 ## components
-- [synth](synth.md) skred's sound engine
-- [skode](skode.md) the skred live code language
-- [skode reference](skode-ref.md) details about skode commands and values
-- [seq](seq.md) the skred pattern system
-- [tools](tools.md) various tools for learning and controlling skred
+- [synth](docs/synth.md) skred's sound engine
+- [skode](docs/skode.md) the skred live code language
+- [skode reference](docs/skode-ref.md) details about skode commands and values
+- [seq](docs/seq.md) the skred pattern system
+- [tools](docs/tools.md) various tools for learning and controlling skred
 
 
 ## seq
