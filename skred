@@ -1,2 +1,2 @@
 #!/bin/bash
-./build/linux/skred $@
+./src/build/linux/skred $@

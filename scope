@@ -1,2 +1,2 @@
 #!/bin/bash
-./build/linux/scope
+./src/build/linux/scope

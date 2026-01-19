@@ -1,4 +1,4 @@
-<img src="skred.svg" width="200">
+<img src="docs/skred.svg" width="200">
 
 # skred
 
