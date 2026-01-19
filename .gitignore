@@ -8,6 +8,7 @@ repl
 experimental
 sc
 build/*
+src/build/*
 e
 occu-release*.zip
 .sk8_history

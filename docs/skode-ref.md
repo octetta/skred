@@ -50,34 +50,38 @@
 
 | name | description |
 | :--- | :--- |
-| 32 | (1) sawtooth : brass, strings, and fat synths leads |
-| 33 | (2) square : woodwinds (clarinets) and classic "hollow" synth sounds |
-| 34 | (3) deep sawtooth |
-| 35 | (4) narrow pulse : thin, nasally sounds; oboes and harpsichords |
-| 36 | (5) electric piano (hard) |
-| 37 | (6) clavi |
-| 38 | (7) organ |
-| 39 | (8) brass |
-| 40 | (9) saxophone |
-| 41 | (10) violin |
-| 42 | (11) acoustic guitar |
-| 43 | (12) guitar (distorted) |
-| 44 | (13) electric bass |
-| 45 | (14) digital bass |
-| 46 | (15) bell |
-| 47 | (16) organ and whistle |
+| 10 | (1) sawtooth : brass, strings, and fat synths leads |
+| 11 | (2) square : woodwinds (clarinets) and classic "hollow" synth sounds |
+| 12 | (3) deep sawtooth |
+| 13 | (4) narrow pulse : thin, nasally sounds; oboes and harpsichords |
+| 14 | (5) electric piano (hard) |
+| 15 | (6) clavi |
+| 16 | (7) organ |
+| 17 | (8) brass |
+| 18 | (9) saxophone |
+| 19 | (10) violin |
+| 20 | (11) acoustic guitar |
+| 21 | (12) guitar (distorted) |
+| 22 | (13) electric bass |
+| 23 | (14) digital bass |
+| 24 | (15) bell |
+| 25 | (16) organ and whistle |
 
 | name | description |
 | :--- | :--- |
-| 48 to 62 | expansion waves |
+| 26 to 41 | kw-expansion waves |
 
 | name | description |
 | :--- | :--- |
-| 100 to 166 | basic samples |
+| 50 to 127 | kw-expansion waves |
 
 | name | description |
 | :--- | :--- |
-| 200 to 999 | user wave slots |
+| 200 to 266 | basic samples |
+
+| name | description |
+| :--- | :--- |
+| 300 to 999 | user wave slots |
 
 | filter mode | description |
 | :--- | :--- |

@@ -161,7 +161,7 @@ char *sgets(char *prompt, int max, int edit, int store) {
 #else
   line = fgets(buffer, max, stdin);
 #endif
-  if (1) {
+  if (0) {
     int n = strlen(line);
     int f0 = -1;
     int f1 = -1;
