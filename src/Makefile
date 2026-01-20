@@ -40,15 +40,9 @@ $(OUT)/skred-mem.o : skred-mem.c
 	mkdir -p $(OUT)
 	$(CC) $(COPTS) -c $< -o $@
 
-$(OUT)/libraylib.a :
+$(SCOPE) :
 	mkdir -p $(OUT)
-	cd raylib/src && $(MAKE) clean
-	cd raylib/src && $(MAKE) CC=$(CC) PLATFORM=PLATFORM_DESKTOP RAYLIB_LIBTYPE=STATIC
-	cp raylib/src/libraylib.a $(OUT)/
-
-$(SCOPE) : scope.c $(OUT)/skred-mem.o $(OUT)/libraylib.a
-	mkdir -p $(OUT)
-	$(CC) $(COPTS) -D_GNU_SOURCE -DUSE_RAYLIB -L $(OUT) -I raylib/src $^ -o $@ -lraylib $(LIB)
+	$(MAKE) -f Makefile.$(TARGET).scope
 
 $(OUT)/wav2data : wav2data.c miniwav.o
 	$(CC) $(COPTS) -D_GNU_SOURCE $^ -o $@
@@ -236,6 +230,7 @@ install-darwin :
     cp -r ../build/darwin/sk8r.app . ; \
     cp -r ../build/darwin/sk8-pad.app . ; \
     cp -r ../build/darwin/midi-sk8.app . ; \
+    cp -r ../build/darwin/Skope.app . ; \
     cp ../sk/909.sk sk ; \
     cp ../wav/24.wav wav ; \
 	rm -f $(REL).zip

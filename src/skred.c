@@ -294,6 +294,7 @@ int main(int argc, char *argv[]) {
   int r = skred_mem_create(scope_shared, SKRED_SCOPE_NAME, sizeof(scope_buffer_t));
   if (r != 0) {
     printf("# did not create scope shared memory %s (%d)\n", SKRED_SCOPE_NAME, r);
+    perror("???");
     scope_enable = 0;
   } else {
     printf("# scope buffer ready\n");

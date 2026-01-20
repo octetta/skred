@@ -1,0 +1,60 @@
+CC = gcc
+CC = clang
+LIB = -lm -pthread -lpthread -framework CoreAudio -framework CoreFoundation 
+TARGET = darwin
+COPTS = -g -D_GNU_SOURCE -D_IS_OSX_ -Wall -arch arm64  -arch x86_64
+
+OUT = build/$(TARGET)
+SCOPE = $(OUT)/scope
+
+APP_NAME = Skope
+BUNDLE_DIR = $(OUT)/$(APP_NAME).app
+CONTENTS_DIR = $(BUNDLE_DIR)/Contents
+ICON_NAME = Skope.icns
+
+bundle: $(SCOPE)
+	@echo "Creating App Bundle..."
+	mkdir -p $(CONTENTS_DIR)/MacOS
+	mkdir -p $(CONTENTS_DIR)/Resources
+	cp $(SCOPE) $(CONTENTS_DIR)/MacOS/scope
+	cp Info.plist $(CONTENTS_DIR)/
+	if [ -f $(ICON_NAME) ]; then cp $(ICON_NAME) $(CONTENTS_DIR)/Resources/; fi
+	@echo "Bundle created at $(BUNDLE_DIR)"
+
+all : $(SCOPE)
+
+visual : $(SCOPE)
+
+$(OUT)/skred-mem.o : skred-mem.c
+	mkdir -p $(OUT)
+	$(CC) $(COPTS) -c $< -o $@
+
+$(OUT)/libraylib.a:
+	mkdir -p $(OUT)
+	# 1. Build for ARM64
+	cd raylib/src && $(MAKE) clean
+	cd raylib/src && $(MAKE) CC=clang \
+		PLATFORM=PLATFORM_DESKTOP \
+		RAYLIB_LIBTYPE=STATIC \
+		CFLAGS="-target arm64-apple-macos11 -O2 -Wall -DPLATFORM_DESKTOP_GLFW -DGRAPHICS_API_OPENGL_33 -I. -Iexternal/glfw/include"
+	mv raylib/src/libraylib.a $(OUT)/libraylib_arm64.a
+
+	# 2. Build for x86_64
+	cd raylib/src && $(MAKE) clean
+	cd raylib/src && $(MAKE) CC=clang \
+		PLATFORM=PLATFORM_DESKTOP \
+		RAYLIB_LIBTYPE=STATIC \
+		CFLAGS="-target x86_64-apple-macos10.12 -O2 -Wall -DPLATFORM_DESKTOP_GLFW -DGRAPHICS_API_OPENGL_33 -I. -Iexternal/glfw/include"
+	mv raylib/src/libraylib.a $(OUT)/libraylib_x86_64.a
+
+	# 3. Create the Fat Library
+	lipo -create -output $(OUT)/libraylib.a $(OUT)/libraylib_arm64.a $(OUT)/libraylib_x86_64.a
+
+# Define this at the top of your Makefile
+MACOS_FW = -framework CoreVideo -framework IOKit -framework Cocoa -framework OpenGL
+
+$(SCOPE) : scope.c $(OUT)/skred-mem.o $(OUT)/libraylib.a
+	$(CC) -arch arm64 -arch x86_64 \
+		-D_GNU_SOURCE -DUSE_RAYLIB \
+		-Iraylib/src -L$(OUT) \
+		$^ -o $@ -lraylib $(MACOS_FW)

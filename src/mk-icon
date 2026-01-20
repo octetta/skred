@@ -1,0 +1,21 @@
+#!/bin/bash
+# Create a temporary iconset folder
+mkdir Skope.iconset
+
+# Generate the required sizes
+sips -z 16 16     skred.png --out Skope.iconset/icon_16x16.png
+sips -z 32 32     skred.png --out Skope.iconset/icon_16x16@2x.png
+sips -z 32 32     skred.png --out Skope.iconset/icon_32x32.png
+sips -z 64 64     skred.png --out Skope.iconset/icon_32x32@2x.png
+sips -z 128 128   skred.png --out Skope.iconset/icon_128x128.png
+sips -z 256 256   skred.png --out Skope.iconset/icon_128x128@2x.png
+sips -z 256 256   skred.png --out Skope.iconset/icon_256x256.png
+sips -z 512 512   skred.png --out Skope.iconset/icon_256x256@2x.png
+sips -z 512 512   skred.png --out Skope.iconset/icon_512x512.png
+sips -z 1024 1024 skred.png --out Skope.iconset/icon_512x512@2x.png
+
+# Convert the iconset to a single .icns file
+iconutil -c icns Skope.iconset
+
+# Cleanup
+rm -rf Skope.iconset

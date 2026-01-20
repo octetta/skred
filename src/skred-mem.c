@@ -104,6 +104,7 @@ void skred_mem_close(skred_mem_t *sm) {
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdio.h>
 
 typedef struct skred_mem_s {
     void *addr;
@@ -122,17 +123,28 @@ skred_mem_t *skred_mem_new(void) {
 void *skred_mem_addr(skred_mem_t *s) { return s->addr; }
 
 int skred_mem_create(skred_mem_t *sm, const char *name, size_t size) {
-    strncpy(sm->name, name, sizeof(sm->name)-1);
+    //strncpy(sm->name, name, sizeof(sm->name)-1);
+#ifdef __APPLE__
+    snprintf(sm->name, sizeof(sm->name)-1, "%s", name);
+    if (shm_unlink(sm->name) < 0) {
+        perror("shm_unlink");
+    }
+#else
+    snprintf(sm->name, sizeof(sm->name)-1, "%s", name);
+#endif
     sm->name[sizeof(sm->name)-1] = '\0';
     
     sm->fd = shm_open(name, O_CREAT | O_RDWR, 0666);
     if (sm->fd < 0) {
+	perror("shm_open error");
         sm->addr = NULL;
         sm->size = 0;
         return -1;
     }
     
     if (ftruncate(sm->fd, size) != 0) {
+	perror("ftruncate error");
+        sm->addr = NULL;
         close(sm->fd);
         sm->fd = -1;
         sm->addr = NULL;
@@ -142,6 +154,7 @@ int skred_mem_create(skred_mem_t *sm, const char *name, size_t size) {
     
     sm->addr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, sm->fd, 0);
     if (sm->addr == MAP_FAILED) {
+	perror("mmap error");
         close(sm->fd);
         sm->fd = -1;
         sm->addr = NULL;
@@ -159,6 +172,7 @@ int skred_mem_open(skred_mem_t *sm, const char *name, size_t size) {
     
     sm->fd = shm_open(name, O_RDWR, 0666);
     if (sm->fd < 0) {
+	perror("shm_open error");
         sm->addr = NULL;
         sm->size = 0;
         return -1;
@@ -166,6 +180,7 @@ int skred_mem_open(skred_mem_t *sm, const char *name, size_t size) {
     
     sm->addr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, sm->fd, 0);
     if (sm->addr == MAP_FAILED) {
+	perror("mmap error");
         close(sm->fd);
         sm->fd = -1;
         sm->addr = NULL;
