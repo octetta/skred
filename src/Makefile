@@ -201,7 +201,7 @@ clean :
 	rm -rf build
 	cd raylib/src && make clean
 
-REL = bundle-skred-2026-01-20-001
+REL = bundle-skred-$(TARGET)-2026-01-20-002
 
 install-win :
 	rm -rf $(REL)
