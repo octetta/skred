@@ -207,7 +207,7 @@ clean :
 	rm -rf build
 	cd raylib/src && make clean
 
-REL = bundle-skred-2026-01-19-001
+REL = bundle-skred-2026-01-20-001
 
 install-win :
 	rm -rf $(REL)
@@ -233,9 +233,9 @@ install-darwin :
 	mkdir -p $(REL)/wav
 	cd $(REL) ; \
     cp ../skred . ; \
-    cp -r ../build/sk8r.app . ; \
-    cp -r ../build/sk8-pad.app . ; \
-    cp -r ../build/midi-sk8.app . ; \
+    cp -r ../build/darwin/sk8r.app . ; \
+    cp -r ../build/darwin/sk8-pad.app . ; \
+    cp -r ../build/darwin/midi-sk8.app . ; \
     cp ../sk/909.sk sk ; \
     cp ../wav/24.wav wav ; \
 	rm -f $(REL).zip
