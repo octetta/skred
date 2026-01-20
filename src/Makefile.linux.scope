@@ -23,4 +23,4 @@ $(OUT)/libraylib.a :
 
 $(SCOPE) : scope.c $(OUT)/skred-mem.o $(OUT)/libraylib.a
 	mkdir -p $(OUT)
- 	$(CC) $(COPTS) -D_GNU_SOURCE -DUSE_RAYLIB -L $(OUT) -I raylib/src $^ -o $@ -lraylib $(LIB)
+	$(CC) $(COPTS) -D_GNU_SOURCE -DUSE_RAYLIB -L $(OUT) -I raylib/src $^ -o $@ -lraylib $(LIB)
