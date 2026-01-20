@@ -819,6 +819,18 @@ int wire_function(skode_t *s, int info) {
     case 'q___': if (argc) { wave_quant(voice, x); } break;
     case 'Q___': if (argc) { mmf_set_res(voice, arg[0]); } break;
     case 'r___': if (argc) { if (rec_state == 0) voice_record[voice] = x; } break;
+    case 'R___': if (argc > 1) {
+        //w->printf(w, "# repeat %s %d times with %g delay\n", skode_string(w->sk), x, arg[1]);
+        uint64_t qt = synth_sample_count;
+        float fdt = arg[1] * (float)MAIN_SAMPLE_RATE;
+        uint64_t dt = (uint64_t)fdt;
+        //w->printf(w, "# delta-time %g %ld\n", fdt, dt);
+        for (int i=0; i<x; i++) {
+          //w->printf(w, "# @%ld do %s\n", qt, skode_string(w->sk));
+          queue_item(qt, skode_string(w->sk), w->voice);
+          qt += dt;
+        }
+      } break;
     case 's___': if (argc) {
         if (arg[0] <= 0) {
           voice_smoother_enable[voice] = 0;
@@ -1004,6 +1016,10 @@ int wire_function(skode_t *s, int info) {
     case '@___': if (arg) seq_mute_set(w->pattern, x, 1); break;
     case '=___':
       if (argc>1) skode_set_local(w->sk, x, arg[1]);
+      else if (argc == 1) {
+        double f = skode_get_local(w->sk, x);
+        w->printf(w, "# $%d %g\n", x, f);
+      }
       else {
         for (int i=0; i<10; i++) {
           double f = skode_get_local(w->sk, i);
