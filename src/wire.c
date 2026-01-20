@@ -290,9 +290,9 @@ void show_stats(wire_t *w) {
   for (int i = 0; i < QUEUE_SIZE; i++) {
     if (work_queue[i].state != Q_FREE) {
 #ifdef _WIN32
-      w->printf(w, "# [%d] (%d) @%lld {%s}\n", i, work_queue[i].state, work_queue[i].when, work_queue[i].what);
+      w->printf(w, "# [%d] (%d) @%lld {%s} R@%d\n", i, work_queue[i].state, work_queue[i].when, work_queue[i].what, work_queue[i].tag);
 #else
-      w->printf(w, "# [%d] (%d) @%ld {%s}\n", i, work_queue[i].state, work_queue[i].when, work_queue[i].what);
+      w->printf(w, "# [%d] (%d) @%ld {%s} R@%d\n", i, work_queue[i].state, work_queue[i].when, work_queue[i].what, work_queue[i].tag);
 #endif
     }
   }
@@ -821,15 +821,36 @@ int wire_function(skode_t *s, int info) {
     case 'q___': if (argc) { wave_quant(voice, x); } break;
     case 'Q___': if (argc) { mmf_set_res(voice, arg[0]); } break;
     case 'r___': if (argc) { if (rec_state == 0) voice_record[voice] = x; } break;
-    case 'R___': if (argc > 1) {
-        //w->printf(w, "# repeat %s %d times with %g delay\n", skode_string(w->sk), x, arg[1]);
+    case 'R!__':
+      if (argc) {
+        for (int i = 0; i < QUEUE_SIZE; i++) {
+          int tag = x;
+          if (work_queue[i].state != Q_FREE && work_queue[i].tag == tag) {
+            work_queue[i].state = Q_FREE;
+          }
+        }
+      }
+      break;
+    case 'R\'__': if (argc > 1) {
         uint64_t qt = synth_sample_count;
-        float fdt = arg[1] * (float)MAIN_SAMPLE_RATE;
+        double t = (tempo_time_per_step * 4.0f);
+        double fdt = t * arg[1] * (float)MAIN_SAMPLE_RATE;
         uint64_t dt = (uint64_t)fdt;
-        //w->printf(w, "# delta-time %g %ld\n", fdt, dt);
+        int tag = 0;
+        if (argc > 2) tag = (int)arg[2];
         for (int i=0; i<x; i++) {
-          //w->printf(w, "# @%ld do %s\n", qt, skode_string(w->sk));
-          queue_item(qt, skode_string(w->sk), w->voice);
+          queue_item(qt, skode_string(w->sk), w->voice, tag);
+          qt += dt;
+        }
+      } break;
+    case 'R___': if (argc > 1) {
+        uint64_t qt = synth_sample_count;
+        double fdt = arg[1] * (float)MAIN_SAMPLE_RATE;
+        uint64_t dt = (uint64_t)fdt;
+        int tag = 0;
+        if (argc > 2) tag = (int)arg[2];
+        for (int i=0; i<x; i++) {
+          queue_item(qt, skode_string(w->sk), w->voice, tag);
           qt += dt;
         }
       } break;
@@ -1041,7 +1062,7 @@ int wire_defer(skode_t *s, int info) {
   if (w->defer_sample_time == 0) w->defer_sample_time = synth_sample_count;
   uint64_t dst = w->defer_sample_time;
   char mode = skode_defer_mode(s);
-  float t = skode_defer_num(s);
+  double t = skode_defer_num(s);
   if (mode == '+') t *= (tempo_time_per_step * 4.0f);
   t += w->defer_last;
   uint64_t qt = (uint64_t)(t * (float)MAIN_SAMPLE_RATE) + dst;
@@ -1056,7 +1077,7 @@ int wire_defer(skode_t *s, int info) {
       skode_defer_string(s),
       w->defer_last);
   }
-  queue_item(qt, skode_defer_string(s), w->voice);
+  queue_item(qt, skode_defer_string(s), w->voice, -1);
   w->defer_last += skode_defer_num(s);
   return 0;
 }

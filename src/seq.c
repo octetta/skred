@@ -95,13 +95,14 @@ void seq_init(void) {
 
 queued_t work_queue[QUEUE_SIZE];
 
-int queue_item(uint64_t when, char *what, int voice) {
+int queue_item(uint64_t when, char *what, int voice, int tag) {
   int p = -1;
   for (int q = 0; q < QUEUE_SIZE; q++) {
     if (work_queue[q].state == Q_FREE) {
       work_queue[q].state = Q_PREP;
       work_queue[q].when = when;
       work_queue[q].voice = voice;
+      work_queue[q].tag = tag;
       strcpy(work_queue[q].what, what);
       work_queue[q].state = Q_READY;
       p = q;

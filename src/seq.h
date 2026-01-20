@@ -28,12 +28,13 @@ typedef struct {
   uint64_t when;
   char what[QUEUED_MAX];
   int voice;
+  int tag;
 } queued_t;
 
 void seq(int frame_count, void (*queue_fn)(int voice, char *arg), void (*pattern_fn)(int voice, char *arg));
 void seq_init(void);
 void pattern_reset(int p);
-int queue_item(uint64_t when, char *what, int voice);
+int queue_item(uint64_t when, char *what, int voice, int tag);
 void tempo_set(float m);
 
 void seq_modulo_set(int pattern, int m);

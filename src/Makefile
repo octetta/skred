@@ -54,7 +54,7 @@ $(OUT)/wav2data : wav2data.c miniwav.o
 	$(CC) $(COPTS) -D_GNU_SOURCE $^ -o $@
 
 $(OUT)/skode : skode.c skode-example.c bestline.o
-	$(CC) $(COPTS) -Wall -Wno-multichar skode.c skode-example.c bestline.o -o $@
+	$(CC) $(COPTS) -Wno-multichar skode.c skode-example.c bestline.o -o $@
 
 $(OUT)/miniwav.o : miniwav.c miniwav.h
 	$(CC) $(COPTS) -c $< -o $@

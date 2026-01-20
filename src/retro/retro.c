@@ -149,7 +149,7 @@ int kwave_size[KWAVEMAX];
 double kwave_freq[KWAVEMAX];
 char *kwave_name[KWAVEMAX];
 
-#define EWAVEMAX (100)
+#define EWAVEMAX (78)
 
 int16_t ew00[] = {
   #include "ew/saw.h"
@@ -396,8 +396,8 @@ int16_t ew77[] = {
 
 int16_t *ewave[EWAVEMAX];
 int ewave_size[EWAVEMAX];
-double ewave_freq[KWAVEMAX];
-char *ewave_name[KWAVEMAX];
+double ewave_freq[EWAVEMAX];
+char *ewave_name[EWAVEMAX];
 
 void resize(void);
 
@@ -485,6 +485,9 @@ void retro_init(void) {
   }
   kwave_size[32] = sizeof(kw32) / sizeof(int16_t);
 
+  for (int i=0; i<EWAVEMAX; i++) {
+    ewave_freq[i] = 0;
+  }
   int n = 0;
   ewave[n++] = ew00;
   ewave[n++] = ew01;
