@@ -399,7 +399,6 @@ int ewave_size[EWAVEMAX];
 double ewave_freq[KWAVEMAX];
 char *ewave_name[KWAVEMAX];
 
-
 void resize(void);
 
 void retro_init(void) {

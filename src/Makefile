@@ -12,7 +12,9 @@ ifeq ($(UNAME_S), Darwin)
 	CC = clang
 	LIB = -lm -pthread -lpthread -framework CoreAudio -framework CoreFoundation 
 	TARGET = darwin
-	COPTS = -D_GNU_SOURCE -D_IS_OSX_ -Wall -arch arm64 
+	COPTS = -g -D_GNU_SOURCE -D_IS_OSX_ -Wall -arch arm64  -arch x86_64
+	# COPTS = -D_GNU_SOURCE -D_IS_OSX_ -Wall -arch arm64 
+	# DOPTS = -Wl,-stack_size,0x800000
 endif
 
 OUT = build/$(TARGET)
@@ -101,14 +103,14 @@ OBJS = \
 	#
 
 $(SKRED) : $(OBJS) | $(OUT)
-	$(CC) $(COPTS) $(OBJS) -o $@ $(LIB)
+	$(CC) $(COPTS) $(DOPTS) $(OBJS) -o $@ $(LIB)
 	# $(CC) $(COPTS) $(OBJS) -o $(OUT)/skred $(LIB)
 
 $(OUT)/bestline.o: bestline.c bestline.h
-	$(CC) -c $< -o $@
+	$(CC) -c $(COPTS) $< -o $@
 
 $(OUT)/miniaudio.o: miniaudio.c miniaudio.h
-	$(CC) -c $< -o $@
+	$(CC) $(COPTS) -c $< -o $@
 
 # Linker Flags
 # -s -w strips debug info for smaller binaries
@@ -124,12 +126,12 @@ sk8r-linux:
 	cd sk8r && go build -o ../$(OUT)/sk8r-$(TARGET) .
 	# cd sk8r && fyne package -exe ../$(OUT)/sk8r -os linux -tags flatpak -icon icon.png -app-id com.example.app -app-version 0.0.1
 
-sk8r-macos:
+sk8r-darwin:
 	mkdir -p $(OUT)
-	cd sk8r && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/sk8r-macos-amd64 .
-	cd sk8r && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/sk8r-macos-arm64 .
-	lipo -create -output $(OUT)/sk8r-macos-universal $(OUT)/sk8r-macos-amd64 $(OUT)/sk8r-macos-arm64
-	cd sk8r && fyne package -exe ../$(OUT)/sk8r-macos-universal -os darwin -icon icon.png -name ../$(OUT)/sk8r
+	cd sk8r && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/sk8r-darwin-amd64 .
+	cd sk8r && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/sk8r-darwin-arm64 .
+	lipo -create -output $(OUT)/sk8r-darwin-universal $(OUT)/sk8r-darwin-amd64 $(OUT)/sk8r-darwin-arm64
+	cd sk8r && fyne package -exe ../$(OUT)/sk8r-darwin-universal -os darwin -icon icon.png -name ../$(OUT)/sk8r
 
 win : sk8r-windows midi-sk8-windows sk8-pad-windows skred-windows
 
@@ -152,12 +154,12 @@ midi-sk8-linux:
 	mkdir -p $(OUT)
 	cd midi-sk8 && go build -o ../$(OUT)/midi-sk8-linux .
 
-midi-sk8-macos:
+midi-sk8-darwin:
 	mkdir -p $(OUT)
-	cd midi-sk8 && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/midi-sk8-macos-amd64 .
-	cd midi-sk8 && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/midi-sk8-macos-arm64 .
-	lipo -create -output ../$(OUT)/midi-sk8-macos-universal ../$(OUT)/midi-sk8-macos-amd64 ../$(OUT)/midi-sk8-macos-arm64
-	cd midi-sk8 && fyne package -exe ../$(OUT)/midi-sk8-macos-universal -os darwin -icon icon.png -name ../$(OUT)/midi-sk8
+	cd midi-sk8 && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/midi-sk8-darwin-amd64 .
+	cd midi-sk8 && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/midi-sk8-darwin-arm64 .
+	cd midi-sk8 && lipo -create -output ../$(OUT)/midi-sk8-darwin-universal ../$(OUT)/midi-sk8-darwin-amd64 ../$(OUT)/midi-sk8-darwin-arm64
+	cd midi-sk8 && fyne package -exe ../$(OUT)/midi-sk8-darwin-universal -os darwin -icon icon.png -name ../$(OUT)/midi-sk8
 
 midi-sk8-windows:
 	mkdir -p build/win
@@ -170,13 +172,13 @@ sk8-pad-linux:
 	mkdir -p $(OUT)
 	cd sk8-pad && go build -ldflags="-s -w" -o ../$(OUT)/sk8-pad-linux .
 
-sk8-pad-macos:
+sk8-pad-darwin:
 	mkdir -p $(OUT)
 	cd sk8-pad && \
-	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/sk8-pad-macos-amd64 . && \
-	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/sk8-pad-macos-arm64 . && \
-	lipo -create -output ../$(OUT)/sk8-pad-macos-universal ../$(OUT)/sk8-pad-macos-amd64 ../build/sk8-pad-macos-arm64
-	cd sk8-pad && fyne package -exe ../$(OUT)/sk8-pad-macos-universal -os darwin -icon icon.png -name ../$(OUT)/sk8-pad
+	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/sk8-pad-darwin-amd64 . && \
+	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/sk8-pad-darwin-arm64 . && \
+	lipo -create -output ../$(OUT)/sk8-pad-darwin-universal ../$(OUT)/sk8-pad-darwin-amd64 ../$(OUT)/sk8-pad-darwin-arm64
+	cd sk8-pad && fyne package -exe ../$(OUT)/sk8-pad-darwin-universal -os darwin -icon icon.png -name ../$(OUT)/sk8-pad
 
 sk8-pad-windows:
 	mkdir -p build/win
@@ -224,7 +226,7 @@ install-win :
 	rm -f $(REL).zip
 	zip -r $(REL).zip $(REL)
 
-install-macos :
+install-darwin :
 	rm -rf $(REL)
 	mkdir -p $(REL)
 	mkdir -p $(REL)/sk

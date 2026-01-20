@@ -40,6 +40,7 @@ static int udp_port = 0;
 static int udp_running = 1;
 
 static pthread_t udp_thread_handle;
+static pthread_attr_t udp_attr;
 
 static struct sockaddr_in serve;
 
@@ -150,7 +151,9 @@ int udp_start(int port) {
   if (port == 0) return 0;
   udp_port = port;
   udp_running = 1;
-  pthread_create(&udp_thread_handle, NULL, udp_main, NULL);
+  pthread_attr_init(&udp_attr);
+  pthread_attr_setstacksize(&udp_attr, 2 * 1024 * 1024);
+  pthread_create(&udp_thread_handle, &udp_attr, udp_main, NULL);
   pthread_detach(udp_thread_handle);
   return port;
 }
@@ -196,3 +199,4 @@ int udp_send(int fd, void *c, int len) {
     return 0;
 }
 #endif
+

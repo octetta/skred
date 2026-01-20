@@ -347,6 +347,7 @@ void show_threads(wire_t *w) {
 
   CloseHandle(hSnapshot);
 #else
+#ifndef __APPLE__
   DIR* dir = opendir("/proc/self/task");
   struct dirent* entry;
   if (dir == NULL) {
@@ -374,6 +375,7 @@ void show_threads(wire_t *w) {
   }
 
   closedir(dir);
+#endif
 #endif
 }
 
@@ -953,11 +955,6 @@ int wire_function(skode_t *s, int info) {
         wire_show(w);
       }
       break;
-    case '/o__': scope_enable = x; break;
-              // sub x for scope_cross = 1
-              // sub q for scope_quit = 0
-              // sub 0..VOICE_MAX-1 for scope_channel = n
-              // sub -1 for scope_channel = -1 (all channels)
     case '/l__': if (argc) { sk_load(w, voice, x); } break;
     case '/w__': {
         int file_num = 0;

@@ -1,2 +1,4 @@
 #!/bin/bash
-./src/build/linux/skred $@
+TARGET=linux
+if [[ "$(uname)" == "Darwin" ]]; then TARGET=darwin; fi
+./src/build/$TARGET/skred $@
