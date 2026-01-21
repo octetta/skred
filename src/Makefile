@@ -218,6 +218,8 @@ check : $(SKRED)
 clean :
 	rm -rf build
 	cd raylib/src && make clean
+	rm -rf bundle-skred-*
+	find . -name '*.exe' -exec rm -f {} \;
 
 REL = bundle-skred-windows-2026-01-20-002
 
