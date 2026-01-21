@@ -1,0 +1,72 @@
+!___ mute step I
+%___ pattern modulus I
+*___ save recorded track
+/___ make wave defaults
+<___ record tracks for F time
+=___ set variable I F
+>___ copy current voice to I
+??__ show all active voice
+?___ show current voice
+@___ unmute step I
+\___ show verbose voice info I
+a___ amplitude F
+A___ amp modulation I F
+b___ wave direction I
+B___ wave loop I
+/c__ 
+c___ phase distortion I F
+C___ pd mod I F
+/d__ 
+/D__ 
+D___ 
+/f__ 
+f___ frequency F
+F___ freq mod I F
+g___ 
+G___ 
+g>l_ 
+h___ sample and hold I
+H___ link velocity
+I___ 
+J___ filter mode I
+k___ 
+K___ filter cutoff F
+/l__ load skode I
+l___ velocity F
+L___ 
+l>g_ 
+log_ ask for udp response
+/m__ 
+m___ detach from audio I
+M___ 
+n___ MIDI freq F
+N___ transpose MIDI by key and cents F F
+p___ pan F
+P___ pan modulator I F
+/q__ exit console
+q___ bit depth I
+Q___ filter resonance
+r___ mark voice for record I
+R!__ remove events by tag
+R'__ 
+R___ repeat string times with delay I F
+/s__ 
+?s__ 
+s___ 
+/S__ 
+S___ 
+/t__ 
+t___ amplitude ADSR F F F F
+T___ 
+udp_ 
+/v__ 
+v___ select voice I
+V___ main volume F
+/w__ load waveform I I I
+w___ set waveform I
+W___ show waveform I
+/wex 
+x___ put string in step I
+y___ select pattern I
+z___ start pattern I
+Z___ start all I
