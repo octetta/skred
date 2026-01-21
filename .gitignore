@@ -1,3 +1,4 @@
+skrepl
 skred-*.wav
 666.wav
 pingpong
@@ -6,7 +7,6 @@ pingpong
 .DS_Store
 vgcore.*
 bundle*
-repl
 experimental
 sc
 build/*
