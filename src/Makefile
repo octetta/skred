@@ -18,6 +18,7 @@ ifeq ($(UNAME_S), Darwin)
 endif
 
 OUT = build/$(TARGET)
+WINOUT = build/win
 
 SKRED = $(OUT)/skred
 
@@ -127,18 +128,34 @@ sk8r-darwin:
 	lipo -create -output $(OUT)/sk8r-darwin-universal $(OUT)/sk8r-darwin-amd64 $(OUT)/sk8r-darwin-arm64
 	cd sk8r && fyne package -exe ../$(OUT)/sk8r-darwin-universal -os darwin -icon icon.png -name ../$(OUT)/sk8r
 
-win : sk8r-windows midi-sk8-windows sk8-pad-windows skred-windows
+win : sk8r-windows midi-sk8-windows sk8-pad-windows skred-windows repl-windows
 
 skred-windows :
-	mkdir -p build/win
+	mkdir -p $(WINOUT)
 	$(MAKE) -f Makefile.win
 
-WIN_CC := x86_64-w64-mingw32-gcc
+GOWINENV = CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++
+GOWINLD = -ldflags="-H=windowsgui -s -w -extldflags '-static -static-libgcc -static-libstdc++'"
+
+repl-windows:
+	mkdir -p $(WINOUT)
+	cd repl && \
+  $(GOWINENV) go build $(GOWINLD) -o skrepl.exe . && \
+	fyne package --os windows --name "skrepl" --icon icon.png --appID com.octetta.skrepl && \
+  cp skrepl.exe ../$(WINOUT)
+ 
 
 sk8r-windows:
-	mkdir -p build/win
-	cd sk8r && CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC=$(WIN_CC) \
-	go build -ldflags="-H=windowsgui" -o ../build/win/sk8r.exe .
+	mkdir -p $(WINOUT)
+	cd sk8r && \
+    $(GOWINENV) \
+    fyne package --release -os windows && \
+    cp sk8r.exe ../$(WINOUT)
+
+xsk8r-windows: # keep note of the old way we built things...
+	mkdir -p $(WINOUT)
+	cd sk8r && \
+  $(GOWINENV) go build $(GOWINLD) -o ../$(WINOUT)/sk8r.exe .
 
 setup-midi:
 	sudo dnf install mingw64-gcc mingw64-winpthreads-static alsa-lib-devel
@@ -156,11 +173,12 @@ midi-sk8-darwin:
 	cd midi-sk8 && fyne package -exe ../$(OUT)/midi-sk8-darwin-universal -os darwin -icon icon.png -name ../$(OUT)/midi-sk8
 
 midi-sk8-windows:
-	mkdir -p build/win
-	cd midi-sk8 && CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
-	CC=x86_64-w64-mingw32-gcc \
-	CXX=x86_64-w64-mingw32-g++ \
-	go build -ldflags="-H=windowsgui -s -w -extldflags '-static -static-libgcc -static-libstdc++'" -o ../build/win/midi-sk8.exe .
+	mkdir -p $(WINOUT)
+	cd midi-sk8 && \
+    $(GOWINENV) \
+    fyne package --release -os windows && \
+    cp midi-sk8.exe ../$(WINOUT)
+
 
 sk8-pad-linux:
 	mkdir -p $(OUT)
@@ -175,24 +193,24 @@ sk8-pad-darwin:
 	cd sk8-pad && fyne package -exe ../$(OUT)/sk8-pad-darwin-universal -os darwin -icon icon.png -name ../$(OUT)/sk8-pad
 
 sk8-pad-windows:
-	mkdir -p build/win
+	mkdir -p $(WINOUT)
 	cd sk8-pad && \
-    CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
-    CC=x86_64-w64-mingw32-gcc \
-    CXX=x86_64-w64-mingw32-g++ \
-    go build -ldflags="-H=windowsgui -s -w -extldflags '-static'" -o ../build/win/sk8-pad.exe .
+    $(GOWINENV) \
+    fyne package --release -os windows && \
+    cp sk8-pad.exe ../$(WINOUT)
+
 
 sk8-repl-linux:
 	mkdir -p $(OUT)
 	cd sk8-repl && go build -ldflags="-s -w" -o ../$(OUT)/sk8-repl .
 
 sk8-repl-windows:
-	mkdir -p build/win
+	mkdir -p $(WINOUT)
 	cd sk8-repl && \
     CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
     CC=x86_64-w64-mingw32-gcc \
     CXX=x86_64-w64-mingw32-g++ \
-    go build -ldflags="-H=windowsgui -s -w -extldflags '-static'" -o ../build/win/sk8-repl.exe .
+    go build -ldflags="-H=windowsgui -s -w -extldflags '-static'" -o ../$(WINOUT)/sk8-repl.exe .
 
 check : $(SKRED)
 	valgrind --tool=memcheck --leak-check=full ./$(SKRED) -n
@@ -201,7 +219,7 @@ clean :
 	rm -rf build
 	cd raylib/src && make clean
 
-REL = bundle-skred-$(TARGET)-2026-01-20-002
+REL = bundle-skred-windows-2026-01-20-002
 
 install-win :
 	rm -rf $(REL)
@@ -209,14 +227,14 @@ install-win :
 	mkdir -p $(REL)/sk
 	mkdir -p $(REL)/wav
 	cd $(REL) ; \
-    cp ../build/win/skred.exe . ; \
-    cp ../build/win/scope.exe . ; \
-    cp ../build/win/sk8r.exe . ; \
-    cp ../build/win/midi-sk8.exe . ; \
-    cp ../build/win/sk8-pad.exe . ; \
+    cp ../$(WINOUT)/skred.exe . ; \
+    cp ../$(WINOUT)/scope.exe . ; \
+    cp ../$(WINOUT)/sk8r.exe . ; \
+    cp ../$(WINOUT)/midi-sk8.exe . ; \
+    cp ../$(WINOUT)/sk8-pad.exe . ; \
     cp ../../sk/909.sk sk ; \
     cp ../../wav/24.wav wav ; \
-    upx --best *.exe
+    # upx --best *.exe
 	rm -f $(REL).zip
 	zip -r $(REL).zip $(REL)
 

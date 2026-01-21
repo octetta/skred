@@ -69,25 +69,60 @@ func main() {
 
 	// Override tkcon to route through Go
 	Eval(fmt.Sprintf(`
-		if {[info commands ::tkcon::EvalCmd_orig] eq ""} {
-			rename ::tkcon::EvalCmd ::tkcon::EvalCmd_orig
-		}
-		proc ::tkcon::EvalCmd {w cmd} {
-			$w mark set output end
-			if {$cmd ne ""} { history add $cmd }
-			set ::pendingCommand $cmd
-			set ::commandResult ""
-			
-			# Trigger Go callback
-			%s
+	    if {[info commands ::tkcon::EvalCmd_orig] eq ""} {
+	        rename ::tkcon::EvalCmd ::tkcon::EvalCmd_orig
+	    }
+	    
+	    proc ::tkcon::EvalCmd {w cmd} {
+	        $w mark set output end
+	        if {$cmd ne ""} { history add $cmd }
 
-			set result $::commandResult
-			if {$result ne ""} {
-				$w insert output "$result\n" stdout
-			}
-			::tkcon::Prompt
-		}
+	        # Check for ^ prefix to run native Tcl
+	        if {[string index $cmd 0] eq "^"} {
+	            # Strip the ^ and run the rest as Tcl
+	            set realCmd [string range $cmd 1 end]
+	            if {[catch {uplevel #0 $realCmd} result]} {
+	                $w insert output "Tcl Error: $result\n" err
+	            } elseif {$result ne ""} {
+	                $w insert output "$result\n" stdout
+	            }
+	        } else {
+	            # Standard Route: Send to Go via UDP bridge
+	            set ::pendingCommand $cmd
+	            set ::commandResult ""
+	            
+	            # Trigger Go callback via the bridge button
+	            %s
+
+	            set result $::commandResult
+	            if {$result ne ""} {
+	                $w insert output "$result\n" stdout
+	            }
+	        }
+	        ::tkcon::Prompt
+	    }
 	`, cmdString))
+
+	// Eval(fmt.Sprintf(`
+	// 	if {[info commands ::tkcon::EvalCmd_orig] eq ""} {
+	// 		rename ::tkcon::EvalCmd ::tkcon::EvalCmd_orig
+	// 	}
+	// 	proc ::tkcon::EvalCmd {w cmd} {
+	// 		$w mark set output end
+	// 		if {$cmd ne ""} { history add $cmd }
+	// 		set ::pendingCommand $cmd
+	// 		set ::commandResult ""
+			
+	// 		# Trigger Go callback
+	// 		%s
+
+	// 		set result $::commandResult
+	// 		if {$result ne ""} {
+	// 			$w insert output "$result\n" stdout
+	// 		}
+	// 		::tkcon::Prompt
+	// 	}
+	// `, cmdString))
 
 	Eval("tkcon show")
 	Eval(`puts "Connected to 127.0.0.1:60440 (Persistent Port)"`)

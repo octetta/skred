@@ -16,9 +16,10 @@ occu-release*.zip
 .sk8_history
 .skode_history
 history.txt
-win/*.o
-win/*.exe
-linux/*
+src/build/win/*
+src/build/linux/*
+src/build/darwin/*
+src/*/*.exe
 tmp
 *.o
 *.a
