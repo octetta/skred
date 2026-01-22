@@ -21,6 +21,7 @@ mkdir -p "$DEST_DIR/platform/posix"
 mkdir -p "$DEST_DIR/platform/win32"
 mkdir -p "$DEST_DIR/platform/gcc"
 mkdir -p "$DEST_DIR/platform/gcc_new"
+mkdir -p "$DEST_DIR/platform/gcc_old"
 
 echo "Extracting nsync components..."
 
@@ -58,6 +59,7 @@ cp "$SRC_REPO"/platform/posix/src/time_rep.c "$DEST_DIR/platform/posix/time_rep.
 # 6. Atomics
 cp "$SRC_REPO"/platform/gcc/atomic.h "$DEST_DIR/platform/gcc/"
 cp "$SRC_REPO"/platform/gcc_new/atomic.h "$DEST_DIR/platform/gcc_new/"
+cp "$SRC_REPO"/platform/gcc_old/atomic.h "$DEST_DIR/platform/gcc_old/"
 
 echo "Verification: Checking for nsync_time_init.h..."
 ls -l "$DEST_DIR/internal/nsync_time_init.h"

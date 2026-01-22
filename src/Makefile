@@ -106,7 +106,8 @@ $(SKRED) : $(OBJS) | $(OUT)
 QFLAGS = -I. \
        -I./nsync_local/public \
        -I./nsync_local/internal \
-       -I./nsync_local/platform/gcc
+       -I./nsync_local/platform/gcc \
+       -I./nsync_local/platform/gcc_old
 
 $(OUT)/skqueue.o :
 	$(CC) $(QFLAGS) -c skqueue.c -o $(OUT)/skqueue.o
