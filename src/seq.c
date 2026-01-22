@@ -40,7 +40,7 @@ void seq(int frame_count, void (*queue_fn)(int voice, char *arg), void (*pattern
   uint64_t now = synth_sample_count + frame_count; // not sure about adding frame count here but it's below from before?
   while (queue_get_filtered(&seq_q, now, &item)) {
     int q = (int)(intptr_t)item.data;
-    queue_fn(work_queue[q].voice, work_queue[q].what);
+    if (work_queue[q].state != Q_FREE) queue_fn(work_queue[q].voice, work_queue[q].what);
     work_queue[q].state = Q_FREE;
   }
 #if 0
