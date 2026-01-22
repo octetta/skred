@@ -22,6 +22,7 @@ mkdir -p "$DEST_DIR/platform/win32"
 mkdir -p "$DEST_DIR/platform/gcc"
 mkdir -p "$DEST_DIR/platform/gcc_new"
 mkdir -p "$DEST_DIR/platform/gcc_old"
+mkdir -p "$DEST_DIR/platform/mach"
 
 echo "Extracting nsync components..."
 
@@ -55,6 +56,7 @@ cp "$SRC_REPO"/platform/posix/src/yield.c "$DEST_DIR/platform/posix/"
 cp "$SRC_REPO"/platform/posix/src/nsync_panic.c "$DEST_DIR/platform/posix/"
 cp "$SRC_REPO"/platform/posix/src/nsync_semaphore_sem_t.c "$DEST_DIR/platform/posix/sem.c"
 cp "$SRC_REPO"/platform/posix/src/time_rep.c "$DEST_DIR/platform/posix/time_rep.c"
+find "$SRC_REPO/platform" -name "nsync_semaphore_mach.c" -exec cp {} "$DEST_DIR/platform/mach/sem.c" \;
 
 # 6. Atomics
 cp "$SRC_REPO"/platform/gcc/atomic.h "$DEST_DIR/platform/gcc/"

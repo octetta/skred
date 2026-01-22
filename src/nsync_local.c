@@ -14,10 +14,14 @@
 #else
     #define NSYNC_USE_PTHREADS
     #include "nsync_local/platform/posix/per_thread_waiter.c"
-    #include "nsync_local/platform/posix/sem.c"
     #include "nsync_local/platform/posix/yield.c"
     #include "nsync_local/platform/posix/nsync_panic.c"
     #include "nsync_local/platform/posix/time_rep.c"
+#if defined(__APPLE__)
+    #include "nsync_local/platform/posix/src/nsync_semaphore_mutex.c"
+#else
+    #include "nsync_local/platform/posix/sem.c"
+#endif
 #endif
 
 #include "nsync_local/internal/common.c"
