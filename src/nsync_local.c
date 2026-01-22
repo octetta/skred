@@ -18,7 +18,7 @@
     #include "nsync_local/platform/posix/nsync_panic.c"
     #include "nsync_local/platform/posix/time_rep.c"
 #if defined(__APPLE__)
-    #include "nsync_local/platform/posix/src/nsync_semaphore_mutex.c"
+    #include "nsync_local/platform/posix/src/sem_mutex.c"
 #else
     #include "nsync_local/platform/posix/sem.c"
 #endif

@@ -57,6 +57,7 @@ cp "$SRC_REPO"/platform/posix/src/nsync_panic.c "$DEST_DIR/platform/posix/"
 cp "$SRC_REPO"/platform/posix/src/nsync_semaphore_sem_t.c "$DEST_DIR/platform/posix/sem.c"
 cp "$SRC_REPO"/platform/posix/src/time_rep.c "$DEST_DIR/platform/posix/time_rep.c"
 find "$SRC_REPO/platform" -name "nsync_semaphore_mach.c" -exec cp {} "$DEST_DIR/platform/mach/sem.c" \;
+find "$SRC_REPO/platform/posix" -name "nsync_semaphore_mutex.c" -exec cp {} "$DEST_DIR/platform/posix/sem_mutex.c" \;
 
 # 6. Atomics
 cp "$SRC_REPO"/platform/gcc/atomic.h "$DEST_DIR/platform/gcc/"
