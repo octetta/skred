@@ -40,8 +40,21 @@ $(OUT)/retro.o: retro/retro.c retro/retro.h
 $(OUT)/synth.o: synth.c synth.h synth-types.h
 	$(CC) $(COPTS) -c $< -o $@
 
+QFLAGS = -I. \
+  -I./nsync_local/public \
+  -I./nsync_local/internal \
+  -I./nsync_local/platform/gcc \
+  -I./nsync_local/platform/gcc_old
+
+$(OUT)/skqueue.o : skqueue.c skqueue.h
+	$(CC) $(COPTS) $(QFLAGS) -c skqueue.c -o $(OUT)/skqueue.o
+
+$(OUT)/nsync_local.o : nsync_local.c
+	$(CC) $(COPTS) $(QFLAGS) -c nsync_local.c -o $(OUT)/nsync_local.o
+
 $(OUT)/seq.o: seq.c seq.h
-	$(CC) $(COPTS) -c $< -o $@
+	# $(CC) $(COPTS) -c $< -o $@
+	$(CC) $(QFLAGS) $(COPTS) -c $< -o $@
 
 $(OUT)/udp.o: udp.c udp.h
 	$(CC) $(COPTS) -c $< -o $@
@@ -71,6 +84,8 @@ OBJS = \
   $(OUT)/skred-mem.o \
   $(OUT)/util.o \
   $(OUT)/skode.o \
+  $(OUT)/skqueue.o \
+  $(OUT)/nsync_local.o \
   #
 
 $(OUT)/skred.exe : $(OBJS)

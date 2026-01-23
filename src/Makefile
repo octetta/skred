@@ -104,10 +104,10 @@ $(SKRED) : $(OBJS) | $(OUT)
 	# $(CC) $(COPTS) $(OBJS) -o $(OUT)/skred $(LIB)
 
 QFLAGS = -I. \
-       -I./nsync_local/public \
-       -I./nsync_local/internal \
-       -I./nsync_local/platform/gcc \
-       -I./nsync_local/platform/gcc_old
+  -I./nsync_local/public \
+  -I./nsync_local/internal \
+  -I./nsync_local/platform/gcc \
+  -I./nsync_local/platform/gcc_old
 
 $(OUT)/skqueue.o : skqueue.c skqueue.h
 	$(CC) $(COPTS) $(QFLAGS) -c skqueue.c -o $(OUT)/skqueue.o
@@ -147,7 +147,8 @@ sk8r-darwin:
 	lipo -create -output $(OUT)/sk8r-darwin-universal $(OUT)/sk8r-darwin-amd64 $(OUT)/sk8r-darwin-arm64
 	cd sk8r && fyne package -exe ../$(OUT)/sk8r-darwin-universal -os darwin -icon icon.png -name ../$(OUT)/sk8r
 
-win : sk8r-windows midi-sk8-windows sk8-pad-windows skred-windows repl-windows
+# win : sk8r-windows midi-sk8-windows sk8-pad-windows skred-windows repl-windows
+win : skred-windows
 
 skred-windows :
 	mkdir -p $(WINOUT)
