@@ -109,10 +109,10 @@ QFLAGS = -I. \
        -I./nsync_local/platform/gcc \
        -I./nsync_local/platform/gcc_old
 
-$(OUT)/skqueue.o :
+$(OUT)/skqueue.o : skqueue.c skqueue.h
 	$(CC) $(COPTS) $(QFLAGS) -c skqueue.c -o $(OUT)/skqueue.o
 
-$(OUT)/nsync_local.o :
+$(OUT)/nsync_local.o : nsync_local.c
 	$(CC) $(COPTS) $(QFLAGS) -c nsync_local.c -o $(OUT)/nsync_local.o
 
 $(OUT)/bestline.o: bestline.c bestline.h

@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "skqueue.h"
+#include "seq.h"
 
 void queue_init(queue_t *q, int max_size) {
     nsync_mu_init(&q->mu);
@@ -36,7 +37,9 @@ int queue_size(queue_t *q) {
     return s;
 }
 
-void queue_put(queue_t *q, uint64_t timestamp, int tag, void *data) {
+static uint64_t qid = 0;
+
+void queue_put(queue_t *q, uint64_t timestamp, int tag, void *data, int voice, char *what) {
     nsync_mu_lock(&q->mu);
 
     // Check Hard Limit
@@ -69,8 +72,12 @@ void queue_put(queue_t *q, uint64_t timestamp, int tag, void *data) {
         i = parent;
     }
     q->items[i].timestamp = timestamp;
+    q->items[i].id = qid++;
     q->items[i].tag = tag;
     q->items[i].data = data;
+    q->items[i].event.voice = voice;
+    q->items[i].event.state = 1;
+    strcpy(q->items[i].event.what, what);
 
     nsync_mu_unlock(&q->mu);
 }
@@ -130,4 +137,8 @@ bool queue_get_filtered(queue_t *q, uint64_t limit_ts, item_t *out) {
     }
 
     return found;
+}
+
+int queue_foreach(queue_t *q) {
+  return q->capacity;
 }

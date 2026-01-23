@@ -34,25 +34,16 @@ void tempo_set(float m) {
 
 static queue_t seq_q;
 
-void seq(int frame_count, void (*queue_fn)(int voice, char *arg), void (*pattern_fn)(int voice, char *arg)) {
+void seq(int frame_count, void (*event_fn)(int voice, char *arg), void (*pattern_fn)(int voice, char *arg)) {
   // run expired (ready) queued things...
   item_t item;
   uint64_t now = synth_sample_count + frame_count; // not sure about adding frame count here but it's below from before?
   while (queue_get_filtered(&seq_q, now, &item)) {
-    int q = (int)(intptr_t)item.data;
-    if (work_queue[q].state != Q_FREE) queue_fn(work_queue[q].voice, work_queue[q].what);
-    work_queue[q].state = Q_FREE;
-  }
-#if 0
-  // old queue stuff
-  for (int q = 0; q < QUEUE_SIZE; q++) {
-    if ((work_queue[q].state == Q_READY) && (work_queue[q].when <= (synth_sample_count + frame_count))) {
-      work_queue[q].state = Q_USING;
-      queue_fn(work_queue[q].voice, work_queue[q].what);
-      work_queue[q].state = Q_FREE;
+    if (item.event.state) {
+      item.event.state = 0;
+      event_fn(item.event.voice, item.event.what);
     }
   }
-#endif
 
   int advance = 0;
   static double clock_sec = 0.0f;
@@ -100,21 +91,7 @@ void pattern_reset(int p) {
   }
 }
 
-queued_t work_queue[QUEUE_SIZE];
-
-static int free_stack[QUEUE_SIZE];
-static int free_top = -1;
-static nsync_mu pool_mu;
-
-static void pool_init(void) {
-  nsync_mu_init(&pool_mu);
-  for (int i = 0; i < QUEUE_SIZE; i++) {
-    free_stack[++free_top] = i;
-  }
-}
-
 void seq_init(void) {
-  pool_init();
   queue_init(&seq_q, QUEUE_SIZE);
   for (int p = 0; p < PATTERNS_MAX; p++) {
     pattern_reset(p);
@@ -122,41 +99,8 @@ void seq_init(void) {
 }
 
 int queue_item(uint64_t when, char *what, int voice, int tag) {
-  nsync_mu_lock(&pool_mu);
-  if (free_top < 0) {
-    nsync_mu_unlock(&pool_mu);
-    return 0; // pool full... this WRONG since i want to start over-writing older
-  }
-
-  int q = free_stack[free_top--];
-  nsync_mu_unlock(&pool_mu);
-
-  work_queue[q].state = Q_PREP;
-  work_queue[q].when = when;
-  work_queue[q].voice = voice;
-  work_queue[q].tag = tag;
-  strcpy(work_queue[q].what, what);
-  work_queue[q].state = Q_READY;
-
-  queue_put(&seq_q, when, tag, (void*)(intptr_t)q);
-  
+  queue_put(&seq_q, when, tag, NULL, voice, what);
   return 0;
-
-  // old queue
-  int p = -1;
-  for (int q = 0; q < QUEUE_SIZE; q++) {
-    if (work_queue[q].state == Q_FREE) {
-      work_queue[q].state = Q_PREP;
-      work_queue[q].when = when;
-      work_queue[q].voice = voice;
-      work_queue[q].tag = tag;
-      strcpy(work_queue[q].what, what);
-      work_queue[q].state = Q_READY;
-      p = q;
-      break;
-    }
-  }
-  return p;
 }
 
 void seq_modulo_set(int pattern, int m) {
@@ -196,3 +140,17 @@ void seq_state_all(int state) {
   for (int p = 0; p < PATTERNS_MAX; p++) seq_state_set(p, state);
 }
 
+int seq_queued(void) { return seq_q.size; }
+int seq_capacity(void) { return seq_q.capacity; }
+
+int seq_foreach(int (*fn)(int, uint64_t, uint64_t, int, event_t *e, void*), void *user) {
+  int n = seq_q.size;
+  for (int i=0; i<n; i++) {
+    int r = 0;
+    if (fn) {
+      r = fn(i, seq_q.items[i].timestamp, seq_q.items[i].id,
+        seq_q.items[i].tag, &seq_q.items[i].event, user);
+    }
+  }
+  return n;
+}

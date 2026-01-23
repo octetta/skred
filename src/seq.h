@@ -29,7 +29,7 @@ typedef struct {
   char what[QUEUED_MAX];
   int voice;
   int tag;
-} queued_t;
+} event_t;
 
 void seq(int frame_count, void (*queue_fn)(int voice, char *arg), void (*pattern_fn)(int voice, char *arg));
 void seq_init(void);
@@ -56,6 +56,9 @@ extern char seq_pattern[PATTERNS_MAX][SEQ_STEPS_MAX][STEP_MAX];
 extern float tempo_bpm;
 extern float tempo_time_per_step;
 
-extern queued_t work_queue[QUEUE_SIZE];
+int seq_queued(void);
+int seq_capacity(void);
+
+int seq_foreach(int (*fn)(int, uint64_t, uint64_t, int, event_t *e, void*), void *user);
 
 #endif
