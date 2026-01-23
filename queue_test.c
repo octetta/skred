@@ -12,7 +12,7 @@ int main() {
     // 1. PUSH 1000 items with random timestamps
     for (int i = 0; i < 1000; i++) {
         uint64_t ts = rand() % 10000;
-        queue_put(&q, ts, 0, NULL);
+        queue_put(&q, ts, 0, NULL, 0, "");
     }
 
     // 2. PULL and verify order

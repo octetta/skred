@@ -59,6 +59,20 @@ cp "$SRC_REPO"/platform/posix/src/time_rep.c "$DEST_DIR/platform/posix/time_rep.
 find "$SRC_REPO/platform" -name "nsync_semaphore_mach.c" -exec cp {} "$DEST_DIR/platform/mach/sem.c" \;
 find "$SRC_REPO/platform/posix" -name "nsync_semaphore_mutex.c" -exec cp {} "$DEST_DIR/platform/posix/sem_mutex.c" \;
 
+# 5. Platform Files (Win32 additions)
+# Copy the per_thread_waiter for Windows
+cp "$SRC_REPO"/platform/win32/src/per_thread_waiter.c "$DEST_DIR/platform/win32/"
+
+# Copy the Win32 semaphore implementation
+cp "$SRC_REPO"/platform/win32/src/nsync_semaphore_win32.c "$DEST_DIR/platform/win32/sem.c"
+
+# Copy the Win32 time implementation (if it exists in your checkout)
+find "$SRC_REPO/platform/win32" -name "time_rep.c" -exec cp {} "$DEST_DIR/platform/win32/time_rep.c" \;
+
+# NEW: nsync_local.c requires nsync_panic.c which is often in platform/generic
+mkdir -p "$DEST_DIR/platform/generic"
+find "$SRC_REPO" -name "nsync_panic.c" -exec cp {} "$DEST_DIR/platform/generic/" \;
+
 # 6. Atomics
 cp "$SRC_REPO"/platform/gcc/atomic.h "$DEST_DIR/platform/gcc/"
 cp "$SRC_REPO"/platform/gcc_new/atomic.h "$DEST_DIR/platform/gcc_new/"
