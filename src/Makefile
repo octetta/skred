@@ -30,7 +30,7 @@ basic : $(SKRED)
 
 visual : $(SCOPE)
 
-GUI = sk8r-$(TARGET) sk8-pad-$(TARGET) midi-sk8-$(TARGET)
+GUI = sk8r-$(TARGET) sk8-pad-$(TARGET) midi-sk8-$(TARGET) repl-$(TARGET)
 
 gui : $(GUI)
 
@@ -135,6 +135,11 @@ sk8r-linux:
 	cd sk8r && go build -o ../$(OUT)/sk8r-$(TARGET) .
 	# cd sk8r && fyne package -exe ../$(OUT)/sk8r -os linux -tags flatpak -icon icon.png -app-id com.example.app -app-version 0.0.1
 
+repl-linux:
+	mkdir -p $(OUT)
+	cd repl && go build -o ../$(OUT)/repl-$(TARGET) .
+	# cd sk8r && fyne package -exe ../$(OUT)/sk8r -os linux -tags flatpak -icon icon.png -app-id com.example.app -app-version 0.0.1
+
 sk8r-darwin:
 	mkdir -p $(OUT)
 	cd sk8r && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/sk8r-darwin-amd64 .
@@ -157,7 +162,6 @@ repl-windows:
   $(GOWINENV) go build $(GOWINLD) -o skrepl.exe . && \
 	fyne package --os windows --name "skrepl" --icon icon.png --appID com.octetta.skrepl && \
   cp skrepl.exe ../$(WINOUT)
- 
 
 sk8r-windows:
 	mkdir -p $(WINOUT)

@@ -259,12 +259,12 @@ void wire_show(wire_t *w) {
   }
   for (int i = 0; i < WIRE_POINTER_MAX; i++) {
     if (wl[i]) {
-      w->printf(w, "# wl[%d] {.voice=%d .pattern=%d .step=%d. .events=%d}\n",
-        wire_hash(wl[i]),
-        wl[i]->voice,
-        wl[i]->pattern,
-        wl[i]->step,
-        wl[i]->events);
+      w->printf(w, "# wl/%d ", wire_hash(wl[i]));
+      w->printf(w, " .voice=%d", wl[i]->voice);
+      w->printf(w, " .pattern=%d", wl[i]->pattern);
+      w->printf(w, " .step=%d", wl[i]->step);
+      w->printf(w, " .events=%dn", wl[i]->events);
+      w->printf(w, "\n");
     }
   }
 }
@@ -287,13 +287,18 @@ void show_stats(wire_t *w) {
     synth_frames_per_callback, (float)synth_frames_per_callback / (float)MAIN_SAMPLE_RATE * 1000.0f);
   w->printf(w, "# seq frames per callback %d : %gms\n",
     seq_frames_per_callback, (float)seq_frames_per_callback / (float)MAIN_SAMPLE_RATE * 1000.0f);
+  uint64_t now = synth_sample_count;
   for (int i = 0; i < QUEUE_SIZE; i++) {
     if (work_queue[i].state != Q_FREE) {
+      uint64_t then = work_queue[i].when - now;
+      double ms = (double)then / (double)MAIN_SAMPLE_RATE * 1000.0;
+      w->printf(w, "# [%d]", i);
 #ifdef _WIN32
-      w->printf(w, "# [%d] (%d) @%lld {%s} R@%d\n", i, work_queue[i].state, work_queue[i].when, work_queue[i].what, work_queue[i].tag);
+      w->printf(w, " +%lld", then);
 #else
-      w->printf(w, "# [%d] (%d) @%ld {%s} R@%d\n", i, work_queue[i].state, work_queue[i].when, work_queue[i].what, work_queue[i].tag);
+      w->printf(w, " +%gms", ms);
 #endif
+      w->printf(w, " {%s} R@%d\n", work_queue[i].what, work_queue[i].tag);
     }
   }
 }
@@ -965,15 +970,19 @@ int wire_function(skode_t *s, int info) {
       w->verbose = x;
       break;
     case '/s__': {
-        system_show(w);
-        show_threads(w);
-        audio_show(w);
-        w->printf(w, "%s", synth_stats());
-      }
-      break;
-    case '/S__': {
-        show_stats(w);
-        wire_show(w);
+        if (argc == 0) {
+          system_show(w);
+        } else {
+          switch (x) {
+            default:
+            case 0: system_show(w); break;
+            case 1: show_threads(w); break;
+            case 2: audio_show(w); break;
+            case 3: w->printf(w, "%s", synth_stats()); break;
+            case 4: show_stats(w); break;
+            case 5: wire_show(w); break;
+          }
+        }
       }
       break;
     case '/l__': if (argc) { sk_load(w, voice, x); } break;
@@ -1059,10 +1068,12 @@ int wire_function(skode_t *s, int info) {
 
 int wire_defer(skode_t *s, int info) {
   wire_t *w = (wire_t*)skode_user(s);
-  if (w->defer_sample_time == 0) w->defer_sample_time = synth_sample_count;
-  uint64_t dst = w->defer_sample_time;
   char mode = skode_defer_mode(s);
   double t = skode_defer_num(s);
+  if (w->defer_sample_time == 0) {
+    w->defer_sample_time = synth_sample_count;
+  }
+  uint64_t dst = w->defer_sample_time;
   if (mode == '+') t *= (tempo_time_per_step * 4.0f);
   t += w->defer_last;
   uint64_t qt = (uint64_t)(t * (float)MAIN_SAMPLE_RATE) + dst;

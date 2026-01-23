@@ -13,8 +13,8 @@ enum {
   SEQ_PAUSED = 2,
 };
 
-#define QUEUED_MAX (1024)
-#define QUEUE_SIZE (1024)
+#define QUEUED_MAX (2048)
+#define QUEUE_SIZE (2048)
 
 enum {
   Q_FREE = 0,

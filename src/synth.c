@@ -468,7 +468,7 @@ typedef struct {
   int frames;
 } sben_t;
 
-#define BENLEN (16)
+#define BENLEN (4)
 
 enum { BEN_0, BEN_A, BEN_B, BEN_D };
 
@@ -492,14 +492,9 @@ char *synth_stats(void) {
   int n = 0;
   for (int i = 0; i < BENLEN; i++) {
     if (bench[i].state != BEN_B) continue;
-    double maxcb = (double)bench[i].frames / (double)MAIN_SAMPLE_RATE * (double)S_TO_MS;
+    //double maxcb = (double)bench[i].frames / (double)MAIN_SAMPLE_RATE * (double)S_TO_MS;
     double dms = ts_diff_ns(&bench[i].a, &bench[i].b) / (double)NS_TO_MS;
-    n = sprintf(ptr,
-      "# %d %d %gms %gms\n",
-      bench[i].order,
-      bench[i].frames,
-      dms,
-      maxcb);
+    n = sprintf(ptr, "# @%d %gms\n", bench[i].order, dms);
     ptr += n;
     bench[i].state = BEN_0;
   }
