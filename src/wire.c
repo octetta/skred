@@ -12,6 +12,7 @@
 int wire_puts(wire_t *w, const char *s) {
   //puts("PUTS");
   if (!w || w->log_enable == 0) return 0;
+  if (w->log_len + strlen(s) >= WLOGMAX) return 0;
   strncat(w->log, s, w->log_max);
   strncat(w->log, "\n", w->log_max);
   w->log_len = strlen(w->log);
@@ -20,8 +21,9 @@ int wire_puts(wire_t *w, const char *s) {
 
 int wire_printf(wire_t *w, const char *fmt, ...) {
   if (!w || w->log_enable == 0) return 0;
+  if (w->log_len + strlen(fmt) >= WLOGMAX) return 0;
   //puts("PRINTF");
-  char buf[4096];
+  char buf[WLOGMAX];
   va_list ap;
   va_start(ap, fmt);
   int len = vsnprintf(buf, sizeof(buf), fmt, ap);
@@ -285,11 +287,11 @@ int show_stats_cb(int n, uint64_t timestamp, uint64_t id, int tag, const event_t
   uint64_t then = timestamp - now;
   double ms = (double)then / (double)MAIN_SAMPLE_RATE * 1000.0;
   wire_t *w = user;
-  w->printf(w, "# [%d] +%g ms (%ld/%d) %d {%s}\n",
+  w->printf(w, "# (%d,%ld,%d) +%g ms %d {%s}\n",
     n,
-    ms,
     id,
     tag,
+    ms,
     e->voice,
     e->what
   );
@@ -1179,7 +1181,7 @@ void wire_init(wire_t *w) {
   w->puts = wire_puts;
   w->printf = wire_printf;
   w->log_enable = 0;
-  w->log_max = 4096;
+  w->log_max = WLOGMAX;
   w->log_len = 0;
   w->log[0] = '\0';
 }

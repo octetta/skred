@@ -148,31 +148,15 @@ typedef struct {
 int seq_foreach_cb(const item_t *item, void *user) {
   bridge_t *b = (bridge_t *)user;
   b->fn(666, item->timestamp, item->id, item->tag, &item->event, b->user);
-  printf("%ld %ld %d %s\n",
-    item->timestamp, item->id, item->tag,
-    item->event.what);
   return 0;
 }
 
 int seq_foreach(int (*fn)(int, uint64_t, uint64_t, int, const event_t *e, void*), void *user) {
-#if 1
   bridge_t b;
   b.fn = fn;
   b.user = user;
   queue_foreach(&seq_q, seq_foreach_cb, &b);
   return 0;
-#else
-  bridge_t a;
-  int n = seq_q.size;
-  for (int i=0; i<n; i++) {
-    int r = 0;
-    if (fn) {
-      r = fn(i, seq_q.items[i].timestamp, seq_q.items[i].id,
-        seq_q.items[i].tag, &seq_q.items[i].event, user);
-    }
-  }
-  return n;
-#endif
 }
 
 bool kill_by_tag(const item_t *item, void *user) {
