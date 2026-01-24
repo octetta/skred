@@ -194,3 +194,7 @@ int seq_kill_by_tag(int tag) {
   return 0;
 }
 
+int seq_kill_all(void) {
+  queue_clear(&seq_q);
+  return 0;
+}

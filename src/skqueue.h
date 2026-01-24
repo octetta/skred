@@ -58,4 +58,6 @@ void queue_foreach(queue_t *q, queue_foreach_cb callback, void *userdata);
 typedef bool (*queue_cancel_cb)(const item_t *item, void *userdata);
 int queue_cancel(queue_t *q, queue_cancel_cb should_cancel, void *userdata);
 
+void queue_clear(queue_t *q);
+
 #endif

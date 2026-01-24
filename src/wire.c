@@ -837,6 +837,9 @@ int wire_function(skode_t *s, int info) {
         seq_kill_by_tag(tag);
       }
       break;
+    case 'R!!_':
+      seq_kill_all();
+      break;
     case 'R\'__': if (argc > 1) {
         uint64_t qt = synth_sample_count;
         double t = (tempo_time_per_step * 4.0f);

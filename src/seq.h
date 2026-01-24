@@ -58,4 +58,6 @@ int seq_kill_by_tag(int tag);
 
 char *seq_stats(void);
 
+int seq_kill_all(void);
+
 #endif

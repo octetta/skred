@@ -320,3 +320,19 @@ int queue_cancel(queue_t *q, queue_cancel_cb should_cancel, void *userdata) {
     
     return cancelled;
 }
+
+// Blocking clear - resets queue to empty state
+void queue_clear(queue_t *q) {
+    ring_buffer_t *rb = &q->incoming;
+    priority_queue_t *pq = &q->sorted;
+    
+    // Reset heap
+    pq->size = 0;
+    
+    // Reset ring buffer - set read index to match write index
+    int write = atomic_load_int(&rb->write_idx);
+    atomic_store_int(&rb->read_idx, write);
+    
+    // Memory barrier to ensure all changes are visible
+    MEMORY_BARRIER();
+}
