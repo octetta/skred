@@ -280,12 +280,11 @@ void system_show(wire_t *w) {
   w->printf(w, "# udp_port %d\n", udp_info());
 }
 
-int show_stats_cb(int n, uint64_t timestamp, uint64_t id, int tag, event_t *e, void *user) {
+int show_stats_cb(int n, uint64_t timestamp, uint64_t id, int tag, const event_t *e, void *user) {
   uint64_t now = synth_sample_count;
   uint64_t then = timestamp - now;
   double ms = (double)then / (double)MAIN_SAMPLE_RATE * 1000.0;
   wire_t *w = user;
-  if (e->state == 0) return 0;
   w->printf(w, "# [%d] +%g ms (%ld/%d) %d {%s}\n",
     n,
     ms,
@@ -297,13 +296,6 @@ int show_stats_cb(int n, uint64_t timestamp, uint64_t id, int tag, event_t *e, v
   return 0;
 }
 
-int kill_event_cb(int n, uint64_t timestamp, uint64_t id, int tag, event_t *e, void *user) {
-  int *p = (int *)user;
-  int t = *p;
-  if (e->state && tag == t) e->state = 0;
-  return 0;
-}
-
 void show_stats(wire_t *w) {
   w->printf(w, "# rec_state : %d rec_ptr %ld\n", rec_state, rec_ptr);
   w->printf(w, "# synth frames per callback %d : %gms\n",
@@ -312,22 +304,6 @@ void show_stats(wire_t *w) {
     seq_frames_per_callback, (float)seq_frames_per_callback / (float)MAIN_SAMPLE_RATE * 1000.0f);
   w->printf(w, "# queue_size %d\n", seq_queued());
   seq_foreach(show_stats_cb, w);
-#if 0
-  uint64_t now = synth_sample_count;
-  for (int i = 0; i < QUEUE_SIZE; i++) {
-    if (work_queue[i].state != Q_FREE) {
-      uint64_t then = work_queue[i].when - now;
-      double ms = (double)then / (double)MAIN_SAMPLE_RATE * 1000.0;
-      w->printf(w, "# [%d]", i);
-#ifdef _WIN32
-      w->printf(w, " +%lld", then);
-#else
-      w->printf(w, " +%gms", ms);
-#endif
-      w->printf(w, " {%s} R@%d\n", work_queue[i].what, work_queue[i].tag);
-    }
-  }
-#endif
 }
 
 #ifdef _WIN32
@@ -856,7 +832,7 @@ int wire_function(skode_t *s, int info) {
     case 'R!__':
       if (argc) {
         int tag = x;
-        seq_foreach(kill_event_cb, &tag);
+        seq_kill_by_tag(tag);
       }
       break;
     case 'R\'__': if (argc > 1) {

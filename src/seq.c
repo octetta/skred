@@ -39,10 +39,7 @@ void seq(int frame_count, void (*event_fn)(int voice, char *arg), void (*pattern
   item_t item;
   uint64_t now = synth_sample_count + frame_count; // not sure about adding frame count here but it's below from before?
   while (queue_get_filtered(&seq_q, now, &item)) {
-    if (item.event.state) {
-      item.event.state = 0;
-      event_fn(item.event.voice, item.event.what);
-    }
+    event_fn(item.event.voice, item.event.what);
   }
 
   int advance = 0;
@@ -140,10 +137,32 @@ void seq_state_all(int state) {
   for (int p = 0; p < PATTERNS_MAX; p++) seq_state_set(p, state);
 }
 
-int seq_queued(void) { return seq_q.size; }
-int seq_capacity(void) { return seq_q.capacity; }
+int seq_queued(void) { return queue_size(&seq_q); }
+int seq_capacity(void) { return seq_q.max_size; }
 
-int seq_foreach(int (*fn)(int, uint64_t, uint64_t, int, event_t *e, void*), void *user) {
+typedef struct {
+  const int (*fn)(int, uint64_t, uint64_t, int, const event_t *e, void*);
+  void *user;
+} bridge_t;
+
+int seq_foreach_cb(const item_t *item, void *user) {
+  bridge_t *b = (bridge_t *)user;
+  b->fn(666, item->timestamp, item->id, item->tag, &item->event, b->user);
+  printf("%ld %ld %d %s\n",
+    item->timestamp, item->id, item->tag,
+    item->event.what);
+  return 0;
+}
+
+int seq_foreach(int (*fn)(int, uint64_t, uint64_t, int, const event_t *e, void*), void *user) {
+#if 1
+  bridge_t b;
+  b.fn = fn;
+  b.user = user;
+  queue_foreach(&seq_q, seq_foreach_cb, &b);
+  return 0;
+#else
+  bridge_t a;
   int n = seq_q.size;
   for (int i=0; i<n; i++) {
     int r = 0;
@@ -153,4 +172,16 @@ int seq_foreach(int (*fn)(int, uint64_t, uint64_t, int, event_t *e, void*), void
     }
   }
   return n;
+#endif
+}
+
+bool kill_by_tag(const item_t *item, void *user) {
+  int *tag = (int *)user;
+  if (item->tag == *tag) return true;
+  return false;
+}
+
+int seq_kill_by_tag(int tag) {
+  queue_cancel(&seq_q, kill_by_tag, &tag);
+  return 0;
 }

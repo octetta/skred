@@ -66,7 +66,7 @@ $(OUT)/synth.o: synth.c synth.h synth-types.h synth.def
 	$(CC) $(COPTS) -c $< -o $@
 
 $(OUT)/seq.o: seq.c seq.h
-	$(CC) $(QFLAGS) $(COPTS) -c $< -o $@
+	$(CC) $(COPTS) -c $< -o $@
 
 $(OUT)/udp.o: udp.c udp.h
 	$(CC) $(COPTS) -c $< -o $@
@@ -96,24 +96,14 @@ OBJS = \
 	$(OUT)/util.o \
   $(OUT)/bestline.o \
   $(OUT)/skqueue.o \
-  $(OUT)/nsync_local.o \
 	#
 
 $(SKRED) : $(OBJS) | $(OUT)
 	$(CC) $(COPTS) $(DOPTS) $(OBJS) -o $@ $(LIB)
 	# $(CC) $(COPTS) $(OBJS) -o $(OUT)/skred $(LIB)
 
-QFLAGS = -I. \
-  -I./nsync_local/public \
-  -I./nsync_local/internal \
-  -I./nsync_local/platform/gcc \
-  -I./nsync_local/platform/gcc_old
-
 $(OUT)/skqueue.o : skqueue.c skqueue.h
-	$(CC) $(COPTS) $(QFLAGS) -c skqueue.c -o $(OUT)/skqueue.o
-
-$(OUT)/nsync_local.o : nsync_local.c
-	$(CC) $(COPTS) $(QFLAGS) -c nsync_local.c -o $(OUT)/nsync_local.o
+	$(CC) $(COPTS) -c skqueue.c -o $(OUT)/skqueue.o
 
 $(OUT)/bestline.o: bestline.c bestline.h
 	$(CC) -c $(COPTS) $< -o $@
