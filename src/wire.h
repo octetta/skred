@@ -44,7 +44,7 @@ typedef struct wire_s {
   int (*puts)(struct wire_s *w, const char *s);
   int (*printf)(struct wire_s *w, const char *fmt, ...);
   int log_enable;
-  char log[WLOGMAX];
+  char log[WLOGMAX + 1024];
   int log_max;
   int log_len;
   int flag;

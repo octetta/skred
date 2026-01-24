@@ -23,7 +23,7 @@ int wire_printf(wire_t *w, const char *fmt, ...) {
   if (!w || w->log_enable == 0) return 0;
   if (w->log_len + strlen(fmt) >= WLOGMAX) return 0;
   //puts("PRINTF");
-  char buf[WLOGMAX];
+  char buf[WLOGMAX + 1024];
   va_list ap;
   va_start(ap, fmt);
   int len = vsnprintf(buf, sizeof(buf), fmt, ap);
@@ -982,6 +982,7 @@ int wire_function(skode_t *s, int info) {
             case 3: w->printf(w, "%s", synth_stats()); break;
             case 4: show_stats(w); break;
             case 5: wire_show(w); break;
+            case 6: w->printf(w, "%s", seq_stats()); break;
           }
         }
       }

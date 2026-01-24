@@ -74,7 +74,7 @@ $(OUT)/udp.o: udp.c udp.h
 $(OUT)/skode.o: skode.c skode.h
 	$(CC) $(COPTS) -c $< -o $@
 
-$(OUT)/wire.o: wire.c wire.h synth.def skode.h $(OUT)/skode.o
+$(OUT)/wire.o: wire.c wire.h synth.def skode.h synth.c seq.c $(OUT)/skode.o
 	$(CC) $(COPTS) -Wno-multichar -c $< -o $@
 
 $(OUT)/skred.o: skred.c skred.h synth.def

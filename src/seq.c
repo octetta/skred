@@ -32,9 +32,32 @@ void tempo_set(float m) {
   tempo_time_per_step = time_per_step;
 }
 
+#include "util.h"
+
+static sben_t bench[BENLEN] = {};
+static int benchp = 0;
+static int64_t bencho = 0;
+static char _stats[65536] = "";
+
+char *seq_stats(void) {
+  char *ptr = _stats;
+  *ptr = '\0';
+  int n = 0;
+  for (int i = 0; i < BENLEN; i++) {
+    if (bench[i].state != BEN_B) continue;
+    //double maxcb = (double)bench[i].frames / (double)MAIN_SAMPLE_RATE * (double)S_TO_MS;
+    double dms = ts_diff_ns(&bench[i].a, &bench[i].b) / (double)NS_TO_MS;
+    n = sprintf(ptr, "# @%d %gms\n", bench[i].order, dms);
+    ptr += n;
+    bench[i].state = BEN_0;
+  }
+  return _stats;
+}
+
 static queue_t seq_q;
 
 void seq(int frame_count, void (*event_fn)(int voice, char *arg), void (*pattern_fn)(int voice, char *arg)) {
+  BEN_MARK_A(bench, benchp, frame_count, bencho);
   // run expired (ready) queued things...
   item_t item;
   uint64_t now = synth_sample_count + frame_count; // not sure about adding frame count here but it's below from before?
@@ -75,6 +98,7 @@ void seq(int frame_count, void (*event_fn)(int voice, char *arg), void (*pattern
       }
     }
   }
+  BEN_MARK_B(bench, benchp, bencho);
 }
 
 void pattern_reset(int p) {
@@ -169,3 +193,4 @@ int seq_kill_by_tag(int tag) {
   queue_cancel(&seq_q, kill_by_tag, &tag);
   return 0;
 }
+

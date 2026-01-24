@@ -56,4 +56,6 @@ int seq_foreach(int (*fn)(int, uint64_t, uint64_t, int, const event_t *e, void*)
 
 int seq_kill_by_tag(int tag);
 
+char *seq_stats(void);
+
 #endif
