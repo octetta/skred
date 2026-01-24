@@ -174,7 +174,7 @@ int seq_queued(void) { return queue_size(&seq_q); }
 int seq_capacity(void) { return seq_q.max_size; }
 
 typedef struct {
-  const int (*fn)(int, uint64_t, uint64_t, int, const event_t *e, void*);
+  int (*fn)(int, uint64_t, uint64_t, int, const event_t *e, void*);
   void *user;
 } bridge_t;
 
