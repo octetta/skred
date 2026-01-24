@@ -106,6 +106,22 @@ $(SKRED) : $(OBJS) | $(OUT)
 	$(CC) $(COPTS) $(DOPTS) $(OBJS) -o $@ $(LIB)
 	# $(CC) $(COPTS) $(OBJS) -o $(OUT)/skred $(LIB)
 
+mini-skred : mini-skred.c $(OBJS)
+	$(CC) \
+    -DMINI \
+    -Wno-multichar \
+    $(COPTS) \
+    $(OUT)/miniwav.o \
+    $(OUT)/amysamples.o \
+    $(OUT)/retro.o \
+    $(OUT)/synth.o \
+    $(OUT)/seq.o \
+    $(OUT)/skode.o \
+    $(OUT)/miniaudio.o \
+    $(OUT)/util.o \
+    $(OUT)/skqueue.o \
+    -o mini-skred mini-skred.c wire.c $(LIB)
+
 $(OUT)/skqueue.o : skqueue.c skqueue.h
 	$(CC) $(COPTS) -c skqueue.c -o $(OUT)/skqueue.o
 

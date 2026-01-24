@@ -1,6 +1,8 @@
 #include "skred.h"
 #include "wire.h"
+#ifndef MINI
 #include "seq.h"
+#endif
 #include "miniwav.h"
 
 #include "synth-types.h"
@@ -279,9 +281,12 @@ void system_show(wire_t *w) {
     w = &wprime;
     wire_init(w);
   }
+#ifndef MINI
   w->printf(w, "# udp_port %d\n", udp_info());
+#endif
 }
 
+#ifndef MINI
 int show_stats_cb(int n, uint64_t timestamp, uint64_t id, int tag, const event_t *e, void *user) {
   uint64_t now = SAMPLE_COUNT_GET();
   uint64_t then = timestamp - now;
@@ -308,6 +313,7 @@ void show_stats(wire_t *w) {
   w->printf(w, "# queue_size %d\n", seq_queued());
   seq_foreach(show_stats_cb, w);
 }
+#endif
 
 #ifdef _WIN32
 #include <windows.h>
@@ -533,6 +539,7 @@ int wave_load(wire_t *w, int file_num, int wave_index, int ch, int normalize) {
 
 // this is a mess i need to clean up
 
+#ifndef MINI
 #include "scope-shared.h"
 extern int scope_enable;
 extern scope_buffer_t *scope;
@@ -554,6 +561,7 @@ void pattern_show(wire_t *w, int pattern_pointer) {
 }
 
 void tempo_set(float m);
+#endif
 
 void downsample_block_average_min_max(
     const float *source, int source_len, float *dest, int dest_len,
@@ -652,10 +660,12 @@ int wavetable_show(wire_t *w, int n) {
     }
     w->printf(w, " '%s'", wave_name[n]);
     w->puts(w, "");
+#ifndef MINI
     if (scope_enable) {
       downsample_block_average_min_max(table, size, scope->wave_data, SCOPE_WAVE_WIDTH, scope->wave_min, scope->wave_max);
       scope->wave_len = SCOPE_WAVE_WIDTH;
     }
+#endif
   } else {
     w->printf(w, "# w%d nil\n", n);
   }
@@ -805,7 +815,10 @@ int wire_function(skode_t *s, int info) {
       }
       break;
     case 'm___': if (argc) { wave_mute(voice, x); } break;
-    case 'M___': if (argc) { tempo_set(arg[0]); } break;
+#ifndef MINI
+    case 'M___': if (argc) { tempo_set(arg[0]); }
+      break;
+#endif
     case 'n___': if (argc) {
         float note = arg[0];
         if (isnan(note)) note = voice_last_midi_note[voice];
@@ -831,6 +844,7 @@ int wire_function(skode_t *s, int info) {
       break;
     case 'q___': if (argc) { wave_quant(voice, x); } break;
     case 'Q___': if (argc) { mmf_set_res(voice, arg[0]); } break;
+#ifndef MINI
     case 'r___': if (argc) { if (rec_state == 0) voice_record[voice] = x; } break;
     case 'R!__':
       if (argc) {
@@ -864,6 +878,7 @@ int wire_function(skode_t *s, int info) {
           qt += dt;
         }
       } break;
+#endif
     case 's___': if (argc) {
         if (arg[0] <= 0) {
           voice_smoother_enable[voice] = 0;
@@ -890,12 +905,16 @@ int wire_function(skode_t *s, int info) {
     case 'V___': if (argc) volume_set(arg[0]); break;
     case 'w___': if (argc) {
         wave_set(voice, x);
+#ifndef MINI
         if (scope_enable) sprintf(scope->wave_text, "w%d", x);
+#endif
       }
       break;
     case 'W___': if (argc) {
         wavetable_show(w,x);
+#ifndef MINI
         if (scope_enable) sprintf(scope->wave_text, "w%d", x);
+#endif
       } else if (argc == 0) {
         int c = 0;
         for (int i=0; i<WAVE_TABLE_MAX; i++) {
@@ -904,9 +923,12 @@ int wire_function(skode_t *s, int info) {
             c++;
           }
         }
+#ifndef MINI
         if (scope_enable) sprintf(scope->wave_text, "%d waves loaded", c);
+#endif
       }
       break;
+#ifndef MINI
     case 'x___': if (argc) {
         if (arg[0] == NAN || x < 0) {
           w->step++;
@@ -935,6 +957,7 @@ int wire_function(skode_t *s, int info) {
         for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(w, p);
       }
       break;
+#endif
     case '?___': voice_show(w, voice, ' ', w->verbose); break;
     case '\\___': voice_show(w, voice, ' ', 1); break;
     case '??__': voice_show_all(w, voice, w->verbose); break;
@@ -981,12 +1004,14 @@ int wire_function(skode_t *s, int info) {
           switch (x) {
             default:
             case 0: system_show(w); break;
-            case 1: show_threads(w); break;
             case 2: audio_show(w); break;
             case 3: w->printf(w, "%s", synth_stats()); break;
-            case 4: show_stats(w); break;
             case 5: wire_show(w); break;
+#ifndef MINI
+            case 1: show_threads(w); break;
+            case 4: show_stats(w); break;
             case 6: w->printf(w, "%s", seq_stats()); break;
+#endif
           }
         }
       }
@@ -1007,6 +1032,7 @@ int wire_function(skode_t *s, int info) {
         if (argc) wave_load(w, file_num, wave_slot, ch, 1);
       }
       break;
+#ifndef MINI
     case '<___': if (arg) {
         rec_state = 0;
         float max_sec = arg[0];
@@ -1042,11 +1068,14 @@ int wire_function(skode_t *s, int info) {
         }
       }
       break;
+#endif
     case '>___': if (arg) voice_copy(voice, x); break;
     case '/___': wave_default(voice); break;
+#ifndef MINI
     case '%___': if (arg) seq_modulo_set(w->pattern, x); break;
     case '!___': if (arg) seq_mute_set(w->pattern, x, 0); break;
     case '@___': if (arg) seq_mute_set(w->pattern, x, 1); break;
+#endif
     case '=___':
       if (argc>1) skode_set_local(w->sk, x, arg[1]);
       else if (argc == 1) {
@@ -1073,6 +1102,7 @@ int wire_function(skode_t *s, int info) {
 }
 
 int wire_defer(skode_t *s, int info) {
+#ifndef MINI
   wire_t *w = (wire_t*)skode_user(s);
   char mode = skode_defer_mode(s);
   double t = skode_defer_num(s);
@@ -1096,6 +1126,7 @@ int wire_defer(skode_t *s, int info) {
   }
   queue_item(qt, skode_defer_string(s), w->voice, -1);
   w->defer_last += skode_defer_num(s);
+#endif
   return 0;
 }
 

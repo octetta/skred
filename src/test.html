@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head><title>Miniaudio WASM Test</title></head>
+<body>
+    <h1>Miniaudio Sine Test</h1>
+    <button id="playBtn" style="padding: 20px;">CLICK TO START AUDIO</button>
+    <p>Check the Browser Console (F12) for output.</p>
+
+    <script>
+        // Define Module BEFORE loading the script
+        var Module = {
+            print: function(text) { console.log('STDOUT: ' + text); },
+            printErr: function(text) { console.error('STDERR: ' + text); },
+            onRuntimeInitialized: function() {
+                console.log('WASM Module Ready');
+            }
+        };
+
+        document.getElementById('playBtn').onclick = function() {
+            // This is the "User Gesture" required by Firefox/Chrome
+            console.log('Button clicked, calling start_audio...');
+            Module.ccall('start_audio', null, [], []);
+        };
+    </script>
+    <script src="index.js"></script>
+</body>
+</html>

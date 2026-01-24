@@ -8,6 +8,8 @@
 #endif
 
 void util_set_thread_name(char *s) {
+#ifndef __EMSCRIPTEN__
+
 #ifdef _WIN32
   wchar_t name[64];
   swprintf(name, sizeof(name), L"%s", s);
@@ -18,6 +20,8 @@ void util_set_thread_name(char *s) {
 #else
   pthread_setname_np(pthread_self(), s);
 #endif
+#endif
+
 #endif
 }
 
