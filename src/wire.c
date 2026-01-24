@@ -283,14 +283,15 @@ void system_show(wire_t *w) {
 }
 
 int show_stats_cb(int n, uint64_t timestamp, uint64_t id, int tag, const event_t *e, void *user) {
-  uint64_t now = synth_sample_count;
+  uint64_t now = SAMPLE_COUNT_GET();
   uint64_t then = timestamp - now;
   double ms = (double)then / (double)MAIN_SAMPLE_RATE * 1000.0;
   wire_t *w = user;
-  w->printf(w, "# (%d,%ld,%d) +%g ms %d {%s}\n",
+  w->printf(w, "# (%d,%ld,%d) %ld +%g ms %d {%s}\n",
     n,
     id,
     tag,
+    timestamp,
     ms,
     e->voice,
     e->what
@@ -841,7 +842,7 @@ int wire_function(skode_t *s, int info) {
       seq_kill_all();
       break;
     case 'R\'__': if (argc > 1) {
-        uint64_t qt = synth_sample_count;
+        uint64_t qt = SAMPLE_COUNT_GET();
         double t = (tempo_time_per_step * 4.0f);
         double fdt = t * arg[1] * (float)MAIN_SAMPLE_RATE;
         uint64_t dt = (uint64_t)fdt;
@@ -853,7 +854,7 @@ int wire_function(skode_t *s, int info) {
         }
       } break;
     case 'R___': if (argc > 1) {
-        uint64_t qt = synth_sample_count;
+        uint64_t qt = SAMPLE_COUNT_GET();
         double fdt = arg[1] * (float)MAIN_SAMPLE_RATE;
         uint64_t dt = (uint64_t)fdt;
         int tag = 0;
@@ -1076,7 +1077,7 @@ int wire_defer(skode_t *s, int info) {
   char mode = skode_defer_mode(s);
   double t = skode_defer_num(s);
   if (w->defer_sample_time == 0) {
-    w->defer_sample_time = synth_sample_count;
+    w->defer_sample_time = SAMPLE_COUNT_GET();
   }
   uint64_t dst = w->defer_sample_time;
   if (mode == '+') t *= (tempo_time_per_step * 4.0f);
@@ -1159,9 +1160,9 @@ int audio_show(wire_t *w) {
   for (int i = 0; i < VOICE_MAX; i++) if (voice_amp[i] != 0) active++;
   w->printf(w, "# synth active voice count %d\n", active);
 #ifdef _WIN32
-  w->printf(w, "# synth sample count %lld\n", synth_sample_count);
+  w->printf(w, "# synth sample count %lld\n", SAMPLE_COUNT_GET());
 #else
-  w->printf(w, "# synth sample count %ld\n", synth_sample_count);
+  w->printf(w, "# synth sample count %ld\n", SAMPLE_COUNT_GET());
 #endif
   return 0;
 }

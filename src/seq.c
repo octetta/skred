@@ -60,9 +60,18 @@ void seq(int frame_count, void (*event_fn)(int voice, char *arg), void (*pattern
   BEN_MARK_A(bench, benchp, frame_count, bencho);
   // run expired (ready) queued things...
   item_t item;
-  uint64_t now = synth_sample_count + frame_count; // not sure about adding frame count here but it's below from before?
-  while (queue_get_filtered(&seq_q, now, &item)) {
-    event_fn(item.event.voice, item.event.what);
+  uint64_t now = SAMPLE_COUNT_GET(); // + frame_count; // not sure about adding frame count here but it's below from before?
+  static uint64_t last_ts = 0;
+  while (1) {
+    if (queue_get_filtered(&seq_q, now, &item)) {
+      if (item.timestamp < last_ts) {
+        printf("OUT OF ORDER\n");
+      }
+      last_ts = item.timestamp;
+      event_fn(item.event.voice, item.event.what);
+    } else {
+      break;
+    }
   }
 
   int advance = 0;

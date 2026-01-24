@@ -34,6 +34,10 @@ GUI = sk8r-$(TARGET) sk8-pad-$(TARGET) midi-sk8-$(TARGET) repl-$(TARGET)
 
 gui : $(GUI)
 
+test :
+	gcc -pthread -o test_queue test_queue.c skqueue.c -I.
+	gcc -pthread -o test_heap test_heap.c skqueue.c -I.
+
 $(OUT)/util.o : util.c
 	$(CC) $(COPTS) -c $< -o $@
 

@@ -40,6 +40,10 @@
         InterlockedExchange64((LONGLONG*)ptr, val);
     }
     
+    static inline uint64_t atomic_load_uint64(atomic_uint64_t *ptr) {
+        return (uint64_t)InterlockedOr64((LONGLONG*)ptr, 0);
+    }
+    
 #else
     /* GCC/Clang atomics (macOS, Linux) */
     typedef volatile int atomic_int_t;
@@ -69,6 +73,10 @@
     static inline void atomic_store_uint64(atomic_uint64_t *ptr, uint64_t val) {
         __atomic_store_n(ptr, val, __ATOMIC_RELEASE);
     }
+    
+    static inline uint64_t atomic_load_uint64(atomic_uint64_t *ptr) {
+        return __atomic_load_n(ptr, __ATOMIC_ACQUIRE);
+    }
 #endif
 
 /* Memory barrier */
@@ -76,6 +84,46 @@
     #define MEMORY_BARRIER() MemoryBarrier()
 #else
     #define MEMORY_BARRIER() __atomic_thread_fence(__ATOMIC_SEQ_CST)
+#endif
+
+/* Simple mutex for non-critical operations */
+#if defined(_WIN32) || defined(_WIN64)
+    typedef CRITICAL_SECTION simple_mutex_t;
+    
+    static inline void simple_mutex_init(simple_mutex_t *m) {
+        InitializeCriticalSection(m);
+    }
+    
+    static inline void simple_mutex_lock(simple_mutex_t *m) {
+        EnterCriticalSection(m);
+    }
+    
+    static inline void simple_mutex_unlock(simple_mutex_t *m) {
+        LeaveCriticalSection(m);
+    }
+    
+    static inline void simple_mutex_destroy(simple_mutex_t *m) {
+        DeleteCriticalSection(m);
+    }
+#else
+    #include <pthread.h>
+    typedef pthread_mutex_t simple_mutex_t;
+    
+    static inline void simple_mutex_init(simple_mutex_t *m) {
+        pthread_mutex_init(m, NULL);
+    }
+    
+    static inline void simple_mutex_lock(simple_mutex_t *m) {
+        pthread_mutex_lock(m);
+    }
+    
+    static inline void simple_mutex_unlock(simple_mutex_t *m) {
+        pthread_mutex_unlock(m);
+    }
+    
+    static inline void simple_mutex_destroy(simple_mutex_t *m) {
+        pthread_mutex_destroy(m);
+    }
 #endif
 
 #endif /* PORTABLE_ATOMIC_H */

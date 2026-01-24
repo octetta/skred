@@ -17,7 +17,7 @@ enum {
 #define QUEUE_SIZE (2048) // the actual queue max depth
 
 typedef struct {
-  //int state;
+  int state;
   //uint64_t when;
   char what[QUEUED_MAX];
   int voice;
