@@ -120,18 +120,20 @@ bool queue_put(queue_t *q, uint64_t timestamp, int tag, void *data, int voice, c
     }
 }
 
-// Simpler approach: Just use the ring buffer, sort on demand
+// Simpler approach: Always check ring buffer before popping from heap
 bool queue_get_filtered(queue_t *q, uint64_t limit_ts, item_t *out) {
     ring_buffer_t *rb = &q->incoming;
     priority_queue_t *pq = &q->sorted;
     
-    // Transfer ALL items from ring to heap if heap is empty
-    if (pq->size == 0) {
-        int read = atomic_load_int(&rb->read_idx);
-        int write = atomic_load_int(&rb->write_idx);
-        int available = write - read;
-        if (available < 0) available = 0;
-        if (available > rb->capacity) available = rb->capacity;
+    // Always transfer any available items from ring to heap
+    int read = atomic_load_int(&rb->read_idx);
+    int write = atomic_load_int(&rb->write_idx);
+    int available = write - read;
+    if (available < 0) available = 0;
+    if (available > rb->capacity) available = rb->capacity;
+    
+    if (available > 0) {
+        int old_size = pq->size;
         
         // Copy all non-cancelled items to heap
         for (int i = 0; i < available && pq->size < pq->capacity; i++) {
@@ -149,29 +151,27 @@ bool queue_get_filtered(queue_t *q, uint64_t limit_ts, item_t *out) {
         // Update read pointer
         atomic_store_int(&rb->read_idx, read + available);
         
-        // Now build the heap using standard algorithm
-        for (int i = (pq->size / 2) - 1; i >= 0; i--) {
-            // Sift down from position i
-            int idx = i;
-            item_t temp = pq->heap[idx];
-            
-            while (2 * idx + 1 < pq->size) {
-                int child = 2 * idx + 1;
+        // Re-heapify if we added new items
+        if (pq->size > old_size) {
+            for (int i = (pq->size / 2) - 1; i >= 0; i--) {
+                int idx = i;
+                item_t temp = pq->heap[idx];
                 
-                // Pick smaller child
-                if (child + 1 < pq->size && pq->heap[child + 1].timestamp < pq->heap[child].timestamp) {
-                    child++;
+                while (2 * idx + 1 < pq->size) {
+                    int child = 2 * idx + 1;
+                    
+                    if (child + 1 < pq->size && pq->heap[child + 1].timestamp < pq->heap[child].timestamp) {
+                        child++;
+                    }
+                    
+                    if (temp.timestamp <= pq->heap[child].timestamp) break;
+                    
+                    pq->heap[idx] = pq->heap[child];
+                    idx = child;
                 }
                 
-                // If temp is already smaller than smallest child, done
-                if (temp.timestamp <= pq->heap[child].timestamp) break;
-                
-                // Move child up
-                pq->heap[idx] = pq->heap[child];
-                idx = child;
+                pq->heap[idx] = temp;
             }
-            
-            pq->heap[idx] = temp;
         }
     }
     
