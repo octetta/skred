@@ -1,0 +1,21 @@
+all :
+	emcc \
+    -DMINI \
+    -Iretro \
+    wasm-skred.c \
+    miniwav.c amysamples.c retro/retro.c synth.c skode.c \
+    util.c wire.c \
+    -o index.js \
+    -s WASM=1 \
+    -O2 \
+    -g \
+    -s EXPORTED_RUNTIME_METHODS='["ccall"]' \
+    -s EXPORTED_FUNCTIONS='["_main", "_process_input_string"]'
+
+test :
+	emcc test_audio.c \
+    -o index.js \
+    -s WASM=1 \
+    -O2 \
+    -s EXPORTED_RUNTIME_METHODS='["ccall"]' \
+    -s EXPORTED_FUNCTIONS='["_main", "_start_audio"]'

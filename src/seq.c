@@ -32,16 +32,45 @@ void tempo_set(float m) {
   tempo_time_per_step = time_per_step;
 }
 
+#include "util.h"
+
+static sben_t bench[BENLEN] = {};
+static int benchp = 0;
+static int64_t bencho = 0;
+static char _stats[65536] = "";
+
+char *seq_stats(void) {
+  char *ptr = _stats;
+  *ptr = '\0';
+  int n = 0;
+  for (int i = 0; i < BENLEN; i++) {
+    if (bench[i].state != BEN_B) continue;
+    //double maxcb = (double)bench[i].frames / (double)MAIN_SAMPLE_RATE * (double)S_TO_MS;
+    double dms = ts_diff_ns(&bench[i].a, &bench[i].b) / (double)NS_TO_MS;
+    n = sprintf(ptr, "# @%d %gms\n", bench[i].order, dms);
+    ptr += n;
+    bench[i].state = BEN_0;
+  }
+  return _stats;
+}
+
 static queue_t seq_q;
 
 void seq(int frame_count, void (*event_fn)(int voice, char *arg), void (*pattern_fn)(int voice, char *arg)) {
+  BEN_MARK_A(bench, benchp, frame_count, bencho);
   // run expired (ready) queued things...
   item_t item;
-  uint64_t now = synth_sample_count + frame_count; // not sure about adding frame count here but it's below from before?
-  while (queue_get_filtered(&seq_q, now, &item)) {
-    if (item.event.state) {
-      item.event.state = 0;
+  uint64_t now = SAMPLE_COUNT_GET(); // + frame_count; // not sure about adding frame count here but it's below from before?
+  static uint64_t last_ts = 0;
+  while (1) {
+    if (queue_get_filtered(&seq_q, now, &item)) {
+      if (item.timestamp < last_ts) {
+        printf("OUT OF ORDER\n");
+      }
+      last_ts = item.timestamp;
       event_fn(item.event.voice, item.event.what);
+    } else {
+      break;
     }
   }
 
@@ -78,6 +107,7 @@ void seq(int frame_count, void (*event_fn)(int voice, char *arg), void (*pattern
       }
     }
   }
+  BEN_MARK_B(bench, benchp, bencho);
 }
 
 void pattern_reset(int p) {
@@ -140,17 +170,40 @@ void seq_state_all(int state) {
   for (int p = 0; p < PATTERNS_MAX; p++) seq_state_set(p, state);
 }
 
-int seq_queued(void) { return seq_q.size; }
-int seq_capacity(void) { return seq_q.capacity; }
+int seq_queued(void) { return queue_size(&seq_q); }
+int seq_capacity(void) { return seq_q.max_size; }
 
-int seq_foreach(int (*fn)(int, uint64_t, uint64_t, int, event_t *e, void*), void *user) {
-  int n = seq_q.size;
-  for (int i=0; i<n; i++) {
-    int r = 0;
-    if (fn) {
-      r = fn(i, seq_q.items[i].timestamp, seq_q.items[i].id,
-        seq_q.items[i].tag, &seq_q.items[i].event, user);
-    }
-  }
-  return n;
+typedef struct {
+  int (*fn)(int, uint64_t, uint64_t, int, const event_t *e, void*);
+  void *user;
+} bridge_t;
+
+int seq_foreach_cb(const item_t *item, void *user) {
+  bridge_t *b = (bridge_t *)user;
+  b->fn(666, item->timestamp, item->id, item->tag, &item->event, b->user);
+  return 0;
+}
+
+int seq_foreach(int (*fn)(int, uint64_t, uint64_t, int, const event_t *e, void*), void *user) {
+  bridge_t b;
+  b.fn = fn;
+  b.user = user;
+  queue_foreach(&seq_q, seq_foreach_cb, &b);
+  return 0;
+}
+
+bool kill_by_tag(const item_t *item, void *user) {
+  int *tag = (int *)user;
+  if (item->tag == *tag) return true;
+  return false;
+}
+
+int seq_kill_by_tag(int tag) {
+  queue_cancel(&seq_q, kill_by_tag, &tag);
+  return 0;
+}
+
+int seq_kill_all(void) {
+  queue_clear(&seq_q);
+  return 0;
 }

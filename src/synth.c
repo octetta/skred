@@ -34,7 +34,16 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include "portable_atomic.h"
+
+atomic_uint64_t synth_sample_count;
+
+#define SAMPLE_COUNT_PUT(n) atomic_store_uint64(&synth_sample_count, n)
+#define SAMPLE_COUNT_GET() atomic_load_uint64(&synth_sample_count)
+#define SAMPLE_COUNT_ADD(n) atomic_fetch_add_uint64(&synth_sample_count, n)
+
 void synth_init(void) {
+  SAMPLE_COUNT_PUT(0);
   if (0) {
 #define ARRAY(type, name, size, init) printf("%s : %d\n", #name, name##__len__);
 #include "synth.def"
@@ -78,8 +87,6 @@ void synth_free(void) {
 
 int requested_synth_frames_per_callback = SYNTH_FRAMES_PER_CALLBACK;
 int synth_frames_per_callback = 0;
-
-volatile uint64_t synth_sample_count = 0;
 
 #define SMOOTH_DEFAULT (0.02f)
 
@@ -390,7 +397,7 @@ void amp_envelope_trigger(int v, float f) {
         voice_amp_envelope[v].amplitude_at_trigger = 0.0f;
     }
 
-    voice_amp_envelope[v].sample_start = synth_sample_count;
+    voice_amp_envelope[v].sample_start = SAMPLE_COUNT_GET();
     voice_amp_envelope[v].sample_release = 0;
     voice_amp_envelope[v].velocity = f;
     voice_amp_envelope[v].is_active = 1;
@@ -399,7 +406,7 @@ void amp_envelope_trigger(int v, float f) {
 // Release the envelope (note off)
 void amp_envelope_release(int v) {
     if (voice_amp_envelope[v].is_active && voice_amp_envelope[v].sample_release == 0) {
-        voice_amp_envelope[v].sample_release = synth_sample_count;
+        voice_amp_envelope[v].sample_release = SAMPLE_COUNT_GET();
         // CRITICAL: Capture the exact height the envelope was at 
         // when the key was lifted.
         voice_amp_envelope[v].amplitude_at_release = voice_amp_envelope[v].current_amplitude;
@@ -410,7 +417,7 @@ float amp_envelope_step(int v) {
     if (!voice_amp_envelope[v].is_active) return 0;
 
     float out = 0.0f;
-    float samples_since_start = (float)(synth_sample_count - voice_amp_envelope[v].sample_start);
+    float samples_since_start = (float)(SAMPLE_COUNT_GET() - voice_amp_envelope[v].sample_start);
 
 // 1. Attack phase (Legato-aware)
     if (samples_since_start < voice_amp_envelope[v].attack_time) {
@@ -438,7 +445,7 @@ float amp_envelope_step(int v) {
             out = voice_amp_envelope[v].sustain_level;
         } else {
             // RELEASE PHASE
-            float samples_since_release = (float)(synth_sample_count - voice_amp_envelope[v].sample_release);
+            float samples_since_release = (float)(SAMPLE_COUNT_GET() - voice_amp_envelope[v].sample_release);
             
             if (samples_since_release < voice_amp_envelope[v].release_time) {
                 float release_progress = samples_since_release / voice_amp_envelope[v].release_time;
@@ -457,34 +464,12 @@ float amp_envelope_step(int v) {
     return out * voice_amp_envelope[v].velocity;
 }
 
-#include <time.h>
-
-typedef struct {
-  struct timespec a;
-  struct timespec b;
-  int64_t diff;
-  int state;
-  int order;
-  int frames;
-} sben_t;
-
-#define BENLEN (4)
-
-enum { BEN_0, BEN_A, BEN_B, BEN_D };
+#include "util.h"
 
 static sben_t bench[BENLEN] = {};
 static int benchp = 0;
 static int64_t bencho = 0;
-
-int64_t ts_diff_ns(const struct timespec *a, const struct timespec *b) {
-  return ((int64_t)b->tv_sec  - a->tv_sec)  * 1000000000LL +
-    ((int64_t)b->tv_nsec - a->tv_nsec);
-}
-
 static char _stats[65536] = "";
-
-#define NS_TO_MS (1000000)
-#define S_TO_MS (1000)
 
 char *synth_stats(void) {
   char *ptr = _stats;
@@ -501,7 +486,6 @@ char *synth_stats(void) {
   return _stats;
 }
 
-#define BENCH_CLOCK CLOCK_MONOTONIC
 #ifdef __APPLE__
 #define VOICE_CLOCK CLOCK_MONOTONIC
 #else
@@ -531,16 +515,12 @@ void synth(float *buffer, float *input, int num_frames, int num_channels, void *
     one_skred_frame = (float *)user;
     first = 0;
   }
-  clock_gettime(BENCH_CLOCK, &bench[benchp].a);
-  bench[benchp].frames = num_frames;
-  bench[benchp].order = bencho;
-  bench[benchp].state = BEN_A;
-  if (benchp == (BENLEN-1)) {
-    // compute min max here
-  }
+
+  BEN_MARK_A(bench, benchp, num_frames, bencho);
+
   int skred_ptr = 0;
   for (int i = 0; i < num_frames; i++) {
-    synth_sample_count++;
+    SAMPLE_COUNT_ADD(1); // should this be outside the loop? and add num_frames??
     float sample_left = 0.0f;
     float sample_right = 0.0f;
     float f = 0.0f;
@@ -645,10 +625,7 @@ void synth(float *buffer, float *input, int num_frames, int num_channels, void *
     buffer[i * num_channels + 0] = sample_left;
     buffer[i * num_channels + 1] = sample_right;
   }
-  clock_gettime(BENCH_CLOCK, &bench[benchp].b);
-  bench[benchp].state = BEN_B;
-  bencho++;
-  benchp = ((bencho) % BENLEN);
+  BEN_MARK_B(bench, benchp, bencho);
 }
 
 int envelope_is_flat(int v) {

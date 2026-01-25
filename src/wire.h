@@ -27,6 +27,8 @@ typedef struct {
 
 #include "skode.h"
 
+#define WLOGMAX (4096)
+
 typedef struct wire_s {
   int voice;
   voice_stack_t stack;
@@ -42,7 +44,7 @@ typedef struct wire_s {
   int (*puts)(struct wire_s *w, const char *s);
   int (*printf)(struct wire_s *w, const char *fmt, ...);
   int log_enable;
-  char log[4096];
+  char log[WLOGMAX + 1024];
   int log_max;
   int log_len;
   int flag;
@@ -80,7 +82,7 @@ int null_printf(const char *fmt, ...);
   .printf = wire_printf, \
   .log_enable = 0, \
   .log_len = 0, \
-  .log_max = 4096, \
+  .log_max = WLOGMAX, \
 }
 
 //  .output = 0, 

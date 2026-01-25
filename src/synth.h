@@ -1,6 +1,13 @@
 #ifndef _SYNTH_H_
 #define _SYNTH_H_
 
+#include "portable_atomic.h"
+
+//extern atomic_uint64_t synth_sample_count;
+#define SAMPLE_COUNT_PUT(n) atomic_store_uint64(&synth_sample_count, n)
+#define SAMPLE_COUNT_GET() atomic_load_uint64(&synth_sample_count)
+#define SAMPLE_COUNT_ADD(n) atomic_fetch_add_uint64(&synth_sample_count, n)
+
 #define ARRAY(type, name, size, init) extern type name[size];
 #include "synth.def"
 #undef ARRAY

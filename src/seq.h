@@ -13,22 +13,15 @@ enum {
   SEQ_PAUSED = 2,
 };
 
-#define QUEUED_MAX (2048)
-#define QUEUE_SIZE (2048)
-
-enum {
-  Q_FREE = 0,
-  Q_PREP = 1,
-  Q_READY = 2,
-  Q_USING = 3,
-};
+#define QUEUED_MAX (2048) // the wire string max size
+#define QUEUE_SIZE (2048) // the actual queue max depth
 
 typedef struct {
   int state;
-  uint64_t when;
+  //uint64_t when;
   char what[QUEUED_MAX];
   int voice;
-  int tag;
+  //int tag;
 } event_t;
 
 void seq(int frame_count, void (*queue_fn)(int voice, char *arg), void (*pattern_fn)(int voice, char *arg));
@@ -59,6 +52,12 @@ extern float tempo_time_per_step;
 int seq_queued(void);
 int seq_capacity(void);
 
-int seq_foreach(int (*fn)(int, uint64_t, uint64_t, int, event_t *e, void*), void *user);
+int seq_foreach(int (*fn)(int, uint64_t, uint64_t, int, const event_t *e, void*), void *user);
+
+int seq_kill_by_tag(int tag);
+
+char *seq_stats(void);
+
+int seq_kill_all(void);
 
 #endif

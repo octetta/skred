@@ -34,6 +34,10 @@ GUI = sk8r-$(TARGET) sk8-pad-$(TARGET) midi-sk8-$(TARGET) repl-$(TARGET)
 
 gui : $(GUI)
 
+test :
+	gcc -pthread -o test_queue test_queue.c skqueue.c -I.
+	gcc -pthread -o test_heap test_heap.c skqueue.c -I.
+
 $(OUT)/util.o : util.c
 	$(CC) $(COPTS) -c $< -o $@
 
@@ -66,7 +70,7 @@ $(OUT)/synth.o: synth.c synth.h synth-types.h synth.def
 	$(CC) $(COPTS) -c $< -o $@
 
 $(OUT)/seq.o: seq.c seq.h
-	$(CC) $(QFLAGS) $(COPTS) -c $< -o $@
+	$(CC) $(COPTS) -c $< -o $@
 
 $(OUT)/udp.o: udp.c udp.h
 	$(CC) $(COPTS) -c $< -o $@
@@ -74,7 +78,7 @@ $(OUT)/udp.o: udp.c udp.h
 $(OUT)/skode.o: skode.c skode.h
 	$(CC) $(COPTS) -c $< -o $@
 
-$(OUT)/wire.o: wire.c wire.h synth.def skode.h $(OUT)/skode.o
+$(OUT)/wire.o: wire.c wire.h synth.def skode.h synth.c seq.c $(OUT)/skode.o
 	$(CC) $(COPTS) -Wno-multichar -c $< -o $@
 
 $(OUT)/skred.o: skred.c skred.h synth.def
@@ -96,24 +100,30 @@ OBJS = \
 	$(OUT)/util.o \
   $(OUT)/bestline.o \
   $(OUT)/skqueue.o \
-  $(OUT)/nsync_local.o \
 	#
 
 $(SKRED) : $(OBJS) | $(OUT)
 	$(CC) $(COPTS) $(DOPTS) $(OBJS) -o $@ $(LIB)
 	# $(CC) $(COPTS) $(OBJS) -o $(OUT)/skred $(LIB)
 
-QFLAGS = -I. \
-  -I./nsync_local/public \
-  -I./nsync_local/internal \
-  -I./nsync_local/platform/gcc \
-  -I./nsync_local/platform/gcc_old
+mini-skred : mini-skred.c $(OBJS)
+	$(CC) \
+    -DMINI \
+    -Wno-multichar \
+    $(COPTS) \
+    $(OUT)/miniwav.o \
+    $(OUT)/amysamples.o \
+    $(OUT)/retro.o \
+    $(OUT)/synth.o \
+    $(OUT)/seq.o \
+    $(OUT)/skode.o \
+    $(OUT)/miniaudio.o \
+    $(OUT)/util.o \
+    $(OUT)/skqueue.o \
+    -o mini-skred mini-skred.c wire.c $(LIB)
 
 $(OUT)/skqueue.o : skqueue.c skqueue.h
-	$(CC) $(COPTS) $(QFLAGS) -c skqueue.c -o $(OUT)/skqueue.o
-
-$(OUT)/nsync_local.o : nsync_local.c
-	$(CC) $(COPTS) $(QFLAGS) -c nsync_local.c -o $(OUT)/nsync_local.o
+	$(CC) $(COPTS) -c skqueue.c -o $(OUT)/skqueue.o
 
 $(OUT)/bestline.o: bestline.c bestline.h
 	$(CC) -c $(COPTS) $< -o $@
