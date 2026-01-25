@@ -10,7 +10,6 @@
 #include <stdio.h>
 
 int wire_puts(wire_t *w, const char *s) {
-  //puts("PUTS");
   if (!w || w->log_enable == 0) return 0;
   strncat(w->log, s, w->log_max);
   strncat(w->log, "\n", w->log_max);
@@ -20,7 +19,6 @@ int wire_puts(wire_t *w, const char *s) {
 
 int wire_printf(wire_t *w, const char *fmt, ...) {
   if (!w || w->log_enable == 0) return 0;
-  //puts("PRINTF");
   char buf[4096];
   va_list ap;
   va_start(ap, fmt);
@@ -737,16 +735,22 @@ int wire_function(skode_t *s, int info) {
     w->puts(w, "");
   }
   switch (atom) {
-    case 'a___': if (argc) amp_set(voice, arg[0]); break;
-    case 'A___': if (argc < 2) {
+    case 'a___': // amp loudness
+      if (argc) amp_set(voice, arg[0]);
+      break;
+    case 'A___': // AM voice depth
+      if (argc < 2) {
         amp_mod_set(voice, -1, 0);
       } else if (argc > 1) {
         amp_mod_set(voice, x, arg[1]);
       }
       break;
-    case 'b___': if (argc == 0) { wave_dir(voice, -1); } else { wave_dir(voice, x); } break;
-    case 'B___': if (argc == 0) { wave_loop(voice, -1); } else { wave_loop(voice, x); } break;
-    case 'c___': if (argc == 0) {
+    case 'b___': // wave-direction bool
+      if (argc == 0) { wave_dir(voice, -1); } else { wave_dir(voice, x); } break;
+    case 'B___': // wave-loop bool
+      if (argc == 0) { wave_loop(voice, -1); } else { wave_loop(voice, x); } break;
+    case 'c___': // phase-distortion algo distortion
+      if (argc == 0) {
         cz_set(voice, 0, .5);
       } else if (argc == 1) {
         cz_set(voice, x, .5);
@@ -754,22 +758,28 @@ int wire_function(skode_t *s, int info) {
         cz_set(voice, x, arg[1]);
       }
       break;
-    case 'C___': if (argc < 2) {
+    case 'C___': // PD-mod voice depth
+      if (argc < 2) {
         cmod_set(voice, -1, 0);
       } else if (argc > 1) {
         cmod_set(voice, x, arg[1]);
       }
       break;
-    case 'D___': // need to use the data array in skode here, not w->data
+    case 'D___': // data-size
+      // need to use the data array in skode here, not w->data
       break;
-    case 'f___': if (argc) freq_set(voice, arg[0]); break;
-    case 'F___': if (argc <= 1) {
+    case 'f___': // freq hz
+      if (argc) freq_set(voice, arg[0]);
+      break;
+    case 'F___': // FM voice depth
+      if (argc <= 1) {
         freq_mod_set(voice, -1, 0);
       } else if (argc > 1) {
         freq_mod_set(voice, x, arg[1]);
       }
       break;
-    case 'g___': if (argc) {
+    case 'g___': // glissando speed
+      if (argc) {
         if (arg[0] <= 0) {
           voice_glissando_enable[voice] = 0;
         } else {
@@ -778,19 +788,22 @@ int wire_function(skode_t *s, int info) {
         }
       }
       break;
-    case 'G___': if (argc) {
+    case 'G___': // link-midi voice [voice]
+      if (argc) {
         voice_link_midi_a[voice] = x;
         if (argc > 1) voice_link_midi_b[voice] = (int)arg[1];
       }
       break;
-    case 'h___': if (argc) { voice_sample_hold_max[voice] = x; } break;
-    case 'H___': if (argc) {
+    case 'h___': // sample-hold phase-count
+      if (argc) { voice_sample_hold_max[voice] = x; } break;
+    case 'H___': // link-velo voice [voice]
+      if (argc) {
         voice_link_velo_a[voice] = x;
         if (argc > 1) voice_link_velo_b[voice] = (int)arg[1];
       }
       break;
     // TODO re-allocate the data/array buffer with the arg
-    case '/D__':
+    case '/D__': // resize-data count
       if (argc) {
         // free and re-allocate...
         if (x > 0) skode_data_resize(w->sk, x);
@@ -800,34 +813,45 @@ int wire_function(skode_t *s, int info) {
         skode_data_cap(w->sk),
         skode_data_len(w->sk));
       break;
-    case 'I___': if (argc) {} break; // TODO en/dis-able send timestamp wire to the event logger
-    case 'L___': if (argc) { voice_link_trig[voice] = x; } break;
-    case 'J___': if (argc) {
+    case 'I___': // log-event bool
+      if (argc) {} break; // TODO en/dis-able send timestamp wire to the event logger
+    case 'L___': // link-trigger voice
+      if (argc) { voice_link_trig[voice] = x; } break;
+    case 'J___': // filter-mode selector
+      if (argc) {
         voice_filter_mode[voice] = x;
         mmf_set_params(voice,
           voice_filter_freq[voice],
           voice_filter_res[voice]);
       }
       break;
-    case 'K___': if (argc) { mmf_set_freq(voice, arg[0]); } break;
-    case 'k___': if (argc) { voice_amp_envelope_mode[voice] = x; } break;
-    case 'udp_': if (argc) {
+    case 'K___': // filter-cutoff freq
+      if (argc) { mmf_set_freq(voice, arg[0]); } break;
+    case 'k___': // adsr-mode bool
+      if (argc) { voice_amp_envelope_mode[voice] = x; } break;
+    case 'udp_': // show-udp
+      if (argc) {
         w->printf(w, "# udp [%d] %d/%d\n", w->which, w->ip, w->port);
       }
       break;
-    case 'log_': if (argc) {
+    case 'log_': // log-enable bool
+      if (argc) {
         if (x) { w->log_enable = 1; } else { w->log_enable = 0; }
       }
       break;
-    case 'l___': if (argc) {
+    case 'l___': // velocity amount
+      if (argc) {
         envelope_velocity(voice, arg[0]);
         if (voice_link_velo_a[voice] >= 0) envelope_velocity(voice_link_velo_a[voice], arg[0]);
         if (voice_link_velo_b[voice] >= 0) envelope_velocity(voice_link_velo_b[voice], arg[0]);
       }
       break;
-    case 'm___': if (argc) { wave_mute(voice, x); } break;
-    case 'M___': if (argc) { tempo_set(arg[0]); } break;
-    case 'n___': if (argc) {
+    case 'm___': // mute-audio bool
+      if (argc) { wave_mute(voice, x); } break;
+    case 'M___': // tempo bpm
+      if (argc) { tempo_set(arg[0]); } break;
+    case 'n___': // midi-freq note-number
+      if (argc) {
         float note = arg[0];
         if (isnan(note)) note = voice_last_midi_note[voice];
         freq_midi(voice, note);
@@ -835,31 +859,40 @@ int wire_function(skode_t *s, int info) {
         if (voice_link_midi_b[voice] >= 0) freq_midi(voice_link_midi_b[voice], note);
       }
       break;
-    case 'N___': if (argc) {
+    case 'N___': // detune-midi key cents
+      if (argc) {
         if (isnan(arg[0])) {
           // do nothing
         } else {
           voice_midi_transpose[voice] = arg[0];
         }
         if (argc > 1) voice_midi_cents[voice] = arg[1];
-      } break;
-    case 'p___': if (argc) pan_set(voice, arg[0]); break;
-    case 'P___': if (argc < 2) {
+      }
+      break;
+    case 'p___': // pan value
+      if (argc) pan_set(voice, arg[0]);
+      break;
+    case 'P___': // pan-mod voice depth
+      if (argc < 2) {
         pan_mod_set(voice, -1, 0);
       } else if (argc > 1) {
         pan_mod_set(voice, x, arg[1]);
       }
       break;
-    case 'q___': if (argc) { wave_quant(voice, x); } break;
-    case 'Q___': if (argc) { mmf_set_res(voice, arg[0]); } break;
-    case 'r___': if (argc) { if (rec_state == 0) voice_record[voice] = x; } break;
-    case 'R!__':
+    case 'q___': // bit-crush bit-depth
+      if (argc) { wave_quant(voice, x); } break;
+    case 'Q___': // filter-resonance amount
+      if (argc) { mmf_set_res(voice, arg[0]); } break;
+    case 'r___': // record-mode bool
+      if (argc) { if (rec_state == 0) voice_record[voice] = x; } break;
+    case 'R!__': // remove-events tag
       if (argc) {
         int tag = x;
         seq_foreach(kill_event_cb, &tag);
       }
       break;
-    case 'R\'__': if (argc > 1) {
+    case 'R\'__': // repeat-string-tempo count delay [tag]
+      if (argc > 1) {
         uint64_t qt = synth_sample_count;
         double t = (tempo_time_per_step * 4.0f);
         double fdt = t * arg[1] * (float)MAIN_SAMPLE_RATE;
@@ -871,7 +904,8 @@ int wire_function(skode_t *s, int info) {
           qt += dt;
         }
       } break;
-    case 'R___': if (argc > 1) {
+    case 'R___': // repeat-string count delay [tag]
+      if (argc > 1) {
         uint64_t qt = synth_sample_count;
         double fdt = arg[1] * (float)MAIN_SAMPLE_RATE;
         uint64_t dt = (uint64_t)fdt;
@@ -882,7 +916,8 @@ int wire_function(skode_t *s, int info) {
           qt += dt;
         }
       } break;
-    case 's___': if (argc) {
+    case 's___': // volume-smooth bool
+      if (argc) {
         if (arg[0] <= 0) {
           voice_smoother_enable[voice] = 0;
         } else {
@@ -891,9 +926,14 @@ int wire_function(skode_t *s, int info) {
         }
       }
       break;
-    case 'S___': if (argc) wave_reset(voice, x); break;
-    case 't___': if (argc > 3) envelope_set(voice, arg[0], arg[1], arg[2], arg[3]); break;
-    case 'T___': {
+    case 'S___': // voice-reset voice
+      if (argc) wave_reset(voice, x);
+      break;
+    case 't___': // adsr-set attack decay sustain release
+      if (argc > 3) envelope_set(voice, arg[0], arg[1], arg[2], arg[3]);
+      break;
+    case 'T___': // trigger
+      {
 #if 1
         envelope_velocity(voice, 1);
         if (voice_link_velo_a[voice] >= 0) envelope_velocity(voice_link_velo_a[voice], 1);
@@ -904,14 +944,20 @@ int wire_function(skode_t *s, int info) {
 #endif
       }
       break;
-    case 'v___': if (argc) voice_set(x, &w->voice); break;
-    case 'V___': if (argc) volume_set(arg[0]); break;
-    case 'w___': if (argc) {
+    case 'v___': // voice-select voice
+      if (argc) voice_set(x, &w->voice);
+      break;
+    case 'V___': // main-volume loudness
+      if (argc) volume_set(arg[0]);
+      break;
+    case 'w___': // wave-select which-wave
+      if (argc) {
         wave_set(voice, x);
         if (scope_enable) sprintf(scope->wave_text, "w%d", x);
       }
       break;
-    case 'W___': if (argc) {
+    case 'W___': // wave-show which-wave
+      if (argc) {
         wavetable_show(w,x);
         if (scope_enable) sprintf(scope->wave_text, "w%d", x);
       } else if (argc == 0) {
@@ -925,7 +971,8 @@ int wire_function(skode_t *s, int info) {
         if (scope_enable) sprintf(scope->wave_text, "%d waves loaded", c);
       }
       break;
-    case 'x___': if (argc) {
+    case 'x___': // set-step-string step
+      if (argc) {
         if (arg[0] == NAN || x < 0) {
           w->step++;
           x = w->step;
@@ -937,35 +984,55 @@ int wire_function(skode_t *s, int info) {
         }
       }
       break;
-    case 'y___': if (argc) {
+    case 'y___': // select-pattern which
+      if (argc) {
         w->pattern = x;
         scope_pattern_pointer = x;
       }
       break;
-    case 'z___': if (argc) {
+    case 'Y___': // clear-pattern which
+      if (argc && x >= 0 && x < PATTERNS_MAX) {
+        pattern_reset(x);
+      }
+      break;
+    case 'z___': // one-pattern-play-mode bool
+      if (argc) {
         seq_state_set(w->pattern, x);
       } else pattern_show(w, w->pattern);
       break;
-    case 'Z___': if (argc) {
+    case 'Z___': // all-pattern-play-mode bool
+      if (argc) {
         seq_state_all(x);
       } else {
         w->printf(w, "; M%g\n", tempo_bpm * 4.0f);
         for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(w, p);
       }
       break;
-    case '?___': voice_show(w, voice, ' ', w->verbose); break;
-    case '\\___': voice_show(w, voice, ' ', 1); break;
-    case '??__': voice_show_all(w, voice, w->verbose); break;
-    case '?s__':
+    case '?___': // show-voice
+      voice_show(w, voice, ' ', w->verbose); break;
+    case '\\___': // verbose-show-voice
+      voice_show(w, voice, ' ', 1); break;
+    case '??__': // show-active-voices
+      voice_show_all(w, voice, w->verbose); break;
+    case '?s__': // show-skode-string
       {
         w->printf(w, "# %s\n", skode_string(w->sk));
       }
       break;
-    case 'l>g_': if (argc) skode_local_to_global(w->sk, x); break;
-    case 'g>l_': if (argc) skode_global_to_local(w->sk, x); break;
-    case '/m__': synth_voice_bench(voice); break;
-    case '/q__': w->quit = -1; return 0;
-    case '/d__': {
+    case 'l>g_':
+      if (argc) skode_local_to_global(w->sk, x);
+      break;
+    case 'g>l_':
+      if (argc) skode_global_to_local(w->sk, x);
+      break;
+    case '/m__': // benchmark voice
+      synth_voice_bench(voice);
+      break;
+    case '/q__': // quit
+      w->quit = -1;
+      return 0;
+    case '/d__': // data-to-wave slot rate rate offset
+      {
         int wave_slot = EXT_SAMPLE_000;
         int one_shot = 0;
         float rate = 44100.0;
@@ -977,22 +1044,25 @@ int wire_function(skode_t *s, int info) {
         data_load(w, wave_slot, one_shot, rate, offset);
       }
       break;
-    case '/f__':
+    case '/f__': // flag-mode num
       if (argc) { w->flag = x; }
       else { w->printf(w, "# /f%d\n", w->flag); }
       break;
-    case '/c__':
+    case '/c__': // chunk-mode bool
       if (argc) { skode_chunk_mode(w->sk, x); }
       else { w->printf(w, "# /c%d\n", skode_chunk_mode_get(w->sk)); }
       break;
-    case '/t__': if (argc == 0) x = (w->trace) ? 0 : 1;
+    case '/t__': // trace-mode num
+      if (argc == 0) x = (w->trace) ? 0 : 1;
       w->trace = x;
       skode_trace_set(s, x > 1);
       break;
-    case '/v__': if (argc == 0) x = (w->verbose) ? 0 : 1;
+    case '/v__': // verbose-mode num
+      if (argc == 0) x = (w->verbose) ? 0 : 1;
       w->verbose = x;
       break;
-    case '/s__': {
+    case '/s__': // system-show num
+      {
         if (argc == 0) {
           system_show(w);
         } else {
@@ -1008,8 +1078,10 @@ int wire_function(skode_t *s, int info) {
         }
       }
       break;
-    case '/l__': if (argc) { sk_load(w, voice, x); } break;
-    case '/w__': {
+    case '/l__': // skode-load num
+      if (argc) { sk_load(w, voice, x); } break;
+    case '/w__': // wave-load num wave channel
+      {
         int file_num = 0;
         int wave_slot = EXT_SAMPLE_000;
         int ch = -1;
@@ -1024,7 +1096,8 @@ int wire_function(skode_t *s, int info) {
         if (argc) wave_load(w, file_num, wave_slot, ch, 1);
       }
       break;
-    case '<___': if (arg) {
+    case '<___': // record duration
+      if (arg) {
         rec_state = 0;
         float max_sec = arg[0];
         float max_samples;
@@ -1039,7 +1112,8 @@ int wire_function(skode_t *s, int info) {
         rec_state = 1;
       }
       break;
-    case '*___': {
+    case '*___': // write-recorded
+      {
         #include <sys/time.h>
         #include <unistd.h>
         if (rec_ptr) {
@@ -1059,12 +1133,22 @@ int wire_function(skode_t *s, int info) {
         }
       }
       break;
-    case '>___': if (arg) voice_copy(voice, x); break;
-    case '/___': wave_default(voice); break;
-    case '%___': if (arg) seq_modulo_set(w->pattern, x); break;
-    case '!___': if (arg) seq_mute_set(w->pattern, x, 0); break;
-    case '@___': if (arg) seq_mute_set(w->pattern, x, 1); break;
-    case '=___':
+    case '>___': // copy-voice dest-voice
+      if (arg) voice_copy(voice, x);
+      break;
+    case '/___': // default-wave voice
+      wave_default(voice);
+      break;
+    case '%___': // pattern-modulus num
+      if (arg) seq_modulo_set(w->pattern, x);
+      break;
+    case '!___': // step-mute step
+      if (arg) seq_mute_set(w->pattern, x, 0);
+      break;
+    case '@___': // step-unmute step
+      if (arg) seq_mute_set(w->pattern, x, 1);
+      break;
+    case '=___': // variable-set slot value
       if (argc>1) skode_set_local(w->sk, x, arg[1]);
       else if (argc == 1) {
         double f = skode_get_local(w->sk, x);
@@ -1077,7 +1161,9 @@ int wire_function(skode_t *s, int info) {
         }
       }
       break;
-    case '/wex': if (argc && x >= 200 && x <=999) wave_table_dynamic_expand(x);
+    case '/wex': // wave-expand wave
+      if (argc && x >= 200 && x <=999) wave_table_dynamic_expand(x);
+      break;
     default:
       if (w->trace) {
         w->printf(w, "# WIRE_UNKNOWN_FUNCTION %d [%x] :: %d", info, atom, argc);
