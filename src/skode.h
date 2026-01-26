@@ -1,5 +1,5 @@
-#ifndef _WIRE_H_
-#define _WIRE_H_
+#ifndef _SKODE_H_
+#define _SKODE_H_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -27,9 +27,9 @@ typedef struct {
 
 #include "ands.h"
 
-#define WLOGMAX (4096)
+#define SKODE_LOG_MAX (4096)
 
-typedef struct wire_s {
+typedef struct skode_s {
   int voice;
   voice_stack_t stack;
   uint64_t defer_sample_time;
@@ -39,12 +39,12 @@ typedef struct wire_s {
   int trace;
   int verbose;
   int events; // do incoming events go to the logger?
-  ands_t *sk;
+  ands_t *parse;
   int quit;
-  int (*puts)(struct wire_s *w, const char *s);
-  int (*printf)(struct wire_s *w, const char *fmt, ...);
+  int (*puts)(struct skode_s *w, const char *s);
+  int (*printf)(struct skode_s *w, const char *fmt, ...);
   int log_enable;
-  char log[WLOGMAX + 1024];
+  char log[SKODE_LOG_MAX + 1024];
   int log_max;
   int log_len;
   int flag;
@@ -53,42 +53,42 @@ typedef struct wire_s {
   int which;
   uint32_t ip;
   uint16_t port;
-} wire_t;
+} skode_t;
 
-int wire(char *line, wire_t *w);
-void show_threads(wire_t *w);
-void system_show(wire_t *w);
-int audio_show(wire_t *w);
-int sk_load(wire_t *w, int voice, int n);
-int wavetable_show(wire_t *w, int n);
-char *wire_err_str(int n);
+int skode_consume(char *line, skode_t *w);
+void show_threads(skode_t *w);
+void system_show(skode_t *w);
+int audio_show(skode_t *w);
+int skode_load(skode_t *w, int voice, int n);
+int wavetable_show(skode_t *w, int n);
+char *skode_err_str(int n);
 
-int wire_puts(wire_t *, const char *s);
-int wire_printf(wire_t *, const char *fmt, ...);
+int skode_puts(skode_t *, const char *s);
+int skode_printf(skode_t *, const char *fmt, ...);
 
 int null_puts(const char *s);
 int null_printf(const char *fmt, ...);
 
-#define WIRE() { \
+#define SKODE_EMPTY() { \
   .voice = 0, \
   .pattern = 0, \
   .step = -1, \
   .trace = 0, \
   .verbose = 0, \
   .events = 0, \
-  .sk = NULL, \
+  .parse = NULL, \
   .quit = 0, \
-  .puts = wire_puts, \
-  .printf = wire_printf, \
+  .puts = skode_puts, \
+  .printf = skode_printf, \
   .log_enable = 0, \
   .log_len = 0, \
-  .log_max = WLOGMAX, \
+  .log_max = SKODE_LOG_MAX, \
 }
 
 //  .output = 0, 
 
 
-void wire_init(wire_t *w);
+void skode_init(skode_t *w);
 
 #if 1
 

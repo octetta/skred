@@ -53,7 +53,7 @@ $(OUT)/udp.o: udp.c udp.h
 $(OUT)/ands.o: ands.c ands.h
 	$(CC) $(COPTS) -c $< -o $@
 
-$(OUT)/wire.o: wire.c wire.h synth.def ands.h $(OUT)/ands.o
+$(OUT)/skode.o: skode.c skode.h synth.def ands.h $(OUT)/ands.o
 	$(CC) $(COPTS) -Wno-multichar -c $< -o $@
 
 $(OUT)/skred-mem.o : skred-mem.c
@@ -69,7 +69,7 @@ OBJS = \
   $(OUT)/synth.o \
 	$(OUT)/retro.o \
   $(OUT)/seq.o \
-  $(OUT)/wire.o \
+  $(OUT)/skode.o \
   $(OUT)/udp.o \
   $(OUT)/miniaudio.o \
   $(OUT)/skred-mem.o \

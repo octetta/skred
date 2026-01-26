@@ -18,7 +18,7 @@ typedef int socklen_t;
 
 
 #include "skred.h"
-#include "wire.h"
+#include "skode.h"
 #include "udp.h"
 #include "util.h"
 
@@ -72,7 +72,7 @@ static int udp_open(int port) {
 }
 
 typedef struct {
-  wire_t w;
+  skode_t w;
   int in_use;
   int last_use;
 } udp_state_t;
@@ -100,7 +100,7 @@ static void *udp_main(void *arg) {
   struct timeval timeout;
   udp_state_t user[UDP_PORT_MAX];
   for (int i = 0; i < UDP_PORT_MAX; i++) {
-    wire_init(&user[i].w);
+    skode_init(&user[i].w);
     user[i].in_use = 0;
     user[i].last_use = 0;
   }
@@ -118,7 +118,7 @@ static void *udp_main(void *arg) {
         // in the future, this should get ip and port and use for
         // context amongst multiple udp clients
         int which = get_connection_index(&client, UDP_PORT_MAX);
-        wire_t *w = &user[which].w;
+        skode_t *w = &user[which].w;
         if (w->udp == 0) {
           struct sockaddr_in *addr = &client;
           w->udp = 1;
@@ -126,7 +126,7 @@ static void *udp_main(void *arg) {
           w->ip = addr->sin_addr.s_addr;
           w->port = addr->sin_port;
         }
-        wire(line, w);
+        skode_consume(line, w);
         //
         if (w->log_len) {
           sendto(sock, w->log, w->log_len, 0, (struct sockaddr *)&client, client_len);

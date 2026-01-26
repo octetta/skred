@@ -37,7 +37,7 @@ scope_buffer_t *scope = &scope_safety;
 int trace = 0;
 
 #include "udp.h"
-#include "wire.h"
+#include "skode.h"
 
 #if 0
 void seq_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
@@ -79,13 +79,13 @@ void synth_callback_free(void) {
 }
 
 void queue_cb(int voice, char *arg) {
-  static wire_t w = WIRE();
-  wire(arg, &w);
+  static skode_t w = SKODE_EMPTY();
+  skode_consume(arg, &w);
 }
 
 void pattern_cb(int voice, char *arg) {
-  static wire_t w = WIRE();
-  wire(arg, &w);
+  static skode_t w = SKODE_EMPTY();
+  skode_consume(arg, &w);
 }
 
 void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
@@ -282,7 +282,7 @@ int main(int argc, char *argv[]) {
 
   system_show(NULL);
 
-  if (load_patch_number >= 0) sk_load(NULL, 0, load_patch_number);
+  if (load_patch_number >= 0) skode_load(NULL, 0, load_patch_number);
 
   if (scope_enable) {
     scope->buffer_len = SCOPE_WIDTH_IN_SAMPLES;
@@ -304,14 +304,14 @@ int main(int argc, char *argv[]) {
     sprintf(scope->status_text, "n/a");
   }
 
-  wire_t w = WIRE();
+  skode_t w = SKODE_EMPTY();
   w.trace = trace;
   w.log_enable = 1;
 
   int main_running = 1;
 
   if (execute_from_start[0] != '\0') {
-    int n = wire(execute_from_start, &w);
+    int n = skode_consume(execute_from_start, &w);
     if (w.log_len) printf("%s", w.log);
     if (n < 0) main_running = 0;
   }
@@ -340,7 +340,7 @@ int main(int argc, char *argv[]) {
     }
     if (strlen(line) == 0) continue;
 
-    int n = wire(line, &w);
+    int n = skode_consume(line, &w);
     if (w.log_len) printf("%s", w.log);
     if (n < 0) break; // request to stop or error
     if (n > 0) printf("# ERR:%d\n", n);

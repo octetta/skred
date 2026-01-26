@@ -8,16 +8,16 @@
 #include "miniaudio.h"
 #include "synth-types.h"
 #include "synth.h"
-#include "wire.h"
+#include "skode.h"
 
 void queue_cb(int voice, char *arg) {
-  static wire_t w = WIRE();
-  wire(arg, &w);
+  static skode_t w = SKODE_EMPTY();
+  skode_consumearg, &w);
 }
 
 void pattern_cb(int voice, char *arg) {
-  static wire_t w = WIRE();
-  wire(arg, &w);
+  static skode_t w = SKODE_EMPTY();
+  skode_consumearg, &w);
 }
 
 void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
@@ -26,7 +26,7 @@ void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint
 
 float one_skred_frame[ONE_FRAME_MAX * AUDIO_CHANNELS * VOICE_MAX];
 
-wire_t w;
+skode_t w;
 
 ma_device_config synth_config;
 ma_device synth_device;
@@ -37,7 +37,7 @@ int main(int argc, char *argv[]) {
   emscripten_log(EM_LOG_CONSOLE, "Hello from Emscripten Log!");
   printf("[C] skred init...\n");
 
-  wire_init(&w);
+  skode_init(&w);
   synth_init();
   wave_table_init(0);
   voice_init();
@@ -78,6 +78,6 @@ void process_input_string(char *input) {
     printf("[C] audio device started\n");
   }
 
-  int n = wire(input, &w);
+  int n = skode_consumeinput, &w);
   printf("[C] returned %d\n", n);
 }

@@ -7,16 +7,16 @@
 #include "synth-types.h"
 #include "synth.h"
 #include "seq.h"
-#include "wire.h"
+#include "skode.h"
 
 void queue_cb(int voice, char *arg) {
-  static wire_t w = WIRE();
-  wire(arg, &w);
+  static skode_t w = SKODE_EMPTY();
+  skode_consume(arg, &w);
 }
 
 void pattern_cb(int voice, char *arg) {
-  static wire_t w = WIRE();
-  wire(arg, &w);
+  static skode_t w = SKODE_EMPTY();
+  skode_consume(arg, &w);
 }
 
 void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
@@ -48,7 +48,7 @@ int main(int argc, char *argv[]) {
   ma_device_init(NULL, &synth_config, &synth_device);
   ma_device_start(&synth_device);
 
-  wire_t w = WIRE();
+  skode_t w = SKODE_EMPTY();
   w.trace = 0;
   w.log_enable = 1;
 
@@ -64,7 +64,7 @@ int main(int argc, char *argv[]) {
     }
     if (strlen(line) == 0) continue;
 
-    int n = wire(line, &w);
+    int n = skode_consume(line, &w);
     if (w.log_len) printf("%s", w.log);
     if (n < 0) break; // request to stop or error
     if (n > 0) printf("# ERR:%d\n", n);
