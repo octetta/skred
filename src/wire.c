@@ -22,13 +22,9 @@ int wire_puts(wire_t *w, const char *s) {
 
 int wire_printf(wire_t *w, const char *fmt, ...) {
   if (!w || w->log_enable == 0) return 0;
-<<<<<<< HEAD
-  char buf[4096];
-=======
   if (w->log_len + strlen(fmt) >= WLOGMAX) return 0;
   //puts("PRINTF");
   char buf[WLOGMAX + 1024];
->>>>>>> origin/master
   va_list ap;
   va_start(ap, fmt);
   int len = vsnprintf(buf, sizeof(buf), fmt, ap);
@@ -840,21 +836,16 @@ int wire_function(skode_t *s, int info) {
         if (voice_link_velo_b[voice] >= 0) envelope_velocity(voice_link_velo_b[voice], arg[0]);
       }
       break;
-<<<<<<< HEAD
     case 'm___': // mute-audio bool
-      if (argc) { wave_mute(voice, x); } break;
-    case 'M___': // tempo bpm
-      if (argc) { tempo_set(arg[0]); } break;
-    case 'n___': // midi-freq note-number
-      if (argc) {
-=======
-    case 'm___': if (argc) { wave_mute(voice, x); } break;
+      if (argc) { wave_mute(voice, x); }
+      break;
 #ifndef MINI
-    case 'M___': if (argc) { tempo_set(arg[0]); }
+    case 'M___': // tempo bpm
+      if (argc) { tempo_set(arg[0]); }
       break;
 #endif
-    case 'n___': if (argc) {
->>>>>>> origin/master
+    case 'n___': // midi-freq note-number
+      if (argc) {
         float note = arg[0];
         if (isnan(note)) note = voice_last_midi_note[voice];
         freq_midi(voice, note);
@@ -882,37 +873,28 @@ int wire_function(skode_t *s, int info) {
         pan_mod_set(voice, x, arg[1]);
       }
       break;
-<<<<<<< HEAD
-    case 'q___': // bit-crush bit-depth
-      if (argc) { wave_quant(voice, x); } break;
-    case 'Q___': // filter-resonance amount
-      if (argc) { mmf_set_res(voice, arg[0]); } break;
-    case 'r___': // record-mode bool
-      if (argc) { if (rec_state == 0) voice_record[voice] = x; } break;
-    case 'R!__': // remove-events tag
-=======
-    case 'q___': if (argc) { wave_quant(voice, x); } break;
-    case 'Q___': if (argc) { mmf_set_res(voice, arg[0]); } break;
+    case 'q___':  // bit-crush bit-depth
+      if (argc) { wave_quant(voice, x); }
+      break;
+    case 'Q___':
+      if (argc) { mmf_set_res(voice, arg[0]); }
+      break;
 #ifndef MINI
-    case 'r___': if (argc) { if (rec_state == 0) voice_record[voice] = x; } break;
-    case 'R!__':
->>>>>>> origin/master
+    case 'r___': // record-mode bool
+      if (argc) { if (rec_state == 0) voice_record[voice] = x; }
+      break;
+    case 'R!__':  // remove-events tag
       if (argc) {
         int tag = x;
         seq_kill_by_tag(tag);
       }
       break;
-<<<<<<< HEAD
-    case 'R\'__': // repeat-string-tempo count delay [tag]
-      if (argc > 1) {
-        uint64_t qt = synth_sample_count;
-=======
     case 'R!!_':
       seq_kill_all();
       break;
-    case 'R\'__': if (argc > 1) {
+    case 'R\'__': // repeat-string-tempo count delay [tag]
+      if (argc > 1) {
         uint64_t qt = SAMPLE_COUNT_GET();
->>>>>>> origin/master
         double t = (tempo_time_per_step * 4.0f);
         double fdt = t * arg[1] * (float)MAIN_SAMPLE_RATE;
         uint64_t dt = (uint64_t)fdt;
@@ -923,14 +905,9 @@ int wire_function(skode_t *s, int info) {
           qt += dt;
         }
       } break;
-<<<<<<< HEAD
     case 'R___': // repeat-string count delay [tag]
       if (argc > 1) {
-        uint64_t qt = synth_sample_count;
-=======
-    case 'R___': if (argc > 1) {
         uint64_t qt = SAMPLE_COUNT_GET();
->>>>>>> origin/master
         double fdt = arg[1] * (float)MAIN_SAMPLE_RATE;
         uint64_t dt = (uint64_t)fdt;
         int tag = 0;
@@ -940,13 +917,9 @@ int wire_function(skode_t *s, int info) {
           qt += dt;
         }
       } break;
-<<<<<<< HEAD
+#endif
     case 's___': // volume-smooth bool
       if (argc) {
-=======
-#endif
-    case 's___': if (argc) {
->>>>>>> origin/master
         if (arg[0] <= 0) {
           voice_smoother_enable[voice] = 0;
         } else {
@@ -1006,13 +979,9 @@ int wire_function(skode_t *s, int info) {
 #endif
       }
       break;
-<<<<<<< HEAD
+#ifndef MINI
     case 'x___': // set-step-string step
       if (argc) {
-=======
-#ifndef MINI
-    case 'x___': if (argc) {
->>>>>>> origin/master
         if (arg[0] == NAN || x < 0) {
           w->step++;
           x = w->step;
@@ -1048,7 +1017,7 @@ int wire_function(skode_t *s, int info) {
         for (int p = 0; p < PATTERNS_MAX; p++) pattern_show(w, p);
       }
       break;
-<<<<<<< HEAD
+#endif
     case '?___': // show-voice
       voice_show(w, voice, ' ', w->verbose); break;
     case '\\___': // verbose-show-voice
@@ -1056,13 +1025,6 @@ int wire_function(skode_t *s, int info) {
     case '??__': // show-active-voices
       voice_show_all(w, voice, w->verbose); break;
     case '?s__': // show-skode-string
-=======
-#endif
-    case '?___': voice_show(w, voice, ' ', w->verbose); break;
-    case '\\___': voice_show(w, voice, ' ', 1); break;
-    case '??__': voice_show_all(w, voice, w->verbose); break;
-    case '?s__':
->>>>>>> origin/master
       {
         w->printf(w, "# %s\n", skode_string(w->sk));
       }
@@ -1147,13 +1109,9 @@ int wire_function(skode_t *s, int info) {
         if (argc) wave_load(w, file_num, wave_slot, ch, 1);
       }
       break;
-<<<<<<< HEAD
+#ifndef MINI
     case '<___': // record duration
       if (arg) {
-=======
-#ifndef MINI
-    case '<___': if (arg) {
->>>>>>> origin/master
         rec_state = 0;
         float max_sec = arg[0];
         float max_samples;
@@ -1189,7 +1147,6 @@ int wire_function(skode_t *s, int info) {
         }
       }
       break;
-<<<<<<< HEAD
     case '>___': // copy-voice dest-voice
       if (arg) voice_copy(voice, x);
       break;
@@ -1205,18 +1162,8 @@ int wire_function(skode_t *s, int info) {
     case '@___': // step-unmute step
       if (arg) seq_mute_set(w->pattern, x, 1);
       break;
-    case '=___': // variable-set slot value
-=======
 #endif
-    case '>___': if (arg) voice_copy(voice, x); break;
-    case '/___': wave_default(voice); break;
-#ifndef MINI
-    case '%___': if (arg) seq_modulo_set(w->pattern, x); break;
-    case '!___': if (arg) seq_mute_set(w->pattern, x, 0); break;
-    case '@___': if (arg) seq_mute_set(w->pattern, x, 1); break;
-#endif
-    case '=___':
->>>>>>> origin/master
+    case '=___':  // variable-set slot value
       if (argc>1) skode_set_local(w->sk, x, arg[1]);
       else if (argc == 1) {
         double f = skode_get_local(w->sk, x);
