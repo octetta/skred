@@ -25,7 +25,7 @@ typedef struct {
   float args[8];
 } value_t;
 
-#include "skode.h"
+#include "ands.h"
 
 #define WLOGMAX (4096)
 
@@ -39,7 +39,7 @@ typedef struct wire_s {
   int trace;
   int verbose;
   int events; // do incoming events go to the logger?
-  skode_t *sk;
+  ands_t *sk;
   int quit;
   int (*puts)(struct wire_s *w, const char *s);
   int (*printf)(struct wire_s *w, const char *fmt, ...);

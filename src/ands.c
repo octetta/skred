@@ -5,10 +5,10 @@
 #include <string.h>
 #include <stdarg.h>
 
-#include "skode.h"
+#include "ands.h"
 
 /**
- * SKODE GRAMMAR (EBNF-ish)
+ * ANDS GRAMMAR (EBNF-ish)
  * 
  * chunk      = (element)* (';' | EOT)
  * element    = atom | number | string | array | variable | defer | comment | push | pop
@@ -53,7 +53,7 @@
 #define IS_ATOM(c) (isalpha(c) || strchr("!@%^&*_=:\"'<>?/", c))
 #define IS_NUMBER_EX(c) (isxdigit(c) || strchr("-.eExX", c))
 
-static double skode_strtod(char *s) {
+static double ands_strtod(char *s) {
   double d = NAN;
   if (s[1] == '\0' && (s[0] == '-' || s[0] == 'e' || s[0] == '.')) return d;
   d = strtod(s, NULL);
@@ -109,7 +109,7 @@ static char* buffer_str(buffer_t *b) {
 // MAIN SKODE STRUCTURE
 // ============================================================================
 
-typedef struct skode_s {
+typedef struct ands_s {
     // Unified buffers
     buffer_t num;
     buffer_t string[2];
@@ -144,7 +144,7 @@ typedef struct skode_s {
     double *global_save;
     
     // Callback
-    int (*fn)(struct skode_s *s, int info);
+    int (*fn)(struct ands_s *s, int info);
     void *user;
     
     // Mode
@@ -152,7 +152,7 @@ typedef struct skode_s {
     
     // Trace
     int trace;
-} skode_t;
+} ands_t;
 
 // ============================================================================
 // ATOM ENCODING - Simpler implementation with documentation
@@ -170,7 +170,7 @@ typedef struct skode_s {
  * Example: "f" becomes 'f___' (0x665f5f5f)
  * Uses network byte order for consistency.
  */
-static void atom_finish(skode_t *s) {
+static void atom_finish(ands_t *s) {
     int i = ATOM_NIL;  // Start with '____' (0x5f5f5f5f)
     char *p = (char *)&i;
     int len = s->atom.len < ATOM_MAX ? s->atom.len : ATOM_MAX;
@@ -180,7 +180,7 @@ static void atom_finish(skode_t *s) {
     s->atom_num = ntohl(i);
 }
 
-static void atom_reset(skode_t *s) {
+static void atom_reset(ands_t *s) {
     s->atom_num = ATOM_NIL;
 }
 
@@ -197,8 +197,8 @@ char* atom_string(int i) {
 // ACTION FUNCTIONS - Extracted for clarity
 // ============================================================================
 
-static void action_finish_number(skode_t *s) {
-    double val = skode_strtod(buffer_str(&s->num));
+static void action_finish_number(ands_t *s) {
+    double val = ands_strtod(buffer_str(&s->num));
     if (s->trace) printf("# ARG_PUSH %g\n", val);
     if (s->arg_len < s->arg_cap) {
         s->arg[s->arg_len++] = val;
@@ -206,49 +206,49 @@ static void action_finish_number(skode_t *s) {
     buffer_clear(&s->num);
 }
 
-static void action_finish_atom(skode_t *s) {
+static void action_finish_atom(ands_t *s) {
     if (s->trace) printf("# ATOM %s\n", buffer_str(&s->atom));
-    
+
     if (s->atom_num != ATOM_NIL) {
         if (s->fn(s, FUNCTION) == 0) {
             s->arg_len = 0;  // Clear args
         }
         atom_reset(s);
     }
-    
+
     atom_finish(s);
     buffer_clear(&s->atom);
 }
 
-static void action_finish_defer(skode_t *s) {
+static void action_finish_defer(ands_t *s) {
     if (s->trace) printf("# DEFER\n");
     s->fn(s, DEFER);
     buffer_clear(&s->defer);
 }
 
-static void action_finish_array(skode_t *s) {
+static void action_finish_array(ands_t *s) {
     // Push final number if any
     if (s->num.len > 0) {
-        s->data[s->data_len++] = skode_strtod(buffer_str(&s->num));
+        s->data[s->data_len++] = ands_strtod(buffer_str(&s->num));
         buffer_clear(&s->num);
     }
 }
 
-static void action_chunk_end(skode_t *s) {
+static void action_chunk_end(ands_t *s) {
     // Handle leftover atom
     if (s->atom_num != ATOM_NIL) {
         if (s->trace) printf("# left-over ATOM\n");
         s->fn(s, FUNCTION);
         atom_reset(s);
     }
-    
+
     // Handle leftover defer
     if (s->defer.len > 0) {
         if (s->trace) printf("# left-over DEFER\n");
         s->fn(s, DEFER);
         buffer_clear(&s->defer);
     }
-    
+
     if (s->trace) printf("# CHUNK_END\n");
     s->fn(s, CHUNK_END);
     s->arg_len = 0;  // Clear args
@@ -258,10 +258,10 @@ static void action_chunk_end(skode_t *s) {
 // STATE MACHINE
 // ============================================================================
 
-int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
+int ands_consume(ands_t *s, char *line, int (*fn)(ands_t *s, int info)) {
     char *ptr = line;
     char *end = ptr + strlen(ptr);
-    
+
     while (1) {
         if (ptr >= end) {
             switch (s->state) {
@@ -278,7 +278,7 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
             }
             break;
         }
-        
+
     reprocess:
         switch (s->state) {
             case START:
@@ -311,7 +311,7 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
                     s->state = GET_ATOM;
                 }
                 break;
-                
+
             case GET_NUMBER:
                 if (IS_NUMBER(*ptr)) {
                     buffer_push(&s->num, *ptr);
@@ -323,7 +323,7 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
                     goto reprocess;
                 }
                 break;
-                
+
             case GET_STRING:
                 if (IS_STRING_END(*ptr)) {
                     // Flip buffers: reading from current, writing to next
@@ -335,7 +335,7 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
                     buffer_push(&s->string[s->string_idx], *ptr);
                 }
                 break;
-                
+
             case GET_ARRAY:
                 if (IS_ARRAY_END(*ptr)) {
                     action_finish_array(s);
@@ -345,12 +345,12 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
                     buffer_push(&s->num, *ptr);
                 } else if (IS_SEPARATOR(*ptr)) {
                     if (s->num.len > 0) {
-                        if (s->data_len < (s->data_cap-1)) s->data[s->data_len++] = skode_strtod(buffer_str(&s->num));
+                        if (s->data_len < (s->data_cap-1)) s->data[s->data_len++] = ands_strtod(buffer_str(&s->num));
                         buffer_clear(&s->num);
                     }
                 }
                 break;
-                
+
             case GET_COMMENT:
                 if (IS_CHUNK_END(*ptr)) {
                     action_chunk_end(s);
@@ -359,7 +359,7 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
                     s->state = START;
                 }
                 break;
-                
+
             case GET_VARIABLE:
                 if (isdigit(*ptr)) {
                     char c = *ptr;
@@ -375,18 +375,18 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
                     goto reprocess;
                 }
                 break;
-                
+
             case GET_DEFER_NUMBER:
                 if (IS_NUMBER(*ptr)) {
                     buffer_push(&s->num, *ptr);
                 } else {
-                    s->defer_num = skode_strtod(buffer_str(&s->num));
+                    s->defer_num = ands_strtod(buffer_str(&s->num));
                     buffer_clear(&s->num);
                     s->state = GET_DEFER_STRING;
                     goto reprocess;
                 }
                 break;
-                
+
             case GET_DEFER_STRING:
                 if (IS_DEFER(*ptr)) {
                     s->defer_mode = *ptr;
@@ -399,7 +399,7 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
                     buffer_push(&s->defer, *ptr);
                 }
                 break;
-                
+
             case GET_ATOM:
                 if (IS_ATOM(*ptr)) {
                     buffer_push(&s->atom, *ptr);
@@ -409,7 +409,7 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
                     goto reprocess;
                 }
                 break;
-                
+
             default:
                 if (s->trace) puts("# default -> START");
                 s->state = START;
@@ -417,7 +417,7 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
         }
         ptr++;
     }
-    
+
     if (s->mode == 0) {
         action_chunk_end(s);
         s->state = START;
@@ -429,15 +429,15 @@ int skode(skode_t *s, char *line, int (*fn)(skode_t *s, int info)) {
 // PUBLIC API
 // ============================================================================
 
-skode_t *skode_new(int (*fn)(skode_t *s, int info), void *user) {
-    skode_t *s = (skode_t*)malloc(sizeof(skode_t));
-    
+ands_t *ands_new(int (*fn)(ands_t *s, int info), void *user) {
+    ands_t *s = (ands_t*)malloc(sizeof(ands_t));
+
     s->global_var = s->local_var;
     s->global_save = s->local_var;
     for (int i = 0; i < VAR_MAX; i++) {
         s->local_var[i] = 0;
     }
-    
+
     buffer_init(&s->num, 1024);
     buffer_init(&s->string[0], 1024);
     buffer_init(&s->string[1], 1024);
@@ -445,36 +445,36 @@ skode_t *skode_new(int (*fn)(skode_t *s, int info), void *user) {
     s->string_read_idx = 0;
     buffer_init(&s->atom, ATOM_MAX + 1);
     buffer_init(&s->defer, 1024);
-    
+
     s->data_cap = 1024;
     s->data_len = 0;
     s->data = (double*)malloc(s->data_cap * sizeof(double));
-    
+
     s->defer_num = 0;
     s->defer_mode = '?';
-    
+
     s->arg_cap = ARG_MAX;
     s->arg_len = 0;
-    
+
     s->atom_num = ATOM_NIL;
-    
+
     s->fn = fn;
     s->user = user;
-    
+
     s->state = START;
     s->mode = 0;
     s->trace = 0;
-    
+
     return s;
 }
 
-void skode_free(skode_t *s) {
+void ands_free(ands_t *s) {
     buffer_free(&s->num);
     buffer_free(&s->string[0]);
     buffer_free(&s->string[1]);
     buffer_free(&s->atom);
     buffer_free(&s->defer);
-    
+
     if (s->data) free(s->data);
     s->data = NULL;
     s->data_cap = 0;
@@ -482,22 +482,22 @@ void skode_free(skode_t *s) {
 }
 
 // Accessor functions
-int skode_atom_num(skode_t *s) { return s->atom_num; }
-int skode_arg_len(skode_t *s) { return s->arg_len; }
-double *skode_arg(skode_t *s) { return s->arg; }
-void *skode_user(skode_t *s) { return s->user; }
-char *skode_string(skode_t *s) { return buffer_str(&s->string[s->string_read_idx]); }
-int skode_string_len(skode_t *s) { return s->string[s->string_read_idx].len; }
-void skode_chunk_mode(skode_t *s, int mode) { s->mode = mode; }
-int skode_chunk_mode_get(skode_t *s) { return s->mode; }
-void skode_trace_set(skode_t *s, int n) { s->trace = n; }
-double skode_defer_num(skode_t *s) { return s->defer_num; }
-char *skode_defer_string(skode_t *s) { return buffer_str(&s->defer); }
-char skode_defer_mode(skode_t *s) { return s->defer_mode; }
-char *skode_atom_string(skode_t *s) { return atom_string(s->atom_num); }
-double *skode_data(skode_t *s) { return s->data; }
-int skode_data_len(skode_t *s) { return s->data_len; }
-void skode_data_resize(skode_t *s, int len) {
+int ands_atom_num(ands_t *s) { return s->atom_num; }
+int ands_arg_len(ands_t *s) { return s->arg_len; }
+double *ands_arg(ands_t *s) { return s->arg; }
+void *ands_user(ands_t *s) { return s->user; }
+char *ands_string(ands_t *s) { return buffer_str(&s->string[s->string_read_idx]); }
+int ands_string_len(ands_t *s) { return s->string[s->string_read_idx].len; }
+void ands_chunk_mode(ands_t *s, int mode) { s->mode = mode; }
+int ands_chunk_mode_get(ands_t *s) { return s->mode; }
+void ands_trace_set(ands_t *s, int n) { s->trace = n; }
+double ands_defer_num(ands_t *s) { return s->defer_num; }
+char *ands_defer_string(ands_t *s) { return buffer_str(&s->defer); }
+char ands_defer_mode(ands_t *s) { return s->defer_mode; }
+char *ands_atom_string(ands_t *s) { return atom_string(s->atom_num); }
+double *ands_data(ands_t *s) { return s->data; }
+int ands_data_len(ands_t *s) { return s->data_len; }
+void ands_data_resize(ands_t *s, int len) {
   if (s->data) {
     free(s->data);
     s->data = NULL;
@@ -507,20 +507,20 @@ void skode_data_resize(skode_t *s, int len) {
   s->data = (double *)calloc(len, sizeof(double));
   if (s->data) s->data_cap = len;
 }
-int skode_data_cap(skode_t *s) { return s->data_cap; }
+int ands_data_cap(ands_t *s) { return s->data_cap; }
 
-void skode_arg_clear(skode_t *s) { s->arg_len = 0; }
+void ands_arg_clear(ands_t *s) { s->arg_len = 0; }
 
-double skode_arg_push(skode_t *s, double n) {
+double ands_arg_push(ands_t *s, double n) {
     if (s->arg_len < s->arg_cap) {
         s->arg[s->arg_len++] = n;
     }
     return n;
 }
 
-void skode_arg_len_set(skode_t *s, int n) { s->arg_len = n; }
+void ands_arg_len_set(ands_t *s, int n) { s->arg_len = n; }
 
-double skode_arg_drop(skode_t *s) {
+double ands_arg_drop(ands_t *s) {
     int n = s->arg_len;
     double x = 0;
     if (n > 0) {
@@ -533,7 +533,7 @@ double skode_arg_drop(skode_t *s) {
     return x;
 }
 
-double skode_arg_swap(skode_t *s) {
+double ands_arg_swap(ands_t *s) {
     if (s->arg_len > 1) {
         double t = s->arg[0];
         s->arg[0] = s->arg[1];
@@ -542,37 +542,37 @@ double skode_arg_swap(skode_t *s) {
     return 0;
 }
 
-double skode_arg_push_many(skode_t *s, double *a, int n) {
+double ands_arg_push_many(ands_t *s, double *a, int n) {
     for (int i = 0; i < n && s->arg_len < s->arg_cap; i++) {
         s->arg[s->arg_len++] = a[i];
     }
     return 0;
 }
 
-double skode_get_local(skode_t *s, int n) { 
+double ands_get_local(ands_t *s, int n) {
   if (n >= 0 && n < VAR_MAX) {
     return s->global_var[n];
   }
   return NAN;
 }
 
-void skode_set_local(skode_t *s, int n, double x) { 
+void ands_set_local(ands_t *s, int n, double x) {
     if (n >= 0 && n < VAR_MAX) {
         s->global_var[n] = x;
     }
 }
 
-void skode_set_global(skode_t *s, double *p) { s->global_var = p; s->global_save = p; }
-void skode_use_local(skode_t *s) { s->global_var = s->local_var; }
-void skode_use_global(skode_t *s) { s->global_var = s->global_save; }
+void ands_set_global(ands_t *s, double *p) { s->global_var = p; s->global_save = p; }
+void ands_use_local(ands_t *s) { s->global_var = s->local_var; }
+void ands_use_global(ands_t *s) { s->global_var = s->global_save; }
 
-void skode_local_to_global(skode_t *s, int n) {
+void ands_local_to_global(ands_t *s, int n) {
     if (n >= 0 && n < VAR_MAX) {
         s->global_var[n] = s->local_var[n];
     }
 }
 
-void skode_global_to_local(skode_t *s, int n) {
+void ands_global_to_local(ands_t *s, int n) {
     if (n >= 0 && n < VAR_MAX) {
         s->local_var[n] = s->global_var[n];
     }

@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "skode.h"
+#include "ands.h"
 
 int wire_cb(skode_t *s, int info);
 
@@ -21,7 +21,7 @@ int patch_load(int which) {
       size_t len = strlen(line);
       if (len > 0 && line[len-1] == '\n') line[len-1] = ';';
       printf("# %s\n", line);
-      skode(s, line, wire_cb);
+      ands_consume(s, line, wire_cb);
     }
     fclose(in);
     skode_free(s);
@@ -129,7 +129,7 @@ int main(int argc, char *arg[]) {
     line = bestlineWithHistory("# ", NULL);
     if (line == NULL) break;
     bestlineHistoryAdd(line);
-    skode(s, line, wire_cb);
+    ands_consume(s, line, wire_cb);
     free(line);
     if (user == -1) {
       printf("must quit\n");

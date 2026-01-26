@@ -236,12 +236,12 @@ void wire_show(wire_t *w) {
   if (w != NULL) {
     w->printf(w, "# voice %d\n", w->voice);
     w->printf(w, "# pattern %d\n", w->pattern);
-    w->printf(w, "# scratch %s\n", skode_string(w->sk));
+    w->printf(w, "# scratch %s\n", ands_string(w->sk));
     w->printf(w, "( ");
     int flag = 1;
     int show_dots = 0;
-    double *data = skode_data(w->sk);
-    int data_len = skode_data_len(w->sk);
+    double *data = ands_data(w->sk);
+    int data_len = ands_data_len(w->sk);
 #define DOT_NUM (3)
     for (int i = 0; i < data_len; i++) {
       if (i < DOT_NUM) {
@@ -434,8 +434,8 @@ int data_load(wire_t *w, int wave_slot, int one_shot, float rate, float offset) 
     w->printf(w, "# invalid slot %d\n", wave_slot);
     return -1;
   }
-  double *data = skode_data(w->sk);
-  int data_len = skode_data_len(w->sk);
+  double *data = ands_data(w->sk);
+  int data_len = ands_data_len(w->sk);
   if (data == NULL) {
     w->printf(w, "# no data\n");
     return 100; // fix todo
@@ -709,16 +709,16 @@ void wave_table_dynamic_expand(int n) {
 #include <sys/time.h>
 #include <unistd.h>
 
-int wire_function(skode_t *s, int info) {
-  int atom = skode_atom_num(s);
-  int argc = skode_arg_len(s);
-  wire_t *w = (wire_t*)skode_user(s);
-  double *arg = skode_arg(s);
+int wire_function(ands_t *s, int info) {
+  int atom = ands_atom_num(s);
+  int argc = ands_arg_len(s);
+  wire_t *w = (wire_t*)ands_user(s);
+  double *arg = ands_arg(s);
   int voice = w->voice;
   int x = (int)arg[0];
   if (w->trace) {
     w->printf(w, "# WIRE_FUNCTION ");
-    w->printf(w, "%s", skode_atom_string(s));
+    w->printf(w, "%s", ands_atom_string(s));
     if (argc) {
       for (int i=0; i<argc; i++) w->printf(w, " %g", arg[i]);
     }
@@ -796,12 +796,12 @@ int wire_function(skode_t *s, int info) {
     case '/D__': // resize-data count
       if (argc) {
         // free and re-allocate...
-        if (x > 0) skode_data_resize(w->sk, x);
+        if (x > 0) ands_data_resize(w->sk, x);
       }
       w->printf(w, "# /D data %p cap %d len %d\n",
-        skode_data(w->sk),
-        skode_data_cap(w->sk),
-        skode_data_len(w->sk));
+        ands_data(w->sk),
+        ands_data_cap(w->sk),
+        ands_data_len(w->sk));
       break;
     case 'I___': // log-event bool
       if (argc) {} break; // TODO en/dis-able send timestamp wire to the event logger
@@ -901,7 +901,7 @@ int wire_function(skode_t *s, int info) {
         int tag = 0;
         if (argc > 2) tag = (int)arg[2];
         for (int i=0; i<x; i++) {
-          queue_item(qt, skode_string(w->sk), w->voice, tag);
+          queue_item(qt, ands_string(w->sk), w->voice, tag);
           qt += dt;
         }
       } break;
@@ -913,7 +913,7 @@ int wire_function(skode_t *s, int info) {
         int tag = 0;
         if (argc > 2) tag = (int)arg[2];
         for (int i=0; i<x; i++) {
-          queue_item(qt, skode_string(w->sk), w->voice, tag);
+          queue_item(qt, ands_string(w->sk), w->voice, tag);
           qt += dt;
         }
       } break;
@@ -989,7 +989,7 @@ int wire_function(skode_t *s, int info) {
           w->step = x;
         }
         if (x >= 0 && x < SEQ_STEPS_MAX) {
-          seq_step_set(w->pattern, w->step, skode_string(w->sk));
+          seq_step_set(w->pattern, w->step, ands_string(w->sk));
         }
       }
       break;
@@ -1026,14 +1026,14 @@ int wire_function(skode_t *s, int info) {
       voice_show_all(w, voice, w->verbose); break;
     case '?s__': // show-skode-string
       {
-        w->printf(w, "# %s\n", skode_string(w->sk));
+        w->printf(w, "# %s\n", ands_string(w->sk));
       }
       break;
     case 'l>g_':
-      if (argc) skode_local_to_global(w->sk, x);
+      if (argc) ands_local_to_global(w->sk, x);
       break;
     case 'g>l_':
-      if (argc) skode_global_to_local(w->sk, x);
+      if (argc) ands_global_to_local(w->sk, x);
       break;
     case '/m__': // benchmark voice
       synth_voice_bench(voice);
@@ -1059,13 +1059,13 @@ int wire_function(skode_t *s, int info) {
       else { w->printf(w, "# /f%d\n", w->flag); }
       break;
     case '/c__': // chunk-mode bool
-      if (argc) { skode_chunk_mode(w->sk, x); }
-      else { w->printf(w, "# /c%d\n", skode_chunk_mode_get(w->sk)); }
+      if (argc) { ands_chunk_mode(w->sk, x); }
+      else { w->printf(w, "# /c%d\n", ands_chunk_mode_get(w->sk)); }
       break;
     case '/t__': // trace-mode num
       if (argc == 0) x = (w->trace) ? 0 : 1;
       w->trace = x;
-      skode_trace_set(s, x > 1);
+      ands_trace_set(s, x > 1);
       break;
     case '/v__': // verbose-mode num
       if (argc == 0) x = (w->verbose) ? 0 : 1;
@@ -1164,14 +1164,14 @@ int wire_function(skode_t *s, int info) {
       break;
 #endif
     case '=___':  // variable-set slot value
-      if (argc>1) skode_set_local(w->sk, x, arg[1]);
+      if (argc>1) ands_set_local(w->sk, x, arg[1]);
       else if (argc == 1) {
-        double f = skode_get_local(w->sk, x);
+        double f = ands_get_local(w->sk, x);
         w->printf(w, "# $%d %g\n", x, f);
       }
       else {
         for (int i=0; i<10; i++) {
-          double f = skode_get_local(w->sk, i);
+          double f = ands_get_local(w->sk, i);
           w->printf(w, "# $%d %g\n", i, f);
         }
       }
@@ -1190,11 +1190,11 @@ int wire_function(skode_t *s, int info) {
   return 0;
 }
 
-int wire_defer(skode_t *s, int info) {
+int wire_defer(ands_t *s, int info) {
 #ifndef MINI
-  wire_t *w = (wire_t*)skode_user(s);
-  char mode = skode_defer_mode(s);
-  double t = skode_defer_num(s);
+  wire_t *w = (wire_t*)ands_user(s);
+  char mode = ands_defer_mode(s);
+  double t = ands_defer_num(s);
   if (w->defer_sample_time == 0) {
     w->defer_sample_time = SAMPLE_COUNT_GET();
   }
@@ -1210,38 +1210,38 @@ int wire_defer(skode_t *s, int info) {
 #endif
       mode,
       t, qt, dst,
-      skode_defer_string(s),
+      ands_defer_string(s),
       w->defer_last);
   }
-  queue_item(qt, skode_defer_string(s), w->voice, -1);
-  w->defer_last += skode_defer_num(s);
+  queue_item(qt, ands_defer_string(s), w->voice, -1);
+  w->defer_last += ands_defer_num(s);
 #endif
   return 0;
 }
 
-int wire_chunk_end(skode_t *s, int info) {
-  wire_t *w = (wire_t*)skode_user(s);
+int wire_chunk_end(ands_t *s, int info) {
+  wire_t *w = (wire_t*)ands_user(s);
   if (w->trace) w->printf(w, "# CHUNK_END %d\n", info);
   w->defer_last = 0;
   w->defer_sample_time = 0;
   return 0;
 }
 
-int wire_unknown(wire_t *w, skode_t *s, int info) {
+int wire_unknown(wire_t *w, ands_t *s, int info) {
   w->printf(w, "# WIRE_UNKNOWN %d\n", info);
   return 0;
 }
 
-int wire_cb(skode_t *s, int info) {
-  wire_t *w = (wire_t*)skode_user(s);
+int wire_cb(ands_t *s, int info) {
+  wire_t *w = (wire_t*)ands_user(s);
   switch (info) {
     case FUNCTION: return wire_function(s, info);
     case DEFER: return wire_defer(s, info);
     case CHUNK_END: return wire_chunk_end(s, info);
     case PUSH: { voice_push(&w->stack, w->voice); w->printf(w, "pushed v%d\n", w->voice); } break;
     case POP: { w->voice = voice_pop(&w->stack); } break;
-    case GOT_STRING: { if (w->trace) w->printf(w, "# -> {%s}\n", skode_string(s)); } break;
-    case GOT_ARRAY: { if (w->trace) w->printf(w, "# -> (..%d..)\n", skode_data_len(s)); } break;
+    case GOT_STRING: { if (w->trace) w->printf(w, "# -> {%s}\n", ands_string(s)); } break;
+    case GOT_ARRAY: { if (w->trace) w->printf(w, "# -> (..%d..)\n", ands_data_len(s)); } break;
     default: return wire_unknown(w, s, info);
   }
   return 0;
@@ -1252,8 +1252,8 @@ double global_var[10];
 int wire(char *line, wire_t *w) {
   if (w->sk == NULL) {
     // TODO this should live in wire-init or similar
-    w->sk = skode_new(wire_cb, (void *)w);
-    skode_set_global(w->sk, global_var);
+    w->sk = ands_new(wire_cb, (void *)w);
+    ands_set_global(w->sk, global_var);
   }
   w->log_len = 0;
   w->log[0] = '\0';
@@ -1263,7 +1263,7 @@ int wire(char *line, wire_t *w) {
 
   int r = 0;
 
-  skode(w->sk, line, wire_cb);
+  ands_consume(w->sk, line, wire_cb);
   return w->quit;
   return r;
 }

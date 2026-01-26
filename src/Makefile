@@ -52,8 +52,8 @@ $(SCOPE) :
 $(OUT)/wav2data : wav2data.c miniwav.o
 	$(CC) $(COPTS) -D_GNU_SOURCE $^ -o $@
 
-$(OUT)/skode : skode.c skode-example.c bestline.o
-	$(CC) $(COPTS) -Wno-multichar skode.c skode-example.c bestline.o -o $@
+$(OUT)/ands : ands.c ands-example.c bestline.o
+	$(CC) $(COPTS) -Wno-multichar ands.c ands-example.c bestline.o -o $@
 
 $(OUT)/miniwav.o : miniwav.c miniwav.h
 	$(CC) $(COPTS) -c $< -o $@
@@ -75,10 +75,10 @@ $(OUT)/seq.o: seq.c seq.h
 $(OUT)/udp.o: udp.c udp.h
 	$(CC) $(COPTS) -c $< -o $@
 
-$(OUT)/skode.o: skode.c skode.h
+$(OUT)/ands.o: ands.c ands.h
 	$(CC) $(COPTS) -c $< -o $@
 
-$(OUT)/wire.o: wire.c wire.h synth.def skode.h synth.c seq.c $(OUT)/skode.o
+$(OUT)/wire.o: wire.c wire.h synth.def ands.h synth.c seq.c $(OUT)/ands.o
 	$(CC) $(COPTS) -Wno-multichar -c $< -o $@
 
 $(OUT)/skred.o: skred.c skred.h synth.def
@@ -93,7 +93,7 @@ OBJS = \
 	$(OUT)/synth.o \
 	$(OUT)/seq.o \
 	$(OUT)/wire.o \
-  $(OUT)/skode.o \
+  $(OUT)/ands.o \
 	$(OUT)/udp.o \
 	$(OUT)/miniaudio.o \
 	$(OUT)/skred-mem.o \
@@ -116,7 +116,7 @@ mini-skred : mini-skred.c $(OBJS)
     $(OUT)/retro.o \
     $(OUT)/synth.o \
     $(OUT)/seq.o \
-    $(OUT)/skode.o \
+    $(OUT)/ands.o \
     $(OUT)/miniaudio.o \
     $(OUT)/util.o \
     $(OUT)/skqueue.o \
