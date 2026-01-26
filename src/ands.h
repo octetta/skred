@@ -62,5 +62,9 @@ void ands_data_resize(ands_t *s, int len);
 int ands_data_cap(ands_t *s);
 double ands_get_local(ands_t *s, int n);
 
+char *ands_string_to_extra(ands_t *s, int n);
+char *ands_string_from_extra(ands_t *s, int n);
+char *ands_extra(ands_t *s, int n);
+
 #endif
 

@@ -1071,6 +1071,18 @@ int skode_function(ands_t *s, int info) {
       if (argc == 0) x = (ctx->verbose) ? 0 : 1;
       ctx->verbose = x;
       break;
+    case '\\S__': // recover-string-buffer num
+      if (arg == 0) {
+      } else {
+        ands_string_from_extra(ctx->parse, x);
+      }
+      break;
+    case '/S__': // store-string-buffer num
+      if (arg == 0) {
+      } else {
+        ands_string_to_extra(ctx->parse, x);
+      }
+      break;
     case '/s__': // system-show num
       {
         if (argc == 0) {
@@ -1082,6 +1094,12 @@ int skode_function(ands_t *s, int info) {
             case 2: audio_show(ctx); break;
             case 3: ctx->printf(ctx, "%s", synth_stats()); break;
             case 5: skode_show(ctx); break;
+            case 7:
+              ctx->printf(ctx, "# {%s}\n", ands_string(ctx->parse));
+              for (int i=0; i<10; i++) {
+                ctx->printf(ctx, "# [%d] %s\n", i, ands_extra(ctx->parse, i));
+              }
+              break;
 #ifndef MINI
             case 1: show_threads(ctx); break;
             case 4: show_stats(ctx); break;

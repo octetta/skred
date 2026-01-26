@@ -52,7 +52,7 @@ $(SCOPE) :
 $(OUT)/wav2data : wav2data.c miniwav.o
 	$(CC) $(COPTS) -D_GNU_SOURCE $^ -o $@
 
-$(OUT)/ands : ands.c ands-example.c bestline.o
+ands-example : ands.c ands-example.c bestline.o
 	$(CC) $(COPTS) -Wno-multichar ands.c ands-example.c bestline.o -o $@
 
 $(OUT)/miniwav.o : miniwav.c miniwav.h

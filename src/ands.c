@@ -105,6 +105,10 @@ static char* buffer_str(buffer_t *b) {
     return b->data;
 }
 
+#define NUM_BUF_LEN (128)
+#define STRING_BUF_LEN (256)
+#define DATA_BUF_LEN (1024)
+
 // ============================================================================
 // MAIN SKODE STRUCTURE
 // ============================================================================
@@ -113,6 +117,7 @@ typedef struct ands_s {
     // Unified buffers
     buffer_t num;
     buffer_t string[2];
+    char extra[10][STRING_BUF_LEN];
     int string_idx;
     int string_read_idx;
     buffer_t atom;
@@ -438,15 +443,15 @@ ands_t *ands_new(int (*fn)(ands_t *s, int info), void *user) {
         s->local_var[i] = 0;
     }
 
-    buffer_init(&s->num, 1024);
-    buffer_init(&s->string[0], 1024);
-    buffer_init(&s->string[1], 1024);
+    buffer_init(&s->num, NUM_BUF_LEN);
+    buffer_init(&s->string[0], STRING_BUF_LEN);
+    buffer_init(&s->string[1], STRING_BUF_LEN);
     s->string_idx = 0;
     s->string_read_idx = 0;
     buffer_init(&s->atom, ATOM_MAX + 1);
-    buffer_init(&s->defer, 1024);
+    buffer_init(&s->defer, STRING_BUF_LEN);
 
-    s->data_cap = 1024;
+    s->data_cap = DATA_BUF_LEN;
     s->data_len = 0;
     s->data = (double*)malloc(s->data_cap * sizeof(double));
 
@@ -464,6 +469,8 @@ ands_t *ands_new(int (*fn)(ands_t *s, int info), void *user) {
     s->state = START;
     s->mode = 0;
     s->trace = 0;
+
+    for (int i=0; i<10; i++) s->extra[i][0] = '\0';
 
     return s;
 }
@@ -576,4 +583,25 @@ void ands_global_to_local(ands_t *s, int n) {
     if (n >= 0 && n < VAR_MAX) {
         s->local_var[n] = s->global_var[n];
     }
+}
+
+char *ands_string_to_extra(ands_t *s, int n) {
+  if (n>=0 && n<=10) {
+    strncpy(s->extra[n], s->string[s->string_idx].data, STRING_BUF_LEN);
+  }
+  return s->string[s->string_idx].data;
+}
+
+char *ands_string_from_extra(ands_t *s, int n) {
+  if (n>=0 && n<=10) {
+    strncpy(s->string[s->string_idx].data, s->extra[n], STRING_BUF_LEN);
+  }
+  return s->string[s->string_idx].data;
+}
+
+char *ands_extra(ands_t *s, int n) {
+  if (n>=0 && n<=10) {
+    return s->extra[n];
+  }
+  return "";
 }
