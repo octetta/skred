@@ -1026,7 +1026,7 @@ int skode_function(ands_t *s, int info) {
       voice_show_all(ctx, voice, ctx->verbose); break;
     case '?s__': // show-skode-string
       {
-        ctx->printf(ctx, "# %s\n", ands_string(ctx->parse));
+        ctx->printf(ctx, "# {%}s\n", ands_string(ctx->parse));
       }
       break;
     case 'l>g_':
@@ -1071,16 +1071,31 @@ int skode_function(ands_t *s, int info) {
       if (argc == 0) x = (ctx->verbose) ? 0 : 1;
       ctx->verbose = x;
       break;
-    case '\\S__': // recover-string-buffer num
+    case '<e__': // recover-string-buffer num
       if (arg == 0) {
       } else {
-        ands_string_from_extra(ctx->parse, x);
+        char *s = ands_string_from_extra(ctx->parse, x);
+        ctx->printf(ctx, "# %s <- [%d]\n", s, x);
       }
       break;
-    case '/S__': // store-string-buffer num
+    case 'e>__': // store-string-buffer num
       if (arg == 0) {
       } else {
-        ands_string_to_extra(ctx->parse, x);
+        char *s = ands_string(ctx->parse);
+        ands_string_to_extra(ctx->parse, x, s);
+      }
+      break;
+    case 'e!__': // execute-string num
+      {
+        char *s = "";
+        if (arg == 0) {
+          s = ands_string(ctx->parse);
+        } else {
+          s = ands_string_from_extra(ctx->parse, x);
+        }
+        uint64_t now = SAMPLE_COUNT_GET();
+        int tag = 0;
+        queue_item(now, s, voice, tag);
       }
       break;
     case '/s__': // system-show num
@@ -1174,10 +1189,10 @@ int skode_function(ands_t *s, int info) {
     case '%___': // pattern-modulus num
       if (arg) seq_modulo_set(ctx->pattern, x);
       break;
-    case '!___': // step-mute step
+    case 'x!__': // step-mute step
       if (arg) seq_mute_set(ctx->pattern, x, 0);
       break;
-    case '@___': // step-unmute step
+    case 'x@__': // step-unmute step
       if (arg) seq_mute_set(ctx->pattern, x, 1);
       break;
 #endif

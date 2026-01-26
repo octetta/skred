@@ -585,9 +585,9 @@ void ands_global_to_local(ands_t *s, int n) {
     }
 }
 
-char *ands_string_to_extra(ands_t *s, int n) {
+char *ands_string_to_extra(ands_t *s, int n, char *e) {
   if (n>=0 && n<=10) {
-    strncpy(s->extra[n], s->string[s->string_idx].data, STRING_BUF_LEN);
+    strncpy(s->extra[n], e, STRING_BUF_LEN);
   }
   return s->string[s->string_idx].data;
 }
