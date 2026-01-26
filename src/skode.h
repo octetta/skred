@@ -17,14 +17,6 @@ typedef struct {
   int ptr;
 } voice_stack_t;
 
-typedef struct {
-  int func;
-  int sub_func;
-  int next;
-  int argc;
-  float args[8];
-} value_t;
-
 #include "ands.h"
 
 #define SKODE_LOG_MAX (4096)

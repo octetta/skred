@@ -1,4 +1,5 @@
 [tools]
 elixir = "latest"
+emsdk = "latest"
 erlang = "latest"
 ripgrep = "latest"
