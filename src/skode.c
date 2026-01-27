@@ -1080,9 +1080,7 @@ int skode_function(ands_t *s, int info) {
     case '<e__': // external-string-to-skode external-index
       if (arg == 0) {
       } else {
-        //char *s = ands_string_from_extra(ctx->parse, x);
-        char *s = ands_string_from_external(ctx->parse, EXTRA_PTR(x), STRING_BUF_LEN);
-        ctx->printf(ctx, "# %s <- [%d]\n", s, x);
+        ands_string_from_external(ctx->parse, EXTRA_PTR(x), STRING_BUF_LEN);
       }
       break;
     case 'e>__': // skode-string-to-external external-index
@@ -1122,7 +1120,6 @@ int skode_function(ands_t *s, int info) {
             case 7:
               ctx->printf(ctx, "# {%s}\n", ands_string(ctx->parse));
               for (int i=0; i<STRING_BUF_IDX_MAX; i++) {
-                //ctx->printf(ctx, "# [%d] %s\n", i, ands_extra(ctx->parse, i));
                 if (strlen(EXTRA_PTR(i))) ctx->printf(ctx, "# [%d] %s\n", i, EXTRA_PTR(i));
               }
               break;

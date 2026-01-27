@@ -113,11 +113,12 @@ static char* buffer_str(buffer_t *b) {
 // MAIN SKODE STRUCTURE
 // ============================================================================
 
+#define STRING_BUF_MOD (2)
+
 typedef struct ands_s {
     // Unified buffers
     buffer_t num;
-    buffer_t string[2];
-    char extra[10][STRING_BUF_LEN];
+    buffer_t string[STRING_BUF_MOD];
     int string_idx;
     int string_read_idx;
     buffer_t atom;
@@ -334,7 +335,7 @@ int ands_consume(ands_t *s, char *line, int (*fn)(ands_t *s, int info)) {
                     // Flip buffers: reading from current, writing to next
                     s->string_read_idx = s->string_idx;
                     s->fn(s, GOT_STRING);
-                    s->string_idx = (s->string_idx + 1) % 2;
+                    s->string_idx = (s->string_idx + 1) % STRING_BUF_MOD;
                     s->state = START;
                 } else {
                     buffer_push(&s->string[s->string_idx], *ptr);
@@ -470,8 +471,6 @@ ands_t *ands_new(int (*fn)(ands_t *s, int info), void *user) {
     s->mode = 0;
     s->trace = 0;
 
-    for (int i=0; i<10; i++) s->extra[i][0] = '\0';
-
     return s;
 }
 
@@ -585,24 +584,10 @@ void ands_global_to_local(ands_t *s, int n) {
     }
 }
 
-#define STRING_PTR(s) s->string[s->string_idx].data
-
-char *ands_string_to_extra(ands_t *s, int n, char *src) {
-  if (n>=0 && n<=10) {
-    strncpy(s->extra[n], src, STRING_BUF_LEN);
-  }
-  return STRING_PTR(s);
-}
-
-char *ands_string_from_extra(ands_t *s, int n) {
-  if (n>=0 && n<=10) {
-    strncpy(STRING_PTR(s), s->extra[n], STRING_BUF_LEN);
-  }
-  return STRING_PTR(s);
-}
+#define STRING_PTR(s) s->string[s->string_idx % STRING_BUF_MOD].data
 
 char *ands_string_from_external(ands_t *s, char *src, int len) {
-  if (len < STRING_BUF_LEN) len = STRING_BUF_LEN;
+  if (len > STRING_BUF_LEN) len = STRING_BUF_LEN;
   strncpy(STRING_PTR(s), src, len);
   return STRING_PTR(s);
 }
@@ -610,11 +595,4 @@ char *ands_string_from_external(ands_t *s, char *src, int len) {
 char *ands_string_to_external(ands_t *s, char *dst, int len) {
   strncpy(dst, STRING_PTR(s), len);
   return dst;
-}
-
-char *ands_extra(ands_t *s, int n) {
-  if (n>=0 && n<=10) {
-    return s->extra[n];
-  }
-  return "";
 }
