@@ -63,7 +63,9 @@ int ands_data_cap(ands_t *s);
 double ands_get_local(ands_t *s, int n);
 
 char *ands_string_to_extra(ands_t *s, int n, char *e);
+char *ands_string_to_external(ands_t *s, char *dst, int len);
 char *ands_string_from_extra(ands_t *s, int n);
+char *ands_string_from_external(ands_t *s, char *src, int len);
 char *ands_extra(ands_t *s, int n);
 
 #endif

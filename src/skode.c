@@ -226,6 +226,12 @@ int voice_show_all(skode_t *ctx, int voice, int verbose) {
 #define SKODE_POINTER_MAX (100)
 static skode_t *_skode_all[SKODE_POINTER_MAX];
 
+#define STRING_BUF_LEN (256)
+#define STRING_BUF_IDX_MAX (10)
+static char _skode_extra[STRING_BUF_IDX_MAX][STRING_BUF_LEN];
+#define EXTRA_PTR(n) _skode_extra[n % STRING_BUF_IDX_MAX]
+#define EXTRA_INIT() {for (int i=0; i<STRING_BUF_IDX_MAX; i++) EXTRA_PTR(i)[0] = '\0';}
+
 int skode_hash(skode_t *ctx) {
   uintptr_t addr = (uintptr_t)ctx;
   addr *= 2654435769u; // knuth's multiplicitive hash (based on golden thingy?)
@@ -1071,18 +1077,21 @@ int skode_function(ands_t *s, int info) {
       if (argc == 0) x = (ctx->verbose) ? 0 : 1;
       ctx->verbose = x;
       break;
-    case '<e__': // recover-string-buffer num
+    case '<e__': // external-string-to-skode external-index
       if (arg == 0) {
       } else {
-        char *s = ands_string_from_extra(ctx->parse, x);
+        //char *s = ands_string_from_extra(ctx->parse, x);
+        char *s = ands_string_from_external(ctx->parse, EXTRA_PTR(x), STRING_BUF_LEN);
         ctx->printf(ctx, "# %s <- [%d]\n", s, x);
       }
       break;
-    case 'e>__': // store-string-buffer num
+    case 'e>__': // skode-string-to-external external-index
       if (arg == 0) {
       } else {
         char *s = ands_string(ctx->parse);
-        ands_string_to_extra(ctx->parse, x, s);
+        //ands_string_to_extra(ctx->parse, x, s);
+        //ands_string_to_external(ctx->parse, EXTRA_PTR(x), STRING_BUF_LEN);
+        strncpy(EXTRA_PTR(x), s, STRING_BUF_LEN);
       }
       break;
     case 'e!__': // execute-string num
@@ -1091,7 +1100,8 @@ int skode_function(ands_t *s, int info) {
         if (arg == 0) {
           s = ands_string(ctx->parse);
         } else {
-          s = ands_string_from_extra(ctx->parse, x);
+          //s = ands_string_from_extra(ctx->parse, x);
+          s = _skode_extra[x % STRING_BUF_IDX_MAX];
         }
         uint64_t now = SAMPLE_COUNT_GET();
         int tag = 0;
@@ -1111,8 +1121,9 @@ int skode_function(ands_t *s, int info) {
             case 5: skode_show(ctx); break;
             case 7:
               ctx->printf(ctx, "# {%s}\n", ands_string(ctx->parse));
-              for (int i=0; i<10; i++) {
-                ctx->printf(ctx, "# [%d] %s\n", i, ands_extra(ctx->parse, i));
+              for (int i=0; i<STRING_BUF_IDX_MAX; i++) {
+                //ctx->printf(ctx, "# [%d] %s\n", i, ands_extra(ctx->parse, i));
+                if (strlen(EXTRA_PTR(i))) ctx->printf(ctx, "# [%d] %s\n", i, EXTRA_PTR(i));
               }
               break;
 #ifndef MINI
@@ -1282,6 +1293,7 @@ int skode_callback(ands_t *s, int info) {
 
 double global_var[10];
 
+
 int skode_consume(char *line, skode_t *ctx) {
   if (ctx->parse == NULL) {
     // TODO this should live in wire-init or similar
@@ -1326,6 +1338,7 @@ void skode_init(skode_t *ctx) {
     for (int i = 0; i < SKODE_POINTER_MAX; i++) {
       _skode_all[i] = NULL;
     }
+    EXTRA_INIT();
     first = 0;
   }
   ctx->voice = 0;

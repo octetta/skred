@@ -1,0 +1,14 @@
+# show extra/external/event (macro)
+v0 a4 f440 t 0 .5 0 0 >1v1 f881 >2v2 w2 f220
+{v0l1}e>0
+{v1l1}e>1
+{v2l1}e>2
+/s7 # show them
+
+# usage in a pattern
+
+{e!0 ~.5 e!1 ~.5 e!2} R 8 1.5
+
+{e!0 ~.5 e!1 ~.5 e!2} x0
+
+~12 v0550 v1f991 v2f330 M120 %12 Z1 ~12 Z0

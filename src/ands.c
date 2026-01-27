@@ -585,18 +585,31 @@ void ands_global_to_local(ands_t *s, int n) {
     }
 }
 
-char *ands_string_to_extra(ands_t *s, int n, char *e) {
+#define STRING_PTR(s) s->string[s->string_idx].data
+
+char *ands_string_to_extra(ands_t *s, int n, char *src) {
   if (n>=0 && n<=10) {
-    strncpy(s->extra[n], e, STRING_BUF_LEN);
+    strncpy(s->extra[n], src, STRING_BUF_LEN);
   }
-  return s->string[s->string_idx].data;
+  return STRING_PTR(s);
 }
 
 char *ands_string_from_extra(ands_t *s, int n) {
   if (n>=0 && n<=10) {
-    strncpy(s->string[s->string_idx].data, s->extra[n], STRING_BUF_LEN);
+    strncpy(STRING_PTR(s), s->extra[n], STRING_BUF_LEN);
   }
-  return s->string[s->string_idx].data;
+  return STRING_PTR(s);
+}
+
+char *ands_string_from_external(ands_t *s, char *src, int len) {
+  if (len < STRING_BUF_LEN) len = STRING_BUF_LEN;
+  strncpy(STRING_PTR(s), src, len);
+  return STRING_PTR(s);
+}
+
+char *ands_string_to_external(ands_t *s, char *dst, int len) {
+  strncpy(dst, STRING_PTR(s), len);
+  return dst;
 }
 
 char *ands_extra(ands_t *s, int n) {
