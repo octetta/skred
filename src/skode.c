@@ -223,8 +223,8 @@ int voice_show_all(skode_t *ctx, int voice, int verbose) {
   return 0;
 }
 
-#define SKODE_POINTER_MAX (100)
-static skode_t *_skode_all[SKODE_POINTER_MAX];
+#define SKODE_CTX_MAX (100)
+static skode_t *skode_ctx[SKODE_CTX_MAX];
 
 #define STRING_BUF_LEN (256)
 #define STRING_BUF_IDX_MAX (128) // idea one macro per midi key?
@@ -235,7 +235,7 @@ static char _skode_extra[STRING_BUF_IDX_MAX][STRING_BUF_LEN];
 int skode_hash(skode_t *ctx) {
   uintptr_t addr = (uintptr_t)ctx;
   addr *= 2654435769u; // knuth's multiplicitive hash (based on golden thingy?)
-  return addr % SKODE_POINTER_MAX;
+  return addr % SKODE_CTX_MAX;
 }
 
 void skode_show(skode_t *ctx) {
@@ -266,13 +266,16 @@ void skode_show(skode_t *ctx) {
     }
     ctx->printf(ctx, ") # %d elements\n", data_len);
   }
-  for (int i = 0; i < SKODE_POINTER_MAX; i++) {
-    if (_skode_all[i]) {
-      ctx->printf(ctx, "# wl/%d ", skode_hash(_skode_all[i]));
-      ctx->printf(ctx, " .voice=%d", _skode_all[i]->voice);
-      ctx->printf(ctx, " .pattern=%d", _skode_all[i]->pattern);
-      ctx->printf(ctx, " .step=%d", _skode_all[i]->step);
-      ctx->printf(ctx, " .events=%dn", _skode_all[i]->events);
+  for (int i = 0; i < SKODE_CTX_MAX; i++) {
+    if (skode_ctx[i]) {
+      ctx->printf(ctx, "# ctx[%d] ", skode_hash(skode_ctx[i]));
+      ctx->printf(ctx, " v%d", skode_ctx[i]->voice);
+      ctx->printf(ctx, " y%d", skode_ctx[i]->pattern);
+      ctx->printf(ctx, " x%d", skode_ctx[i]->step);
+      //ctx->printf(ctx, " .events=%dn", skode_ctx[i]->events);
+      ctx->printf(ctx, " .which=%d", skode_ctx[i]->which);
+      ctx->printf(ctx, " .ip=%x", skode_ctx[i]->ip);
+      ctx->printf(ctx, " .port=%x", skode_ctx[i]->port);
       ctx->printf(ctx, "\n");
     }
   }
@@ -1098,12 +1101,23 @@ int skode_function(ands_t *s, int info) {
         if (arg == 0) {
           s = ands_string(ctx->parse);
         } else {
-          //s = ands_string_from_extra(ctx->parse, x);
           s = _skode_extra[x % STRING_BUF_IDX_MAX];
         }
-        uint64_t now = SAMPLE_COUNT_GET();
-        int tag = 0;
-        queue_item(now, s, voice, tag);
+        if (s[0] != '\0') {
+          uint64_t now = SAMPLE_COUNT_GET();
+          int tag = 0;
+          queue_item(now, s, voice, tag);
+        }
+      }
+      break;
+    case 'e?__': // show-execute-string [num]
+      if (arg) {
+        ctx->printf(ctx, "# {%s} e>%d\n", EXTRA_PTR(x), x);
+      } else {
+        for (int i=0; i<STRING_BUF_IDX_MAX; i++) {
+          if (strlen(EXTRA_PTR(i)))
+            ctx->printf(ctx, "# {%s} e>%d\n", EXTRA_PTR(i), i);
+        }
       }
       break;
     case '/s__': // system-show num
@@ -1118,9 +1132,9 @@ int skode_function(ands_t *s, int info) {
             case 3: ctx->printf(ctx, "%s", synth_stats()); break;
             case 5: skode_show(ctx); break;
             case 7:
-              ctx->printf(ctx, "# {%s}\n", ands_string(ctx->parse));
               for (int i=0; i<STRING_BUF_IDX_MAX; i++) {
-                if (strlen(EXTRA_PTR(i))) ctx->printf(ctx, "# [%d] %s\n", i, EXTRA_PTR(i));
+                if (strlen(EXTRA_PTR(i)))
+                  ctx->printf(ctx, "# {%s} e>%d\n", EXTRA_PTR(i), i);
               }
               break;
 #ifndef MINI
@@ -1299,7 +1313,7 @@ int skode_consume(char *line, skode_t *ctx) {
   }
   ctx->log_len = 0;
   ctx->log[0] = '\0';
-  _skode_all[skode_hash(ctx)] = ctx;
+  skode_ctx[skode_hash(ctx)] = ctx;
 
   if (ctx->events) mpsc_queue_send(&mq, line);
 
@@ -1332,8 +1346,8 @@ int audio_show(skode_t *ctx) {
 void skode_init(skode_t *ctx) {
   static int first = 1;
   if (first) {
-    for (int i = 0; i < SKODE_POINTER_MAX; i++) {
-      _skode_all[i] = NULL;
+    for (int i = 0; i < SKODE_CTX_MAX; i++) {
+      skode_ctx[i] = NULL;
     }
     EXTRA_INIT();
     first = 0;
