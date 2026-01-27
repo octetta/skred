@@ -227,7 +227,7 @@ int voice_show_all(skode_t *ctx, int voice, int verbose) {
 static skode_t *_skode_all[SKODE_POINTER_MAX];
 
 #define STRING_BUF_LEN (256)
-#define STRING_BUF_IDX_MAX (64)
+#define STRING_BUF_IDX_MAX (128) // idea one macro per midi key?
 static char _skode_extra[STRING_BUF_IDX_MAX][STRING_BUF_LEN];
 #define EXTRA_PTR(n) _skode_extra[n % STRING_BUF_IDX_MAX]
 #define EXTRA_INIT() {for (int i=0; i<STRING_BUF_IDX_MAX; i++) EXTRA_PTR(i)[0] = '\0';}
