@@ -30,7 +30,7 @@ basic : $(SKRED)
 
 visual : $(SCOPE)
 
-GUI = sk8r-$(TARGET) sk8-pad-$(TARGET) midi-sk8-$(TARGET) repl-$(TARGET)
+GUI = sk8r-$(TARGET) sk8-pad-$(TARGET) midi-sk8-$(TARGET) repl-$(TARGET) manage-$(TARGET)
 
 gui : $(GUI)
 
@@ -144,6 +144,10 @@ sk8r-linux:
 	mkdir -p $(OUT)
 	cd sk8r && go build -o ../$(OUT)/sk8r-$(TARGET) .
 	# cd sk8r && fyne package -exe ../$(OUT)/sk8r -os linux -tags flatpak -icon icon.png -app-id com.example.app -app-version 0.0.1
+
+manage-linux:
+	mkdir -p $(OUT)
+	cd manage && go build -o ../$(OUT)/manage-$(TARGET) .
 
 repl-linux:
 	mkdir -p $(OUT)
