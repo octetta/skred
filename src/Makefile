@@ -149,6 +149,13 @@ manage-linux:
 	mkdir -p $(OUT)
 	cd manage && go build -o ../$(OUT)/manage-$(TARGET) .
 
+manage-darwin:
+	mkdir -p $(OUT)
+	cd manage && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/manage-darwin-amd64 .
+	cd manage && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/manage-darwin-arm64 .
+	cd manage && lipo -create -output ../$(OUT)/manage-darwin-universal ../$(OUT)/manage-darwin-amd64 ../$(OUT)/manage-darwin-arm64
+	cd manage && fyne package -exe ../$(OUT)/manage-darwin-universal -os darwin -icon icon.png -name ../$(OUT)/manage
+
 repl-linux:
 	mkdir -p $(OUT)
 	cd repl && go build -o ../$(OUT)/repl-$(TARGET) .
@@ -177,6 +184,13 @@ repl-windows:
   $(GOWINENV) go build $(GOWINLD) -o skrepl.exe . && \
 	fyne package --os windows --name "skrepl" --icon icon.png --appID com.octetta.skrepl && \
   cp skrepl.exe ../$(WINOUT)
+
+manage-windows:
+	mkdir -p $(OUT)
+	cd manage && \
+  	$(GOWINENV) go build $(GOWINLD) -o manage.exe . && \
+    fyne package --os windows --name "manage" --icon icon.png --appID com.octetta.manage && \
+    mv manage.exe ../$(WINOUT)
 
 sk8r-windows:
 	mkdir -p $(WINOUT)

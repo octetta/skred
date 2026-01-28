@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"flag"
 	"log"
 	"time"
+	//"runtime"
 
 	"fyne.io/systray"
 	"fyne.io/systray/example/icon"
@@ -14,39 +16,51 @@ import (
   "path/filepath"
 )
 
+var isChild = flag.Bool("child", false, "internal use: run as background child")
+
 func main() {
 	onExit := func() {
 		now := time.Now()
 		fmt.Println("Exit at", now.String())
 	}
 
-  // 1. Define a lock file path in the Temp directory
-  lockPath := filepath.Join(os.TempDir(), "my_app_tray.lock")
+  flag.Parse()
+
+// 1. Singleton Lock (Critical for Tray Apps)
+  lockPath := filepath.Join(os.TempDir(), "myapp_tray.lock")
   fileLock := flock.New(lockPath)
-
-  // 2. Try to lock the file
-  locked, err := fileLock.TryLock()
-  if err != nil || !locked {
-    fmt.Println("App is already running. Exiting.")
-    os.Exit(0)
-  }
-
-  //
-	// systray.Run(onReady, onExit)
-	// fmt.Println("Finished quitting")
-  //
-  // Check for a custom flag to see if we are the "child"
-  if len(os.Args) > 1 && os.Args[1] == "--child" {
-    systray.Run(onReady, onExit)
+  locked, _ := fileLock.TryLock()
+  if !locked {
+    fmt.Println("App already running.")
     return
   }
 
-  // Otherwise, we are the parent: Start the child and exit
-  cmd := exec.Command(os.Args[0], "--child")
-  cmd.Start() // Start() is non-blocking
-  os.Exit(0)  // Exit the parent, returning control to the shell
-  //
+  // 2. Portable Backgrounding Logic
+  if !*isChild {
+    spawnChild()
+    return
+  }
+
+  // 3. Child continues to Tray
+  systray.Run(onReady, onExit)
 }
+
+//
+func spawnChild() {
+  cmd := exec.Command(os.Args[0], append(os.Args[1:], "--child")...)
+  
+  // Platform-specific detaching
+  detachProcess(cmd)
+
+  if err := cmd.Start(); err != nil {
+    fmt.Printf("Error spawning background process: %v\n", err)
+    return
+  }
+  
+  fmt.Println("App started in background. Check your tray!")
+  os.Exit(0)
+}
+//
 
 func addQuitItem() {
 	mQuit := systray.AddMenuItem("Quit", "Quit the whole app")
