@@ -25,20 +25,62 @@ import (
 	"github.com/gofrs/flock"
 )
 
+type Task struct {
+	Name    string   `json:"name"`
+	Exec    string   `json:"exec"`
+	Args    []string `json:"args"`
+	Mode    string   `json:"mode"`
+	WorkDir string   `json:"work_dir"`
+}
+
 type Config struct {
-	TargetAddr string `json:"target_addr"`
-	Prompt     string `json:"prompt"`
-	HexMode    bool   `json:"hex_mode"`
+	TargetAddr    string   `json:"target_addr"`
+	RecentTargets []string `json:"recent_targets"`
+	Prompt        string   `json:"prompt"`
+	HexMode       bool     `json:"hex_mode"`
+	ExternalTools []Task   `json:"external_tools"`
 }
 
 var (
 	appConfig  Config
-	hexMode    = false
+	configMu   sync.RWMutex
+	hexMode    bool
 	udpConn    *net.UDPConn
 	connMu     sync.Mutex
-	targetAddr string = "127.0.0.1:60440"
+	targetAddr string
 	fileLock   *flock.Flock
+	globalApp  fyne.App
 )
+
+// --- COMPILE-TIME DEFAULTS ---
+// Edit this function to set the "factory settings" for your build.
+func getDefaultConfig() Config {
+	return Config{
+		TargetAddr:    "127.0.0.1:60440",
+		RecentTargets: []string{"127.0.0.1:60440"},
+		Prompt:        "\033[32mUDP-Shell>\033[0m ",
+		HexMode:       false,
+		ExternalTools: []Task{
+			{
+				Name: "Synth Engine (Console)",
+				Exec: "synth", // Assumed to be in the same folder as this binary
+				Args: []string{"-v", "--port", "60440"},
+				Mode: "console",
+			},
+			{
+				Name: "Synth Engine (Background)",
+				Exec: "synth",
+				Args: []string{"--silent"},
+				Mode: "background",
+			},
+			{
+				Name: "External GUI Tool",
+				Exec: "my-fyne-app",
+				Mode: "gui",
+			},
+		},
+	}
+}
 
 func main() {
 	isCLI := flag.Bool("cli", false, "internal flag for console mode")
@@ -51,51 +93,117 @@ func main() {
 		return
 	}
 
-	// Single Instance Lock
 	lockPath := filepath.Join(filepath.Dir(getConfigPath()), "udp-term.lock")
 	fileLock = flock.New(lockPath)
-	locked, err := fileLock.TryLock()
-	if err != nil || !locked {
-		fmt.Println("UDP-Term is already running.")
+	locked, _ := fileLock.TryLock()
+	if !locked {
 		os.Exit(0)
 	}
 	defer fileLock.Unlock()
 
 	if runtime.GOOS != "windows" && !*isDaemon {
 		self, _ := os.Executable()
-		cmd := exec.Command(self, "--daemon")
-		cmd.Start()
+		exec.Command(self, "--daemon").Start()
 		os.Exit(0)
 	}
 
 	loadConfig()
-	a := app.NewWithID("com.udp.terminal.tool")
-	a.SetIcon(resourceIconPng)
+	globalApp = app.NewWithID("com.udp.terminal.tool")
+	globalApp.SetIcon(resourceIconPng)
 
-	if desk, ok := a.(desktop.App); ok {
-		menu := fyne.NewMenu("UDP Tool",
-			fyne.NewMenuItem("Open Shell", func() { launchSelfInTerminal() }),
-			fyne.NewMenuItem("About", func() { showAbout(a) }),
-			fyne.NewMenuItemSeparator(),
-			fyne.NewMenuItem("Quit", func() { a.Quit() }),
-		)
-		desk.SetSystemTrayMenu(menu)
-	}
-	a.Run()
+	setupTray(globalApp)
+	globalApp.Run()
 }
 
-func showAbout(a fyne.App) {
-	w := a.NewWindow("About UDP-Term")
-	info := fmt.Sprintf("Version: 1.6.3\nOS: %s\nConfig: %s\nTarget: %s", 
-		runtime.GOOS, getConfigPath(), targetAddr)
-	
-	content := container.NewVBox(
-		widget.NewLabelWithStyle("UDP-Term", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-		widget.NewLabel(info),
-		widget.NewButton("Close", func() { w.Close() }),
-	)
-	w.SetContent(content)
-	w.Show()
+func setupTray(a fyne.App) {
+	desk, ok := a.(desktop.App)
+	if !ok { return }
+
+	configMu.RLock()
+	tools := appConfig.ExternalTools
+	recent := appConfig.RecentTargets
+	configMu.RUnlock()
+
+	menuItems := []*fyne.MenuItem{
+		fyne.NewMenuItem("Open Shell", func() { launchSelfInTerminal() }),
+	}
+
+	if len(recent) > 0 {
+		var subItems []*fyne.MenuItem
+		for _, r := range recent {
+			addr := r
+			subItems = append(subItems, fyne.NewMenuItem(addr, func() {
+				connectUDP(addr)
+			}))
+		}
+		recentMenu := fyne.NewMenuItem("Recent Targets", nil)
+		recentMenu.ChildMenu = fyne.NewMenu("", subItems...)
+		menuItems = append(menuItems, recentMenu)
+	}
+
+	if len(tools) > 0 {
+		menuItems = append(menuItems, fyne.NewMenuItemSeparator())
+		for _, t := range tools {
+			task := t
+			menuItems = append(menuItems, fyne.NewMenuItem(task.Name, func() {
+				runTask(task)
+			}))
+		}
+	}
+
+	menuItems = append(menuItems, fyne.NewMenuItemSeparator())
+	menuItems = append(menuItems, fyne.NewMenuItem("Reload Config", func() {
+		loadConfig()
+		setupTray(a)
+	}))
+	menuItems = append(menuItems, fyne.NewMenuItem("About", func() { showAbout(a) }))
+	menuItems = append(menuItems, fyne.NewMenuItemSeparator())
+	menuItems = append(menuItems, fyne.NewMenuItem("Quit", func() { a.Quit() }))
+
+	desk.SetSystemTrayMenu(fyne.NewMenu("UDP Tool", menuItems...))
+}
+
+func runTask(t Task) {
+	binDir, _ := os.Executable()
+	basePath := filepath.Dir(binDir)
+	execPath := t.Exec
+	if !filepath.IsAbs(execPath) {
+		execPath = filepath.Join(basePath, t.Exec)
+	}
+	wd := t.WorkDir
+	if wd == "" || !filepath.IsAbs(wd) {
+		wd = filepath.Join(basePath, wd)
+	}
+
+	var cmd *exec.Cmd
+	switch strings.ToLower(t.Mode) {
+	case "console":
+		if runtime.GOOS == "windows" {
+			winArgs := append([]string{"/c", "start", execPath}, t.Args...)
+			cmd = exec.Command("cmd.exe", winArgs...)
+		} else {
+			term := findTerminal()
+			termArgs := append([]string{"--", execPath}, t.Args...)
+			cmd = exec.Command(term, termArgs...)
+		}
+	case "background", "gui":
+		cmd = exec.Command(execPath, t.Args...)
+	}
+
+	if cmd != nil {
+		cmd.Dir = wd
+		_ = cmd.Start()
+	}
+}
+
+func findTerminal() string {
+	terms := []string{"ptyxis", "gnome-terminal", "gnome-console", "konsole", "xfce4-terminal", "xterm"}
+	for _, t := range terms {
+		if _, err := exec.LookPath(t); err == nil {
+			return t
+		}
+	}
+	return "sh"
 }
 
 func getConfigPath() string {
@@ -105,39 +213,72 @@ func getConfigPath() string {
 	return filepath.Join(path, "config.json")
 }
 
-func loadConfig() {
-	appConfig = Config{TargetAddr: "127.0.0.1:60440", Prompt: "\033[32mUDP-Shell>\033[0m ", HexMode: false}
-	data, err := os.ReadFile(getConfigPath())
-	if err == nil {
-		json.Unmarshal(data, &appConfig)
+func getHistoryPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".udp_shell_history")
+}
+
+func openConfigFolder() {
+	path := filepath.Dir(getConfigPath())
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows": cmd = exec.Command("explorer", path)
+	case "darwin": cmd = exec.Command("open", path)
+	default: cmd = exec.Command("xdg-open", path)
 	}
+	if cmd != nil { _ = cmd.Start() }
+}
+
+func loadConfig() {
+	configMu.Lock()
+	defer configMu.Unlock()
+
+	cPath := getConfigPath()
+	if _, err := os.Stat(cPath); os.IsNotExist(err) {
+		// Populate with factory defaults on first run
+		appConfig = getDefaultConfig()
+		data, _ := json.MarshalIndent(appConfig, "", "  ")
+		os.WriteFile(cPath, data, 0644)
+	} else {
+		// Read existing user config
+		data, err := os.ReadFile(cPath)
+		if err == nil {
+			json.Unmarshal(data, &appConfig)
+		}
+	}
+
 	targetAddr = appConfig.TargetAddr
 	hexMode = appConfig.HexMode
 }
 
 func saveConfig() {
+	configMu.Lock()
 	appConfig.TargetAddr = targetAddr
 	appConfig.HexMode = hexMode
+	
+	newRecent := []string{targetAddr}
+	for _, r := range appConfig.RecentTargets {
+		if r != targetAddr {
+			newRecent = append(newRecent, r)
+		}
+	}
+	if len(newRecent) > 5 {
+		newRecent = newRecent[:5]
+	}
+	appConfig.RecentTargets = newRecent
+
 	data, _ := json.MarshalIndent(appConfig, "", "  ")
 	os.WriteFile(getConfigPath(), data, 0644)
+	configMu.Unlock()
+
+	if globalApp != nil {
+		setupTray(globalApp)
+	}
 }
 
 func launchSelfInTerminal() {
 	self, _ := os.Executable()
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("cmd.exe", "/c", "start", self, "--cli")
-	case "linux":
-		terminals := []string{"ptyxis", "gnome-terminal", "gnome-console", "konsole", "xterm"}
-		for _, term := range terminals {
-			if _, err := exec.LookPath(term); err == nil {
-				cmd = exec.Command(term, "--", self, "--cli")
-				break
-			}
-		}
-	}
-	if cmd != nil { _ = cmd.Start() }
+	runTask(Task{Exec: self, Args: []string{"--cli"}, Mode: "console"})
 }
 
 func connectUDP(addrStr string) error {
@@ -155,14 +296,16 @@ func connectUDP(addrStr string) error {
 }
 
 func runUDPShell() {
-	home, _ := os.UserHomeDir()
+	configMu.RLock()
+	currentPrompt := appConfig.Prompt
+	configMu.RUnlock()
+
 	rl, err := readline.NewEx(&readline.Config{
-		Prompt:      appConfig.Prompt,
-		HistoryFile: filepath.Join(home, ".udp_shell_history"),
+		Prompt:      currentPrompt,
+		HistoryFile: getHistoryPath(),
 	})
 	if err != nil { return }
 	defer rl.Close()
-
 	connectUDP(targetAddr)
 
 	go func() {
@@ -192,14 +335,10 @@ func runUDPShell() {
 		if err != nil { break }
 		line = strings.TrimSpace(line)
 		if line == "" { continue }
-
 		if strings.HasPrefix(line, "^") {
-			cmdBody := strings.TrimPrefix(line, "^")
-			response := myLocalFunction(cmdBody, rl)
-			if response != "" { fmt.Printf("\033[33m%s\033[0m\n", response) }
+			fmt.Printf("\033[33m%s\033[0m\n", myLocalFunction(strings.TrimPrefix(line, "^"), rl))
 			continue
 		}
-
 		connMu.Lock()
 		if udpConn != nil { udpConn.Write([]byte(line + "\n")) }
 		connMu.Unlock()
@@ -210,7 +349,6 @@ func myLocalFunction(input string, rl *readline.Instance) string {
 	parts := strings.Fields(input)
 	if len(parts) == 0 { return "" }
 	cmd := strings.ToLower(parts[0])
-
 	switch cmd {
 	case "ip":
 		addrs, _ := net.InterfaceAddrs()
@@ -228,34 +366,37 @@ func myLocalFunction(input string, rl *readline.Instance) string {
 	case "hex":
 		hexMode = !hexMode
 		saveConfig()
-		status := "OFF"
-		if hexMode { status = "ON" }
+		status := "OFF"; if hexMode { status = "ON" }
 		return "Hex view is now " + status
 	case "prompt":
 		newPrompt := strings.Join(parts[1:], " ")
-		newPrompt = strings.Trim(newPrompt, "\"'")
-		if newPrompt == "" { return "Usage: ^prompt \"text\"" }
-		p := fmt.Sprintf("\033[35m%s\033[0m", newPrompt)
+		p := fmt.Sprintf("\033[35m%s\033[0m", strings.Trim(newPrompt, "\"'"))
 		rl.SetPrompt(p)
+		configMu.Lock()
 		appConfig.Prompt = p
+		configMu.Unlock()
 		saveConfig()
 		return "Prompt updated"
 	case "cls":
-		fmt.Print("\033[H\033[2J")
-		return ""
-	case "help":
-		return "Local Commands:\n" +
-			"  ^ip            - Show local machine IP addresses\n" +
-			"  ^target <addr> - Change UDP destination\n" +
-			"  ^prompt \"text\" - Change prompt\n" +
-			"  ^hex           - Toggle hex-dump\n" +
-			"  ^cls           - Clear screen\n" +
-			"  ^version       - Show version info\n" +
-			"  ^exit          - Exit shell"
+		fmt.Print("\033[H\033[2J"); return ""
 	case "version":
-		return "UDP-Term v1.6.3 (Full Feature Restoration)"
+		return "UDP-Term v1.8.2"
+	case "help":
+		return "Commands: ^ip, ^target, ^prompt, ^hex, ^cls, ^version, ^exit"
 	case "exit":
 		os.Exit(0)
 	}
 	return "Unknown command: " + input
+}
+
+func showAbout(a fyne.App) {
+	w := a.NewWindow("About UDP-Term")
+	w.SetContent(container.NewVBox(
+		widget.NewLabelWithStyle("UDP-Term v1.8.2", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+		widget.NewLabel("Target: "+targetAddr),
+		widget.NewLabel("History: "+getHistoryPath()),
+		widget.NewButton("Open Config Folder", func() { openConfigFolder() }),
+		widget.NewButton("Close", func() { w.Close() }),
+	))
+	w.Show()
 }
