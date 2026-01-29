@@ -1,0 +1,11 @@
+# Voice definitions
+v0 w0 J1 K2500 t .12 3.5 0 0 a4 p-0.25
+v1 w0 J1 K2500 t .12 3.5 0 0 a4 p-0.15
+v2 w0 J1 K2500 t .12 3.5 0 0 a4 p-0.05
+
+# Schedule all fragments
+~0   /l201
+~10  /l202
+~20  /l203
+~30  /l204
+~40  /l205
