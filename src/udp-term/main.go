@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
-	// Register image decoders
 	_ "image/jpeg"
 	_ "image/png"
 
@@ -21,7 +21,12 @@ import (
 	"github.com/chzyer/readline"
 )
 
-var hexMode = false
+var (
+	hexMode   = false
+	udpConn   *net.UDPConn
+	connMu    sync.Mutex
+	targetAddr string = "127.0.0.1:60440"
+)
 
 func main() {
 	isCLI := flag.Bool("cli", false, "internal flag for console mode")
@@ -47,7 +52,6 @@ func main() {
 		)
 		desk.SetSystemTrayMenu(menu)
 	}
-
 	a.Run()
 }
 
@@ -69,10 +73,32 @@ func launchSelfInTerminal() {
 			}
 		}
 	}
-
 	if cmd != nil {
 		_ = cmd.Start()
 	}
+}
+
+func connectUDP(addrStr string) error {
+	connMu.Lock()
+	defer connMu.Unlock()
+
+	if udpConn != nil {
+		udpConn.Close()
+	}
+
+	addr, err := net.ResolveUDPAddr("udp", addrStr)
+	if err != nil {
+		return err
+	}
+
+	conn, err := net.DialUDP("udp", nil, addr)
+	if err != nil {
+		return err
+	}
+
+	udpConn = conn
+	targetAddr = addrStr
+	return nil
 }
 
 func runUDPShell() {
@@ -88,21 +114,25 @@ func runUDPShell() {
 	}
 	defer rl.Close()
 
-	addr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:60440")
-	conn, err := net.DialUDP("udp", nil, addr)
-	if err != nil {
-		fmt.Printf("\033[31mConnection Error: %v\033[0m\n", err)
-		return
+	if err := connectUDP(targetAddr); err != nil {
+		fmt.Printf("\033[31mInitial Connection Error: %v\033[0m\n", err)
 	}
-	defer conn.Close()
 
-	// Asynchronous Receiver with Refresh Logic
+	// Receiver Loop
 	go func() {
 		buf := make([]byte, 8192)
 		for {
-			n, _, err := conn.ReadFromUDP(buf)
+			connMu.Lock()
+			currConn := udpConn
+			connMu.Unlock()
+
+			if currConn == nil {
+				continue
+			}
+
+			n, _, err := currConn.ReadFromUDP(buf)
 			if err != nil {
-				return
+				continue 
 			}
 
 			raw := buf[:n]
@@ -113,20 +143,13 @@ func runUDPShell() {
 				output = strings.TrimRight(string(raw), "\r\n")
 			}
 
-			// THE FIX FOR BOTTOM-OF-WINDOW SCROLLING:
-			// 1. Move to the start of the current line (\r)
-			// 2. Clear the line (\033[K) so it doesn't leave "ghost" characters
-			// 3. Print the server message
-			// 4. Force a newline (\n)
-			// 5. Use rl.Refresh() to redraw the prompt and user input on a fresh line
 			fmt.Printf("\r\033[K%s\n", output)
 			rl.Refresh()
-			
-			os.Stdout.Sync() 
+			os.Stdout.Sync()
 		}
 	}()
 
-	fmt.Println("Shell Active (Port 60440). Type ^help for local commands.")
+	fmt.Printf("Shell Active. Target: %s. Type ^help for commands.\n", targetAddr)
 
 	for {
 		line, err := rl.Readline()
@@ -149,40 +172,81 @@ func runUDPShell() {
 			continue
 		}
 
-		// Send entire line to UDP server
-		_, _ = conn.Write([]byte(line + "\n"))
+		connMu.Lock()
+		if udpConn != nil {
+			_, _ = udpConn.Write([]byte(line + "\n"))
+		}
+		connMu.Unlock()
 	}
 }
 
-func myLocalFunction(input string, rl *readline.Instance) string {
-	input = strings.TrimSpace(input)
-	lowerInput := strings.ToLower(input)
+func getLocalIPs() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return "Error retrieving IPs"
+	}
+	var sb strings.Builder
+	sb.WriteString("Local IPv4 Addresses:\n")
+	for _, addr := range addrs {
+		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				sb.WriteString(fmt.Sprintf("  - %s\n", ipnet.IP.String()))
+			}
+		}
+	}
+	return sb.String()
+}
 
-	if lowerInput == "hex" {
+func myLocalFunction(input string, rl *readline.Instance) string {
+	parts := strings.Fields(input)
+	if len(parts) == 0 {
+		return ""
+	}
+	cmd := strings.ToLower(parts[0])
+
+	switch cmd {
+	case "ip":
+		return getLocalIPs()
+
+	case "target":
+		if len(parts) < 2 {
+			return "Usage: ^target <ip>:<port>"
+		}
+		newAddr := parts[1]
+		if err := connectUDP(newAddr); err != nil {
+			return fmt.Sprintf("Failed to switch target: %v", err)
+		}
+		return "Switched target to: " + newAddr
+
+	case "hex":
 		hexMode = !hexMode
 		status := "OFF"
 		if hexMode { status = "ON" }
 		return "Hex view is now " + status
-	}
 
-	if strings.HasPrefix(lowerInput, "prompt") {
-		content := strings.TrimSpace(input[6:])
+	case "prompt":
+		// Re-joining in case the user didn't use quotes but has spaces
+		content := strings.Join(parts[1:], " ")
 		content = strings.Trim(content, "\"'")
 		if content == "" {
 			return "Usage: ^prompt \"# \""
 		}
 		rl.SetPrompt(fmt.Sprintf("\033[35m%s\033[0m", content))
 		return "Prompt updated."
-	}
 
-	switch lowerInput {
 	case "help":
-		return "Local Commands:\n  ^prompt \"text\" - Change prompt\n  ^hex           - Toggle hex-dump\n  ^cls           - Clear screen\n  ^exit          - Exit shell"
-	case "version":
-		return "UDP-Term v1.4.3 (Bottom-Scroll Fix)"
+		return "Local Commands:\n" +
+			"  ^ip            - Show local machine IP addresses\n" +
+			"  ^target <addr> - Change UDP destination (e.g. ^target 192.168.1.5:60440)\n" +
+			"  ^prompt \"text\" - Change prompt\n" +
+			"  ^hex           - Toggle hex-dump\n" +
+			"  ^cls           - Clear screen\n" +
+			"  ^exit          - Exit shell"
 	case "cls":
 		fmt.Print("\033[H\033[2J")
 		return ""
+	case "version":
+		return "UDP-Term v1.5.0 (Network Tools Edition)"
 	case "exit":
 		os.Exit(0)
 	}
