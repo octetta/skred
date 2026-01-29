@@ -30,7 +30,14 @@ basic : $(SKRED)
 
 visual : $(SCOPE)
 
-GUI = sk8r-$(TARGET) sk8-pad-$(TARGET) midi-sk8-$(TARGET) repl-$(TARGET) manage-$(TARGET)
+GUI = \
+  sk8r-$(TARGET) \
+  sk8-pad-$(TARGET) \
+    midi-sk8-$(TARGET) \
+    repl-$(TARGET) \
+    manage-$(TARGET) \
+    udp-term-$(TARGET) \
+    #
 
 gui : $(GUI)
 
@@ -149,12 +156,23 @@ manage-linux:
 	mkdir -p $(OUT)
 	cd manage && go build -o ../$(OUT)/manage-$(TARGET) .
 
+udp-term-linux:
+	mkdir -p $(OUT)
+	cd udp-term && go build -o ../$(OUT)/udp-term-$(TARGET) .
+
 manage-darwin:
 	mkdir -p $(OUT)
 	cd manage && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/manage-darwin-amd64 .
 	cd manage && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/manage-darwin-arm64 .
 	cd manage && lipo -create -output ../$(OUT)/manage-darwin-universal ../$(OUT)/manage-darwin-amd64 ../$(OUT)/manage-darwin-arm64
 	cd manage && fyne package -exe ../$(OUT)/manage-darwin-universal -os darwin -icon icon.png -name ../$(OUT)/manage
+
+udp-term-darwin:
+	mkdir -p $(OUT)
+	cd udp-term && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/udp-term-darwin-amd64 .
+	cd udp-term && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/udp-term-darwin-arm64 .
+	cd udp-term && lipo -create -output ../$(OUT)/udp-term-darwin-universal ../$(OUT)/udp-term-darwin-amd64 ../$(OUT)/udp-term-darwin-arm64
+	cd udp-term && fyne package -exe ../$(OUT)/udp-term-darwin-universal -os darwin -icon icon.png -name ../$(OUT)/udp-term
 
 repl-linux:
 	mkdir -p $(OUT)
@@ -168,8 +186,10 @@ sk8r-darwin:
 	lipo -create -output $(OUT)/sk8r-darwin-universal $(OUT)/sk8r-darwin-amd64 $(OUT)/sk8r-darwin-arm64
 	cd sk8r && fyne package -exe ../$(OUT)/sk8r-darwin-universal -os darwin -icon icon.png -name ../$(OUT)/sk8r
 
-# win : sk8r-windows midi-sk8-windows sk8-pad-windows skred-windows repl-windows
 win : skred-windows
+
+# win-gui : sk8r-windows midi-sk8-windows sk8-pad-windows skred-windows repl-windows
+win-gui : udp-term-windows
 
 skred-windows :
 	mkdir -p $(WINOUT)
@@ -191,6 +211,12 @@ manage-windows:
   	$(GOWINENV) go build $(GOWINLD) -o manage.exe . && \
     fyne package --os windows --name "manage" --icon icon.png --appID com.octetta.manage && \
     mv manage.exe ../$(WINOUT)
+
+udp-term-windows:
+	mkdir -p $(OUT)
+	cd udp-term && \
+  	CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC=x86_64-w64-mingw32-gcc go build -o udp-term.exe . && \
+    mv udp-term.exe ../$(WINOUT)
 
 sk8r-windows:
 	mkdir -p $(WINOUT)
