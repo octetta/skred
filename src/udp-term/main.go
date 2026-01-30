@@ -1,6 +1,8 @@
 package main
 
 import (
+	"runtime/pprof"
+  "time"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -361,6 +363,22 @@ func myLocalFunction(input string, rl *readline.Instance) string {
 		return "UDP-Term v1.8.17"
 	case "help":
 		return "Commands: ^ip, ^target, ^prompt, ^hex, ^cls, ^version, ^exit"
+  case "profile":
+    path := filepath.Join(filepath.Dir(getConfigPath()), "cpu.prof")
+    f, err := os.Create(path)
+    if err != nil { return "Could not create profile: " + err.Error() }
+    
+    pprof.StartCPUProfile(f)
+    // We use a goroutine so we don't freeze the shell while recording
+    go func() {
+      fmt.Printf("\033[33mRecording 5s profile to %s...\033[0m\n", path)
+      time.Sleep(5 * time.Second)
+      pprof.StopCPUProfile()
+      f.Close()
+      fmt.Print("\n\033[32mProfile recording finished.\033[0m\n")
+      rl.Refresh()
+    }()
+    return "Starting..."
 	case "exit":
 		os.Exit(0)
 	}
