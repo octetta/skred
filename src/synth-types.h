@@ -7,6 +7,10 @@
 #define AMY_FACTOR (0.025f)
 #define SYNTH_FRAMES_PER_CALLBACK (512)
 
+#define NEG_60_DB (-60.0f)
+#define NEG_60_DB_AS_LINEAR (0.001)
+#define SILENT NEG_60_DB_AS_LINEAR
+
 enum {
   WAVE_TABLE_SINE,     // 0
   WAVE_TABLE_SQR,      // 1

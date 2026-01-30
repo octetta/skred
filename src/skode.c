@@ -215,7 +215,7 @@ void voice_show(skode_t *ctx, int v, char c, int verbose) {
 
 int voice_show_all(skode_t *ctx, int voice, int verbose) {
   for (int i=0; i<VOICE_MAX; i++) {
-    if (voice_amp[i] == 0) continue;
+    if (voice_user_amp[i] <= SILENT) continue;
     char t = ' ';
     if (i == voice) t = '*';
     voice_show(ctx, i, t, verbose);

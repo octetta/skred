@@ -352,7 +352,7 @@ int main(int argc, char *argv[]) {
   if (line) free(line); // get rid of previous malloc-ed line
 
   // turn down volume smoothly to avoid clicks
-  volume_set(0);
+  volume_set(SILENT);
   //
   sleep_float(.5); // give a bit of time for the smoothing to apply
 

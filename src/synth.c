@@ -42,6 +42,11 @@ atomic_uint64_t synth_sample_count;
 #define SAMPLE_COUNT_GET() atomic_load_uint64(&synth_sample_count)
 #define SAMPLE_COUNT_ADD(n) atomic_fetch_add_uint64(&synth_sample_count, n)
 
+#define VOLUME_DEFAULT (-20.0f)
+#define DB_TO_LINEAR(v) powf(10.f, (v) / 20.0f)
+
+int volume_set(float v);
+
 void synth_init(void) {
   SAMPLE_COUNT_PUT(0);
   if (0) {
@@ -50,6 +55,7 @@ void synth_init(void) {
 #undef ARRAY
   }
 
+  volume_set(VOLUME_DEFAULT);
 #ifdef USE_PRE
 
   //printf("# synth_init :: USE_PRE\n");
@@ -90,8 +96,8 @@ int synth_frames_per_callback = 0;
 
 #define SMOOTH_DEFAULT (0.02f)
 
-float volume_user = 1.0f;
-float volume_final = AMY_FACTOR;
+float volume_user = VOLUME_DEFAULT;
+float volume_final = 1.0f;
 float volume_smoother_gain = 0.0f;
 float volume_smoother_smoothing = 0.002f;
 float volume_threshold = 0.05f;
@@ -99,7 +105,7 @@ float volume_smoother_higher_smoothing = 0.3f;
 
 int volume_set(float v) {
   volume_user = v;
-  volume_final = v * AMY_FACTOR;
+  volume_final = DB_TO_LINEAR(v);
   return 0;
 }
 
@@ -536,7 +542,7 @@ void synth(float *buffer, float *input, int num_frames, int num_channels, void *
         one_skred_frame[skred_ptr++] = 0.0f;
         continue;
       }  
-      if (voice_amp[n] == 0) {
+      if (voice_amp[n] < NEG_60_DB_AS_LINEAR) {
         voice_sample[n] = 0.0f;
         one_skred_frame[skred_ptr++] = 0.0f;
         one_skred_frame[skred_ptr++] = 0.0f;
@@ -613,6 +619,11 @@ void synth(float *buffer, float *input, int num_frames, int num_channels, void *
         one_skred_frame[skred_ptr++] = 0.0f;
       }
     }
+#if 0
+    // Mix down to stereo - divide by total voices for headroom
+    sample_left  /= (float)VOICE_MAX;
+    sample_right /= (float)VOICE_MAX;
+#endif
 
     // Adjust to main volume: smooth it otherwise is sounds crummy with realtime changes
     volume_smoother_gain += volume_smoother_smoothing * (volume_final - volume_smoother_gain);
@@ -780,6 +791,10 @@ char *voice_format(int v, char *out, int verbose) {
     ptr += n;
   }
   if (verbose) {
+    n = sprintf(ptr, " user_amp %g -> amp:%g", voice_user_amp[v], voice_amp[v]);
+    ptr += n;
+  }
+  if (verbose) {
     n = sprintf(ptr, " freq_scale:%g", voice_freq_scale[v]);
     ptr += n;
   }
@@ -813,11 +828,8 @@ char *voice_format(int v, char *out, int verbose) {
 }
 
 int amp_set(int voice, float f) {
-  if (f >= 0) {
-    //voice_use_amp_envelope[voice] = 0;
-    voice_amp[voice] = f;
-    voice_user_amp[voice] = f;
-  } else return 100; // <--- LAZY!! ... ERR_AMPLITUDE_OUT_OF_RANGE;
+  voice_user_amp[voice] = f;
+  voice_amp[voice] = DB_TO_LINEAR(f);
   return 0;
 }
 
@@ -1086,8 +1098,8 @@ void voice_reset(int i) {
   voice_table_rate[i] = 0;
   voice_table_size[i] = 0;
   voice_sample[i] = 0;
-  voice_amp[i] = 0;
-  voice_user_amp[i] = 0;
+  voice_amp[i] = NEG_60_DB_AS_LINEAR;
+  voice_user_amp[i] = NEG_60_DB;
   voice_pan[i] = 0;
   voice_pan_left[i] = 0.5f;
   voice_pan_right[i] = 0.5f;
