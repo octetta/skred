@@ -268,20 +268,37 @@ float osc_next(int voice, float phase_inc) {
     voice_phase[voice] = phase;
     
     // Get sample
-    int idx;
+    float final_phase;
     if (voice_cz_mode[voice] && voice_cz_mod_osc[voice] >= 0) {
         int dv = voice_cz_mod_osc[voice];
         float dm = (dv >= 0) ? voice_sample[dv] * voice_cz_mod_depth[voice] : 1.0f;
-        idx = (int)cz_phasor(voice_cz_mode[voice], phase, 
-                             voice_cz_distortion[voice] + dm, table_size);
+        final_phase = cz_phasor(voice_cz_mode[voice], phase, 
+                                voice_cz_distortion[voice] + dm, table_size);
     } else {
-        idx = (int)phase;
+        final_phase = phase;
     }
+    
+    int idx = (int)final_phase;
     
     if (idx >= table_size) idx = table_size - 1;
     if (idx < 0) idx = 0;
     
-    return voice_table[voice][idx];
+    // Check if interpolation is enabled for this voice
+    if (voice_interpolate[voice]) {
+        // Linear interpolation
+        float frac = final_phase - (float)idx;
+        
+        int next_idx = idx + 1;
+        if (next_idx >= table_size) next_idx = 0;  // Wrap for seamless loops
+        
+        float sample1 = voice_table[voice][idx];
+        float sample2 = voice_table[voice][next_idx];
+        
+        return sample1 + frac * (sample2 - sample1);
+    } else {
+        // No interpolation - just return the sample
+        return voice_table[voice][idx];
+    }
 }
 
 void osc_set_wave_table_index(int voice, int wave) {

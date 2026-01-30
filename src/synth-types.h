@@ -9,7 +9,7 @@
 
 #define NEG_60_DB (-60.0f)
 #define NEG_60_DB_AS_LINEAR (0.001)
-#define SILENT NEG_60_DB_AS_LINEAR
+#define SILENT NEG_60_DB
 
 enum {
   WAVE_TABLE_SINE,     // 0

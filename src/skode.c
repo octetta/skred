@@ -963,7 +963,10 @@ int skode_function(ands_t *s, int info) {
       break;
     case 'w___': // wave-select which-wave
       if (argc) {
+        int n = 0;
         wave_set(voice, x);
+        if (argc > 1 && arg[1] != 0) n = 0;
+        voice_interpolate[voice] = n;
 #ifndef MINI
         if (scope_enable) sprintf(scope->wave_text, "w%d", x);
 #endif

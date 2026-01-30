@@ -33,6 +33,7 @@ ARRAY(float, voice_link_velo_a, VOICE_MAX, {})
 ARRAY(float, voice_link_velo_b, VOICE_MAX, {})
 ARRAY(float, voice_link_trig, VOICE_MAX, {})
 ARRAY(float, voice_offset_hz, VOICE_MAX, {})
+ARRAY(int, voice_interpolate, VOICE_MAX, {})
 
 ARRAY(float, voice_freq, VOICE_MAX, {})
 ARRAY(float, voice_note, VOICE_MAX, {})
