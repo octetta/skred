@@ -154,7 +154,7 @@ char *sgets(char *prompt, int max, int edit, int store) {
 #ifndef _WIN32
   if (edit) {
     line = bestlineWithHistory(prompt, NULL);
-    if (store) bestlineHistoryAdd(line);
+    if (line && store) bestlineHistoryAdd(line);
   } else {
     line = fgets(buffer, max, stdin);
   }
