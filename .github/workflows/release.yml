@@ -27,7 +27,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v1
         with:
           version: 0.13.0
 
@@ -35,16 +37,15 @@ jobs:
         if: matrix.target == 'x86_64-linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
 
-      - name: Build
+      - name: Verify Compilation
         run: |
-          if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-            # On Mac runner, build natively to find Frameworks
+          if [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
             zig build
-          elif [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
-            # On Linux runner, build natively to find ALSA
-            zig build
+          elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+            # We use the target flag here because macOS runners have 
+            # the SDKs to cross-compile between Intel/Silicon natively.
+            zig build -Dtarget=${{ matrix.target }}
           else
-            # Windows cross-compilation from Linux works fine
             zig build -Dtarget=${{ matrix.target }}
           fi
 
@@ -66,7 +67,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v1
         with:
           version: 0.13.0
 
@@ -76,11 +79,11 @@ jobs:
 
       - name: Build Zip
         run: |
-          if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-            zig build zip -Dversion=${{ github.ref_name }}
-          elif [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
+          if [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
+            # Native Linux build to ensure it finds system ALSA
             zig build zip -Dversion=${{ github.ref_name }}
           else
+            # Windows and macOS (both architectures)
             zig build zip -Dtarget=${{ matrix.target }} -Dversion=${{ github.ref_name }}
           fi
 
