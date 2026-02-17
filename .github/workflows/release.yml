@@ -27,9 +27,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Zig
-        uses: mlugg/setup-zig@v1
+      - uses: mlugg/setup-zig@v1
         with:
           version: 0.13.0
 
@@ -37,11 +35,16 @@ jobs:
         if: matrix.target == 'x86_64-linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
 
-      - name: Verify Compilation
+      - name: Build
         run: |
-          if [ "${{ matrix.target }}" = "x86_64-linux" ]; then
+          if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+            # On Mac runner, build natively to find Frameworks
+            zig build
+          elif [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
+            # On Linux runner, build natively to find ALSA
             zig build
           else
+            # Windows cross-compilation from Linux works fine
             zig build -Dtarget=${{ matrix.target }}
           fi
 
@@ -63,9 +66,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Zig
-        uses: mlugg/setup-zig@v1
+      - uses: mlugg/setup-zig@v1
         with:
           version: 0.13.0
 
@@ -75,7 +76,9 @@ jobs:
 
       - name: Build Zip
         run: |
-          if [ "${{ matrix.target }}" = "x86_64-linux" ]; then
+          if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+            zig build zip -Dversion=${{ github.ref_name }}
+          elif [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
             zig build zip -Dversion=${{ github.ref_name }}
           else
             zig build zip -Dtarget=${{ matrix.target }} -Dversion=${{ github.ref_name }}
