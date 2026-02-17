@@ -1,0 +1,70 @@
+name: Skred CI & Release
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  # JOB 1: Verify the build on every push
+  check_build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [x86_64-linux, x86_64-windows]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.13.0
+
+      - name: Install ALSA (Linux Only)
+        if: matrix.target == 'x86_64-linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Verify Compilation
+        run: |
+          if [ "${{ matrix.target }}" = "x86_64-linux" ]; then
+            zig build
+          else
+            zig build -Dtarget=${{ matrix.target }}
+          fi
+
+  # JOB 2: Create the Actual Release (Only on Tags)
+  create_release:
+    needs: check_build # Only run if the check passes
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [x86_64-linux, x86_64-windows]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.13.0
+
+      - name: Install ALSA (Linux Only)
+        if: matrix.target == 'x86_64-linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Build Zip
+        run: |
+          if [ "${{ matrix.target }}" = "x86_64-linux" ]; then
+            zig build zip -Dversion=${{ github.ref_name }}
+          else
+            zig build zip -Dtarget=${{ matrix.target }} -Dversion=${{ github.ref_name }}
+          fi
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: zig-out/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
