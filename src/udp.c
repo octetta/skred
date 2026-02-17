@@ -1,6 +1,9 @@
 #include <errno.h>
 
+#ifndef _WIN32
 #include <pthread.h>
+#endif
+
 #include <stdint.h>
 
 #ifdef _WIN32

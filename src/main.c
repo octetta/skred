@@ -19,42 +19,16 @@
 #include <unistd.h>
 
 #include "skred.h"
-#include "skred-mem.h"
-#include "scope-shared.h"
-
 #include "util.h"
-
-int scope_enable = 0;
-scope_buffer_t scope_safety;
-scope_buffer_t *scope = &scope_safety;
 
 #include "miniaudio.h"
 
 #include "synth-types.h"
 #include "synth.h"
-#include "seq.h"
 
 int trace = 0;
 
-#include "udp.h"
 #include "skode.h"
-
-#if 0
-void seq_callback(ma_device* pDevice, void* output, const void* input, ma_uint32 frame_count) {
-  static int first = 1;
-  static int last_frame_count = 0;
-  if (first) {
-    util_set_thread_name("seq");
-    seq_frames_per_callback = (int)frame_count;
-    first = 0;
-  }
-  seq((int)frame_count);
-  if ((int)frame_count != last_frame_count) {
-    printf("# frame count %d -> %d\n", last_frame_count, (int)frame_count);
-    last_frame_count = (int)frame_count;
-  }
-}
-#endif
 
 int rec_state = 0;
 long rec_ptr = 0;
@@ -93,14 +67,11 @@ void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint
   static int num_channels = 1;
   if (first) {
     util_set_thread_name("synth");
-    if (scope_enable) scope->buffer_pointer = 0;
     num_channels = (int)pDevice->playback.channels;
     first = 0;
   }
   synth((float *)output, (float *)input, (int)frame_count, (int)pDevice->playback.channels, pDevice->pUserData);
-  sprintf(scope->debug_text, "%d %d %ld", frame_count, rec_state, rec_ptr);
   // copy frame buffer to shared memory?
-  seq((int)frame_count, queue_cb, pattern_cb);
   if (rec_state) {
     float *f = one_skred_frame;
     for (int i = 0; i < frame_count * num_channels * VOICE_MAX; i+=2) {
@@ -113,19 +84,6 @@ void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint
       }
     }
   }
-  if (scope_enable) {
-    float *f = (float *)output;
-    for (int i = 0; i < frame_count * num_channels; i+=2) {
-      scope->buffer_left[scope->buffer_pointer] = f[i];
-      scope->buffer_right[scope->buffer_pointer] = f[i+1];
-      scope->buffer_pointer++;
-      if (scope->buffer_pointer >= SCOPE_WIDTH_IN_SAMPLES) scope->buffer_pointer = 0;
-      //scope->buffer_pointer %= scope->buffer_len;
-    }
-  }
-  // scope --- is this still needed???
-  volatile uint32_t *futex_word = (volatile uint32_t *)&scope->frame_count;
-  __atomic_add_fetch(futex_word, frame_count, __ATOMIC_SEQ_CST);
 }
 
 void sleep_float(double seconds) {
@@ -138,67 +96,31 @@ void sleep_float(double seconds) {
 
 
 
-#ifndef _WIN32
-#include "bestline.h"
-#endif
-
 void sload(int use_edit) {
-#ifndef _WIN32
-  if (use_edit) bestlineHistoryLoad(HISTORY_FILE);
-#endif
 }
 
 char *sgets(char *prompt, int max, int edit, int store) {
   char *buffer = (char *)malloc(max);
   char *line = buffer;
-#ifndef _WIN32
-  if (edit) {
-    line = bestlineWithHistory(prompt, NULL);
-    if (line && store) bestlineHistoryAdd(line);
-  } else {
-    line = fgets(buffer, max, stdin);
-  }
-#else
   line = fgets(buffer, max, stdin);
-#endif
-  if (0) {
-    int n = strlen(line);
-    int f0 = -1;
-    int f1 = -1;
-    for (int i=n-1; i>=0; i--) {
-      if (line[i] == '\n') f0 = i;
-      if (line[i] == '\r') f1 = i;
-    }
-    if (f0 >= 0) printf("HAS \\n [%d]\n", f0);
-    if (f1 >= 0) printf("HAS \\r [%d]\n", f0);
-  }
   return line;
 }
 
 void ssave(int use_edit) {
-#ifndef _WIN32
-  if (use_edit) { bestlineHistorySave(HISTORY_FILE); }
-#endif
 }
 
 int main(int argc, char *argv[]) {
   int load_patch_number = -1;
-  int udp_port = UDP_PORT;
   char execute_from_start[1024] = "";
-  int use_edit = 1;
-  use_edit = use_edit; // avoid unused warning on win32 compile
   int flag = 0; // don't resample retro waves...
   if (argc > 1) {
     for (int i=1; i<argc; i++) {
       if (argv[i][0] == '-') {
         switch (argv[i][1]) {
-          case 'n': use_edit = 0; break;
           case 't': trace = 1; break;
           case 'f': flag = (int)strtol(&(argv[i][2]), NULL, 0); break;
-          case 'p': udp_port = (int)strtol(&(argv[i][2]), NULL, 0); break;
           case 'l': load_patch_number = (int)strtol(&argv[i][2], NULL, 0); break;
           case '1': requested_synth_frames_per_callback = (int)strtol(&argv[i][2], NULL, 0); break;
-          case '2': requested_seq_frames_per_callback = (int)strtol(&argv[i][2], NULL, 0); break;
           case 'e': {
             printf("# %s\n", argv[i]);
             strcpy(execute_from_start, &argv[i][2]);
@@ -207,10 +129,8 @@ int main(int argc, char *argv[]) {
             printf("# unknown switch '%s'\n", argv[i]);
             printf("# -n = no command line edit\n");
             printf("# -t = trace on\n");
-            printf("# -p# = set UDP port to # (0=off)\n");
             printf("# -l# = load sk patch #\n");
             printf("# -1# = set synth frames per callback to #\n");
-            printf("# -2# = set seq frames per callback to #\n");
             printf("# -e'wire' = run 'wire' at start\n");
             exit(1);
             break;
@@ -219,27 +139,19 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  if (isatty(STDIN_FILENO) == 0) {
-    use_edit = 0;
-  }
+  sload(0);
+#define YELL(s) {write(1, s, sizeof(s)-1);}
 
-  if (use_edit == 0) {
-    setvbuf(stdout, NULL, _IOLBF, 0);
-  }
-  
-  show_threads(NULL);
-  
-  sload(use_edit);
-
-  perf_start();
-
+  YELL("#001\n");
   synth_callback_init(REC_IN_SEC);
+  YELL("#002\n");
   synth_init();
+  YELL("#003\n");
   wave_table_init(flag);
+  YELL("#004\n");
   voice_init();
-  tempo_set(120.0);
-  seq_init();
 
+  YELL("#005\n");
   // miniaudio's synth device setup
   ma_device_config synth_config = ma_device_config_init(ma_device_type_playback);
   synth_config.playback.format = ma_format_f32;
@@ -255,58 +167,8 @@ int main(int argc, char *argv[]) {
   ma_device_init(NULL, &synth_config, &synth_device);
   ma_device_start(&synth_device);
 
-#if 0
-  // miniaudio's seq device setup
-  ma_device_config seq_config = ma_device_config_init(ma_device_type_playback);
-  seq_config.playback.format = ma_format_f32;
-  seq_config.playback.channels = AUDIO_CHANNELS;
-  seq_config.sampleRate = MAIN_SAMPLE_RATE;
-  seq_config.dataCallback = seq_callback;
-  seq_config.periodSizeInFrames = requested_seq_frames_per_callback;
-  seq_config.periodSizeInMilliseconds = 0;
-  seq_config.periods = 2; // examples say "3"... trying something different
-  seq_config.noClip = MA_TRUE;
-  ma_device seq_device;
-  ma_device_init(NULL, &seq_config, &seq_device);
-  ma_device_start(&seq_device);
-#endif
-
-  if (audio_show(NULL) != 0) return 1;
-
-  util_set_thread_name("repl");
-
-  if (udp_port != 0) {
-    int r = udp_start(udp_port);
-    if (r != udp_port) udp_port = 0;
-  }
-
-#ifdef SKRED_VERSION
-  printf("# skred version %s\n", SKRED_VERSION);
-#endif
-
-  system_show(NULL);
-
+  YELL("#006\n");
   if (load_patch_number >= 0) skode_load(NULL, 0, load_patch_number);
-
-  if (scope_enable) {
-    scope->buffer_len = SCOPE_WIDTH_IN_SAMPLES;
-    sprintf(scope->status_text, "n/a");
-  }
-
-  skred_mem_t *scope_shared = skred_mem_new();
-#define SKRED_SCOPE_NAME "skred-o-scope.001"
-  int r = skred_mem_create(scope_shared, SKRED_SCOPE_NAME, sizeof(scope_buffer_t));
-  if (r != 0) {
-    printf("# did not create scope shared memory %s (%d)\n", SKRED_SCOPE_NAME, r);
-    perror("???");
-    scope_enable = 0;
-  } else {
-    printf("# scope buffer ready\n");
-    scope = (scope_buffer_t *)skred_mem_addr(scope_shared);
-    scope->buffer_len = SCOPE_WIDTH_IN_SAMPLES;
-    scope_enable = 1;
-    sprintf(scope->status_text, "n/a");
-  }
 
   skode_t w = SKODE_EMPTY();
   w.trace = trace;
@@ -320,24 +182,17 @@ int main(int argc, char *argv[]) {
     if (n < 0) main_running = 0;
   }
 
-  if (scope_enable) scope->voice_text[0] = '\0';
-
-  if (use_edit) { w.flag = 1; }
-  else { w.flag = 0; }
+  w.flag = 1;
 
   char *line = NULL;
 
-  int current_voice = 0;
+  printf("# SKRED!\n");
 
   while (main_running) {
-    if (scope_enable) {
-      voice_format(current_voice, scope->voice_text, 0);
-    }
-
     if (line) free(line); // get rid of previous malloc-ed line
     line = NULL;
 
-    line = sgets("# ", 1024, use_edit, w.flag);
+    line = sgets("# ", 1024, 0, w.flag);
     if (line == NULL) {
       main_running = 0;
       break;
@@ -348,11 +203,10 @@ int main(int argc, char *argv[]) {
     if (w.log_len) printf("%s", w.log);
     if (n < 0) break; // request to stop or error
     if (n > 0) printf("# ERR:%d\n", n);
-    use_edit = w.flag;
     trace = w.trace;
   }
 
-  ssave(use_edit);
+  ssave(0);
   if (line) free(line); // get rid of previous malloc-ed line
 
   // turn down volume smoothly to avoid clicks
@@ -362,10 +216,6 @@ int main(int argc, char *argv[]) {
 
   // Cleanup
   perf_stop();
-  if (udp_port != 0) udp_stop();
-#if 0
-  ma_device_uninit(&seq_device);
-#endif
   sleep_float(.5); // make sure we don't crash the callback b/c thread timing and wave_data
   ma_device_uninit(&synth_device);
   sleep_float(.5); // make sure we don't crash the callback b/c thread timing and wave_data

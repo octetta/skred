@@ -404,7 +404,7 @@ void resize(void);
 void retro_init(void) {
   static int first = 1;
   if (first == 0) return;
-  printf("retro_init()\n");
+  // printf("retro_init()\n");
   first = 0;
   kwave[0] = kw00;
   kwave[1] = kw01;

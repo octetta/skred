@@ -46,7 +46,9 @@ int null_printf(const char *fmt, ...) { return 0; }
 #include "mpsc_queue.h"
 
 #if 1 // performance event listener
+#ifndef _WIN32
 #include <pthread.h>
+#endif
 
 static mpsc_queue mq;
 static pthread_t perf_thread_handle;
