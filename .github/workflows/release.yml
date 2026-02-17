@@ -7,13 +7,24 @@ on:
   pull_request:
     branches: [ main, master ]
 
+permissions:
+  contents: write
+
 jobs:
-  # JOB 1: Verify the build on every push
   check_build:
-    runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        target: [x86_64-linux, x86_64-windows]
+        include:
+          - target: x86_64-linux
+            os: ubuntu-latest
+          - target: x86_64-windows
+            os: ubuntu-latest
+          - target: aarch64-macos
+            os: macos-latest
+          - target: x86_64-macos
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -34,14 +45,22 @@ jobs:
             zig build -Dtarget=${{ matrix.target }}
           fi
 
-  # JOB 2: Create the Actual Release (Only on Tags)
   create_release:
-    needs: check_build # Only run if the check passes
+    needs: check_build
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        target: [x86_64-linux, x86_64-windows]
+        include:
+          - target: x86_64-linux
+            os: ubuntu-latest
+          - target: x86_64-windows
+            os: ubuntu-latest
+          - target: aarch64-macos
+            os: macos-latest
+          - target: x86_64-macos
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
