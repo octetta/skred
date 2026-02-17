@@ -42,9 +42,9 @@ jobs:
           if [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
             zig build
           elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-            # We use the target flag here because macOS runners have 
-            # the SDKs to cross-compile between Intel/Silicon natively.
-            zig build -Dtarget=${{ matrix.target }}
+            # Explicitly point to the Apple SDK
+            MACOS_SDK_PATH=$(xcrun --show-sdk-path)
+            zig build -Dtarget=${{ matrix.target }} --sysroot "$MACOS_SDK_PATH"
           else
             zig build -Dtarget=${{ matrix.target }}
           fi
@@ -80,10 +80,12 @@ jobs:
       - name: Build Zip
         run: |
           if [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
-            # Native Linux build to ensure it finds system ALSA
             zig build zip -Dversion=${{ github.ref_name }}
+          elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+            # Explicitly point to the Apple SDK for framework linking
+            MACOS_SDK_PATH=$(xcrun --show-sdk-path)
+            zig build zip -Dtarget=${{ matrix.target }} -Dversion=${{ github.ref_name }} --sysroot "$MACOS_SDK_PATH"
           else
-            # Windows and macOS (both architectures)
             zig build zip -Dtarget=${{ matrix.target }} -Dversion=${{ github.ref_name }}
           fi
 
