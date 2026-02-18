@@ -21,9 +21,9 @@ jobs:
           - target: x86_64-windows
             os: ubuntu-latest
           - target: aarch64-macos
-            os: macos-latest      # Silicon Runner
+            os: macos-latest
           - target: x86_64-macos
-            os: macos-15-intel    # NEW 2026 Intel Runner Label
+            os: macos-15-intel
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -38,7 +38,7 @@ jobs:
       - name: Verify Compilation
         run: |
           if [[ "${{ matrix.os }}" == "macos"* ]] || [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
-            # Build natively on the specific runner hardware
+            # Native builds for Mac and Linux to ensure system headers are found
             zig build
           else
             # Cross-compile for Windows from Linux
@@ -71,14 +71,22 @@ jobs:
         if: matrix.target == 'x86_64-linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
 
-      - name: Build Zip
+      - name: Build
         run: |
           if [[ "${{ matrix.os }}" == "macos"* ]] || [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
-            # Native build avoids the "Framework search path: none" bug
             zig build zip -Dversion=${{ github.ref_name }}
           else
             zig build zip -Dtarget=${{ matrix.target }} -Dversion=${{ github.ref_name }}
           fi
+
+      - name: Rename ZIP for Architecture Clarity
+        run: |
+          cd zig-out
+          # Identify the generic zip and give it a unique name from the matrix
+          GENERIC_ZIP=$(ls *.zip | head -n 1)
+          UNIQUE_NAME="skred-${{ matrix.target }}-${{ github.ref_name }}.zip"
+          mv "$GENERIC_ZIP" "$UNIQUE_NAME"
+          echo "Final asset name: $UNIQUE_NAME"
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
