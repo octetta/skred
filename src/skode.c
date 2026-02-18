@@ -963,12 +963,18 @@ int skode_function(ands_t *s, int info) {
     case 'V___': // main-volume loudness
       if (argc) volume_set(arg[0]);
       break;
-    case 'w___': // wave-select which-wave
+    case 'w___': // wave-select which-wave interpolate? one-shot?
       if (argc) {
-        int n = 0;
         wave_set(voice, x);
-        if (argc > 1 && arg[1] != 0) n = 0;
-        voice_interpolate[voice] = n;
+        int n;
+        if (argc > 1) {
+          n = (int)arg[1];
+          voice_interpolate[voice] = n;
+        }
+        if (argc > 2) {
+          n = (int)arg[2];
+          voice_one_shot[voice] = n;
+        }
 #ifndef MINI
         if (scope_enable) sprintf(scope->wave_text, "w%d", x);
 #endif
