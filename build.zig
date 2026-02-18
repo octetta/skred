@@ -2,6 +2,7 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
+    // Corrected call for Zig 0.13.0
     const optimize = b.standardOptimizeOption(.{});
 
     const exe = b.addExecutable(.{
@@ -10,12 +11,15 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // --- Versioning Logic (Read from VERSION.txt) ---
-    const version_file_content = b.build_root.handle.readFileAlloc(b.allocator, "VERSION.txt", 128) catch |err| {
-        std.debug.print("Error reading VERSION.txt: {s}\n", .{@errorName(err)});
-        std.process.exit(1);
+    // --- Versioning Logic ---
+    // Checks for -Dversion flag first, then falls back to VERSION.txt
+    const version_str = b.option([]const u8, "version", "Override version string") orelse version_blk: {
+        const file_content = b.build_root.handle.readFileAlloc(b.allocator, "VERSION.txt", 128) catch |err| {
+            std.debug.print("Error reading VERSION.txt: {s}\n", .{@errorName(err)});
+            std.process.exit(1);
+        };
+        break :version_blk std.mem.trim(u8, file_content, " \n\r\t");
     };
-    const version_str = std.mem.trim(u8, version_file_content, " \n\r\t");
 
     exe.root_module.addCMacro("SKRED_VERSION", b.fmt("\"{s}\"", .{version_str}));
     exe.root_module.addCMacro("_GNU_SOURCE", "1");
@@ -101,9 +105,11 @@ pub fn build(b: *std.Build) void {
         .dest_dir = .{ .override = .{ .custom = "bundle" } },
     });
 
+    // Install single files
     const copy_readme = b.addInstallFile(b.path("README.md"), "bundle/README.md");
     const copy_license = b.addInstallFile(b.path("LICENSE.txt"), "bundle/LICENSE.txt");
 
+    // Install directories
     const copy_sk = b.addInstallDirectory(.{
         .source_dir = b.path("sk"),
         .install_dir = .{ .custom = "bundle" },
