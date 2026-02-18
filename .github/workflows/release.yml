@@ -21,9 +21,9 @@ jobs:
           - target: x86_64-windows
             os: ubuntu-latest
           - target: aarch64-macos
-            os: macos-latest   # This is an M1/M2 runner
+            os: macos-latest      # Silicon Runner
           - target: x86_64-macos
-            os: macos-13       # This is an Intel runner
+            os: macos-15-intel    # NEW 2026 Intel Runner Label
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -38,11 +38,10 @@ jobs:
       - name: Verify Compilation
         run: |
           if [[ "${{ matrix.os }}" == "macos"* ]] || [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
-            # NATIVE BUILD: No -Dtarget flag. 
-            # This lets Zig find CoreAudio/ALSA naturally.
+            # Build natively on the specific runner hardware
             zig build
           else
-            # WINDOWS: Cross-compilation works fine here.
+            # Cross-compile for Windows from Linux
             zig build -Dtarget=${{ matrix.target }}
           fi
 
@@ -60,7 +59,7 @@ jobs:
           - target: aarch64-macos
             os: macos-latest
           - target: x86_64-macos
-            os: macos-13
+            os: macos-15-intel
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -75,10 +74,9 @@ jobs:
       - name: Build Zip
         run: |
           if [[ "${{ matrix.os }}" == "macos"* ]] || [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
-            # Build natively, but still pass the version
+            # Native build avoids the "Framework search path: none" bug
             zig build zip -Dversion=${{ github.ref_name }}
           else
-            # Cross-compile for Windows
             zig build zip -Dtarget=${{ matrix.target }} -Dversion=${{ github.ref_name }}
           fi
 
