@@ -3,7 +3,7 @@
 # skred
 
 *wavetables gone rogue — snap together voices like LEGO,
-then poke 'em with cheeky ASCII spells for instant
+then poke them with short ASCII incantations for instant
 sonic mischief*
 
 ## description
@@ -28,15 +28,16 @@ In short: a lightweight, hackable synth that feels alive under
 your fingers, whether you're performing live or scripting chaos
 from a terminal.
 
-
 # quick start
 
 ```
-./skred       # or .\skred.exe on Windows 
-v0w0f440a4l1  # start a 440Hz sine wave on voice 0
-v1m1a1f1l1    # start a 1Hz modulator on voice 1
-v0F1,1        # use v1 modulator to change v0' frequency 
-??            # show the running voices
+install zig 0.13.0
+zig build
+./zig-out/bin/skred # or skred.exe on Windows 
+v0 w0 f440 a0 l1    # start a 440Hz sine wave on voice 0
+v1 m1 a0 f1 l1      # start a 1Hz modulator on voice 1
+v0 F1,1             # use v1 modulator to change v0's frequency 
+??                  # show the running voices
 ```
 
 # behind the scenes
@@ -45,39 +46,24 @@ v0F1,1        # use v1 modulator to change v0' frequency
 - [synth](docs/synth.md) skred's sound engine
 - [skode](docs/skode.md) the skred live code language
 - [skode reference](docs/skode-ref.md) details about skode commands and values
-- [seq](docs/seq.md) the skred pattern system
 - [tools](docs/tools.md) various tools for learning and controlling skred
 
-
-## seq
-
-## build
-```
-make skred
-```
-
-## run
-```
-./skred
-```
 ----
 
 ## credits
-- miniaudio
-- bestline
+- [miniaudio](https://github.com/mackron/miniaudio) *audio library by mackron*
+- [bestline](https://github.com/jart/bestline) *command session by jart*
 
 ## inspiration
-- Pokey, SID, AMY
-- PureData
-- ChucK
-- SonicPi
+- [POKEY](https://en.wikipedia.org/wiki/POKEY)
+- [SID](https://en.wikipedia.org/wiki/MOS_Technology_6581)
+- [PureData](https://msp.ucsd.edu/) *make sounds with visual coding*
+- [ChucK](https://chuck.cs.princeton.edu/) *music programming language with time at the center*
+- [SonicPi](https://sonic-pi.net/) *a free open-source live coding environment*
+- [AMY](https://github.com/shorepine/amy) *A high-performance fixed-point Music synthesizer librarY for microcontrollers* 
 
 ## heroes
-- Robert Moog
-- Wendy Carlos
-- Chuck Moore
-
-## background
-
-- needs asound on linux
-  - sudo apt install libasound2-dev
+- [Robert Moog](https://en.wikipedia.org/wiki/Robert_Moog)
+- [Wendy Carlos](https://en.wikipedia.org/wiki/Wendy_Carlos)
+- [Laurie Spiegel](https://en.wikipedia.org/wiki/Laurie_Spiegel)
+- [Chuck Moore](https://en.wikipedia.org/wiki/Charles_H._Moore)
