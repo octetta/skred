@@ -1,0 +1,15 @@
+# push change into .github/workflows/release.yml
+cat > .github/workflows/release.yml
+
+# how i pushed to github
+git add .github/workflows/release.yml
+git commit -m "fix: macos runners"
+git push origin master
+
+# remove broken tag (if needed)
+git tag -d v1.2.2
+git push --delete origin v1.2.2
+
+# make tag and push for actions
+git tag v1.2.2
+git push origin v1.2.2

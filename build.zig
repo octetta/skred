@@ -2,9 +2,7 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{
-        .preferred_optimize_mode = .ReleaseFast,
-    });
+    const optimize = b.standardOptimizeOption(.{});
 
     const exe = b.addExecutable(.{
         .name = "skred",
@@ -12,8 +10,13 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // --- Versioning Logic ---
-    const version_str = b.option([]const u8, "version", "Set version") orelse "1.0.1-UC";
+    // --- Versioning Logic (Read from VERSION.txt) ---
+    const version_file_content = b.build_root.handle.readFileAlloc(b.allocator, "VERSION.txt", 128) catch |err| {
+        std.debug.print("Error reading VERSION.txt: {s}\n", .{@errorName(err)});
+        std.process.exit(1);
+    };
+    const version_str = std.mem.trim(u8, version_file_content, " \n\r\t");
+
     exe.root_module.addCMacro("SKRED_VERSION", b.fmt("\"{s}\"", .{version_str}));
     exe.root_module.addCMacro("_GNU_SOURCE", "1");
 
@@ -93,32 +96,46 @@ pub fn build(b: *std.Build) void {
 
     // --- Bundle Step ---
     const bundle_step = b.step("bundle", "Create release folder");
+
     const install_bundle = b.addInstallArtifact(exe, .{
         .dest_dir = .{ .override = .{ .custom = "bundle" } },
     });
+
+    const copy_readme = b.addInstallFile(b.path("README.md"), "bundle/README.md");
+    const copy_license = b.addInstallFile(b.path("LICENSE.txt"), "bundle/LICENSE.txt");
+
     const copy_sk = b.addInstallDirectory(.{
         .source_dir = b.path("sk"),
         .install_dir = .{ .custom = "bundle" },
         .install_subdir = "sk",
     });
+
     const copy_wav = b.addInstallDirectory(.{
         .source_dir = b.path("wav"),
         .install_dir = .{ .custom = "bundle" },
         .install_subdir = "wav",
     });
 
+    const copy_docs = b.addInstallDirectory(.{
+        .source_dir = b.path("docs"),
+        .install_dir = .{ .custom = "bundle" },
+        .install_subdir = "docs",
+    });
+
     bundle_step.dependOn(&install_bundle.step);
+    bundle_step.dependOn(&copy_readme.step);
+    bundle_step.dependOn(&copy_license.step);
     bundle_step.dependOn(&copy_sk.step);
     bundle_step.dependOn(&copy_wav.step);
+    bundle_step.dependOn(&copy_docs.step);
 
     // --- Zip Step ---
     const zip_filename = b.fmt("skred-{s}-{s}.zip", .{ @tagName(os_tag), version_str });
     const zip_command = b.addSystemCommand(&.{ "zip", "-r", zip_filename, "bundle" });
     
-    // Explicitly using the union field for a relative path string
-    zip_command.setCwd(.{ .cwd_relative = b.getInstallPath(.{ .custom = "" }, "") }); 
-
+    zip_command.setCwd(.{ .cwd_relative = b.getInstallPath(.{ .custom = "" }, "") });
     zip_command.step.dependOn(bundle_step);
+    
     const zip_step = b.step("zip", "Create a final .zip archive");
     zip_step.dependOn(&zip_command.step);
 }
