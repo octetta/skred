@@ -21,9 +21,9 @@ jobs:
           - target: x86_64-windows
             os: ubuntu-latest
           - target: aarch64-macos
-            os: macos-latest
+            os: macos-latest   # This is an M1/M2 runner
           - target: x86_64-macos
-            os: macos-latest
+            os: macos-13       # This is an Intel runner
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -37,12 +37,12 @@ jobs:
 
       - name: Verify Compilation
         run: |
-          if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-            export SDKROOT=$(xcrun --show-sdk-path)
-            zig build -Dtarget=${{ matrix.target }}
-          elif [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
+          if [[ "${{ matrix.os }}" == "macos"* ]] || [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
+            # NATIVE BUILD: No -Dtarget flag. 
+            # This lets Zig find CoreAudio/ALSA naturally.
             zig build
           else
+            # WINDOWS: Cross-compilation works fine here.
             zig build -Dtarget=${{ matrix.target }}
           fi
 
@@ -60,7 +60,7 @@ jobs:
           - target: aarch64-macos
             os: macos-latest
           - target: x86_64-macos
-            os: macos-latest
+            os: macos-13
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -74,12 +74,11 @@ jobs:
 
       - name: Build Zip
         run: |
-          if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-            export SDKROOT=$(xcrun --show-sdk-path)
-            zig build zip -Dtarget=${{ matrix.target }} -Dversion=${{ github.ref_name }}
-          elif [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
+          if [[ "${{ matrix.os }}" == "macos"* ]] || [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
+            # Build natively, but still pass the version
             zig build zip -Dversion=${{ github.ref_name }}
           else
+            # Cross-compile for Windows
             zig build zip -Dtarget=${{ matrix.target }} -Dversion=${{ github.ref_name }}
           fi
 
