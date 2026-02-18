@@ -27,9 +27,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Zig
-        uses: mlugg/setup-zig@v1
+      - uses: mlugg/setup-zig@v1
         with:
           version: 0.13.0
 
@@ -39,12 +37,11 @@ jobs:
 
       - name: Verify Compilation
         run: |
-          if [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
+          if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+            export SDKROOT=$(xcrun --show-sdk-path)
+            zig build -Dtarget=${{ matrix.target }}
+          elif [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
             zig build
-          elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-            MACOS_SDK_PATH=$(xcrun --show-sdk-path)
-            # -F adds the Framework search path inside the SDK
-            zig build -Dtarget=${{ matrix.target }} --sysroot "$MACOS_SDK_PATH" -F "$MACOS_SDK_PATH/System/Library/Frameworks"
           else
             zig build -Dtarget=${{ matrix.target }}
           fi
@@ -67,9 +64,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Zig
-        uses: mlugg/setup-zig@v1
+      - uses: mlugg/setup-zig@v1
         with:
           version: 0.13.0
 
@@ -79,11 +74,11 @@ jobs:
 
       - name: Build Zip
         run: |
-          if [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
+          if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+            export SDKROOT=$(xcrun --show-sdk-path)
+            zig build zip -Dtarget=${{ matrix.target }} -Dversion=${{ github.ref_name }}
+          elif [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
             zig build zip -Dversion=${{ github.ref_name }}
-          elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-            MACOS_SDK_PATH=$(xcrun --show-sdk-path)
-            zig build zip -Dtarget=${{ matrix.target }} -Dversion=${{ github.ref_name }} --sysroot "$MACOS_SDK_PATH" -F "$MACOS_SDK_PATH/System/Library/Frameworks"
           else
             zig build zip -Dtarget=${{ matrix.target }} -Dversion=${{ github.ref_name }}
           fi
