@@ -42,9 +42,9 @@ jobs:
           if [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
             zig build
           elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-            # Explicitly point to the Apple SDK
             MACOS_SDK_PATH=$(xcrun --show-sdk-path)
-            zig build -Dtarget=${{ matrix.target }} --sysroot "$MACOS_SDK_PATH"
+            # -F adds the Framework search path inside the SDK
+            zig build -Dtarget=${{ matrix.target }} --sysroot "$MACOS_SDK_PATH" -F "$MACOS_SDK_PATH/System/Library/Frameworks"
           else
             zig build -Dtarget=${{ matrix.target }}
           fi
@@ -82,9 +82,8 @@ jobs:
           if [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
             zig build zip -Dversion=${{ github.ref_name }}
           elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-            # Explicitly point to the Apple SDK for framework linking
             MACOS_SDK_PATH=$(xcrun --show-sdk-path)
-            zig build zip -Dtarget=${{ matrix.target }} -Dversion=${{ github.ref_name }} --sysroot "$MACOS_SDK_PATH"
+            zig build zip -Dtarget=${{ matrix.target }} -Dversion=${{ github.ref_name }} --sysroot "$MACOS_SDK_PATH" -F "$MACOS_SDK_PATH/System/Library/Frameworks"
           else
             zig build zip -Dtarget=${{ matrix.target }} -Dversion=${{ github.ref_name }}
           fi
