@@ -30,6 +30,10 @@ jobs:
       - uses: mlugg/setup-zig@v1
         with:
           version: 0.13.0
+      
+      - name: Sync VERSION.txt with Tag
+        run: |
+          echo "${{ github.ref_name }}" > VERSION.txt
 
       - name: Install ALSA (Linux Only)
         if: matrix.target == 'x86_64-linux'
@@ -38,10 +42,8 @@ jobs:
       - name: Verify Compilation
         run: |
           if [[ "${{ matrix.os }}" == "macos"* ]] || [[ "${{ matrix.target }}" == "x86_64-linux" ]]; then
-            # Native builds for Mac and Linux to ensure system headers are found
             zig build
           else
-            # Cross-compile for Windows from Linux
             zig build -Dtarget=${{ matrix.target }}
           fi
 
@@ -67,6 +69,10 @@ jobs:
         with:
           version: 0.13.0
 
+      - name: Sync VERSION.txt with Tag
+        run: |
+          echo "${{ github.ref_name }}" > VERSION.txt
+
       - name: Install ALSA (Linux Only)
         if: matrix.target == 'x86_64-linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
@@ -79,18 +85,24 @@ jobs:
             zig build zip -Dtarget=${{ matrix.target }} -Dversion=${{ github.ref_name }}
           fi
 
-      - name: Rename ZIP for Architecture Clarity
+      - name: Rename ZIP
         run: |
           cd zig-out
-          # Identify the generic zip and give it a unique name from the matrix
           GENERIC_ZIP=$(ls *.zip | head -n 1)
           UNIQUE_NAME="skred-${{ matrix.target }}-${{ github.ref_name }}.zip"
           mv "$GENERIC_ZIP" "$UNIQUE_NAME"
-          echo "Final asset name: $UNIQUE_NAME"
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: zig-out/*.zip
+          generate_release_notes: true
+          body: |
+            ## 🚀 Installation & Usage
+            1. Download the ZIP for your architecture.
+            2. Extract and run the `skred` executable.
+            3. Use the UDP server to send array-oriented commands.
+            
+            *This bundle includes the `sk/` and `wav/` sample libraries and documentation.*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
