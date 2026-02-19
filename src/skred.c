@@ -59,15 +59,15 @@ void seq_callback(ma_device* pDevice, void* output, const void* input, ma_uint32
 int rec_state = 0;
 long rec_ptr = 0;
 float rec_sec = (float)REC_IN_SEC;
-long rec_max = REC_IN_SEC * MAIN_SAMPLE_RATE * AUDIO_CHANNELS * VOICE_MAX;
-float one_skred_frame[ONE_FRAME_MAX * AUDIO_CHANNELS * VOICE_MAX];
+long rec_max = REC_IN_SEC * MAIN_SAMPLE_RATE * AUDIO_CHANNELS * VOICE_MAX_DEFAULT;
+float one_skred_frame[ONE_FRAME_MAX * AUDIO_CHANNELS * VOICE_MAX_DEFAULT];
 float *recording = NULL;
 
 void synth_callback_init(float max_sec) {
   if (recording) free(recording);
   recording = NULL;
   rec_sec = max_sec;
-  float max_samples = max_sec * (float)(MAIN_SAMPLE_RATE * AUDIO_CHANNELS * VOICE_MAX);
+  float max_samples = max_sec * (float)(MAIN_SAMPLE_RATE * AUDIO_CHANNELS * synth_config.voice_max);
   rec_max = max_samples;
   recording = (float *)malloc(rec_max * sizeof(float));
 }
@@ -103,7 +103,7 @@ void synth_callback(ma_device* pDevice, void* output, const void* input, ma_uint
   seq((int)frame_count, queue_cb, pattern_cb);
   if (rec_state) {
     float *f = one_skred_frame;
-    for (int i = 0; i < frame_count * num_channels * VOICE_MAX; i+=2) {
+    for (int i = 0; i < frame_count * num_channels * synth_config.voice_max; i+=2) {
       if (rec_ptr < rec_max) {
         recording[rec_ptr++] = f[i];   // left
         recording[rec_ptr++] = f[i+1]; // right
@@ -188,10 +188,14 @@ int main(int argc, char *argv[]) {
   int use_edit = 1;
   use_edit = use_edit; // avoid unused warning on win32 compile
   int flag = 0; // don't resample retro waves...
+  int dv = 64;
+  int dw = WAVE_TABLE_MAX;
   if (argc > 1) {
     for (int i=1; i<argc; i++) {
       if (argv[i][0] == '-') {
         switch (argv[i][1]) {
+          case 'v': dv = atoi(&argv[i][2]); break;
+          case 'w': dw = atoi(&argv[i][2]); break;
           case 'n': use_edit = 0; break;
           case 't': trace = 1; break;
           case 'f': flag = (int)strtol(&(argv[i][2]), NULL, 0); break;
@@ -211,6 +215,8 @@ int main(int argc, char *argv[]) {
             printf("# -l# = load sk patch #\n");
             printf("# -1# = set synth frames per callback to #\n");
             printf("# -2# = set seq frames per callback to #\n");
+            printf("# -v# = voice count (default %d, max %d, rounded to %d\n", VOICE_MAX_DEFAULT, VOICE_MAX_HARD_LIMIT, VOICE_ALIGN);
+            printf("# -w# = wave table slots (default %d, max %d\n", WAVE_TABLE_MAX_DEFAULT, WAVE_TABLE_MAX_HARD_LIMIT);
             printf("# -e'wire' = run 'wire' at start\n");
             exit(1);
             break;
@@ -228,11 +234,11 @@ int main(int argc, char *argv[]) {
   }
   
   show_threads(NULL);
-  
   sload(use_edit);
-
   perf_start();
-
+  //synth_config_defaults();
+  synth_config_set_voices(dv);
+  synth_config_set_waves(dw);
   synth_callback_init(REC_IN_SEC);
   synth_init();
   wave_table_init(flag);
@@ -241,18 +247,19 @@ int main(int argc, char *argv[]) {
   seq_init();
 
   // miniaudio's synth device setup
-  ma_device_config synth_config = ma_device_config_init(ma_device_type_playback);
-  synth_config.playback.format = ma_format_f32;
-  synth_config.playback.channels = AUDIO_CHANNELS;
-  synth_config.sampleRate = MAIN_SAMPLE_RATE;
-  synth_config.dataCallback = synth_callback;
-  synth_config.periodSizeInFrames = requested_synth_frames_per_callback;
-  synth_config.periodSizeInMilliseconds = 0;
-  synth_config.periods = 3;
-  synth_config.noClip = MA_TRUE;
-  synth_config.pUserData = &one_skred_frame;
+  // NOTE: renamed to ma_config to avoid shadowing global synth_config
+  ma_device_config ma_config = ma_device_config_init(ma_device_type_playback);
+  ma_config.playback.format = ma_format_f32;
+  ma_config.playback.channels = AUDIO_CHANNELS;
+  ma_config.sampleRate = MAIN_SAMPLE_RATE;
+  ma_config.dataCallback = synth_callback;
+  ma_config.periodSizeInFrames = requested_synth_frames_per_callback;
+  ma_config.periodSizeInMilliseconds = 0;
+  ma_config.periods = 3;
+  ma_config.noClip = MA_TRUE;
+  ma_config.pUserData = &one_skred_frame;
   ma_device synth_device;
-  ma_device_init(NULL, &synth_config, &synth_device);
+  ma_device_init(NULL, &ma_config, &synth_device);
   ma_device_start(&synth_device);
 
 #if 0
@@ -283,6 +290,9 @@ int main(int argc, char *argv[]) {
 #ifdef SKRED_VERSION
   printf("# skred version %s\n", SKRED_VERSION);
 #endif
+
+  printf("# voice_max %d\n", synth_config.voice_max);
+  printf("# wave_table_max %d\n", synth_config.wave_table_max);
 
   system_show(NULL);
 

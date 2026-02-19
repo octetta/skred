@@ -4,30 +4,12 @@
 #include <stdio.h>
 
 #include "synth-types.h"
-
 #include "miniwav.h"
 
-#define USE_PRE
-
-// #undef USE_PRE
-
-#ifdef USE_PRE
-
-#define ARRAY(type, name, size, init) type name[size] = init;
-#include "synth.def"
-#undef ARRAY
-
-#else
-
-#define ARRAY(type, name, size, init) type *name;
-#include "synth.def"
-#undef ARRAY
-
-#endif
-
-#define ARRAY(type, name, size, init) int name##__len__ = size;
-#include "synth.def"
-#undef ARRAY
+#include "synth-features.h"
+#include "synth-config.h"
+#include "synth-state.h"
+#include "synth-alloc.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -49,47 +31,25 @@ int volume_set(float v);
 
 void synth_init(void) {
   SAMPLE_COUNT_PUT(0);
-  if (0) {
-#define ARRAY(type, name, size, init) printf("%s : %d\n", #name, name##__len__);
-#include "synth.def"
-#undef ARRAY
-  }
+
+  /* If nobody called synth_config_set_voices() before us, fill in defaults.
+   * voice_max == 0 means aligned_alloc(64, 0) which is UB / NULL on most
+   * platforms — the root cause of the silent segfault on startup. */
+  if (synth_config.voice_max == 0 || synth_config.wave_table_max == 0)
+    synth_config_defaults();
+
+  synth_alloc_voices(synth_config.voice_max);
+  synth_alloc_waves(synth_config.wave_table_max);
 
   volume_set(VOLUME_DEFAULT);
-#ifdef USE_PRE
-
-  //printf("# synth_init :: USE_PRE\n");
-
-#else
-
-  //printf("# synth_init :: USE_MALLOC\n");
-#define ARRAY(type, name, size, init) name = (type*)malloc(size * sizeof(type));
-#include "synth.def"
-#undef ARRAY
-
-#define ARRAY(type, name, size, init) if (name == NULL) printf("malloc %s failed\n", #name);
-#include "synth.def"
-#undef ARRAY
-
-#endif
 }
+
 
 void synth_free(void) {
-#ifdef USE_PRE
-
-  //printf("# synth_free :: USE_PRE\n");
-  //
-  
-#else
-  
-  //printf("# synth_free :: USE_FREE\n");
-
-#define ARRAY(type, name, size, init) free(name);
-#include "synth.def"
-#undef ARRAY
-
-#endif
+  synth_free_voices();
+  synth_free_waves();
 }
+
 
 int requested_synth_frames_per_callback = SYNTH_FRAMES_PER_CALLBACK;
 int synth_frames_per_callback = 0;
@@ -136,13 +96,13 @@ float osc_get_phase_inc(int v, float f) {
   // Compute the frequency in "table samples per system sample"
   // This works even if table_rate ≠ system rate
   float g = f;
-  if (voice_one_shot[v]) g /= voice_offset_hz[v];
-  float phase_inc = (g * (float)voice_table_size[v]) / voice_table_rate[v] * (voice_table_rate[v] / MAIN_SAMPLE_RATE);
+  if (sv.one_shot[v]) g /= sv.offset_hz[v];
+  float phase_inc = (g * (float)sv.table_size[v]) / sv.table_rate[v] * (sv.table_rate[v] / MAIN_SAMPLE_RATE);
   return phase_inc;
 }
 
 void osc_set_freq(int v, float f) {
-  voice_phase_inc[v] = osc_get_phase_inc(v, f);
+  sv.phase_inc[v] = osc_get_phase_inc(v, f);
 }
 
 // Fast power approximation using bit manipulation
@@ -225,55 +185,57 @@ float cz_phasor(int n, float p, float d, int table_size) {
 }
 
 float osc_next(int voice, float phase_inc) {
-    if (voice_finished[voice]) return 0.0f;
+    if (sv.finished[voice]) return 0.0f;
     
-    const int table_size = voice_table_size[voice];
-    const bool one_shot = voice_one_shot[voice];
-    const bool loop_enabled = voice_loop_enabled[voice];
+    const int table_size = sv.table_size[voice];
+    const bool one_shot = sv.one_shot[voice];
+    const bool loop_enabled = sv.loop_enabled[voice];
     
-    if (voice_direction[voice]) phase_inc = -phase_inc;
+    if (sv.direction[voice]) phase_inc = -phase_inc;
     
-    float phase = voice_phase[voice] + phase_inc;
+    float phase = sv.phase[voice] + phase_inc;
     
     if (!isfinite(phase)) {
-        voice_phase[voice] = 0.0f;
-        voice_finished[voice] = one_shot;
+        sv.phase[voice] = 0.0f;
+        sv.finished[voice] = one_shot;
         return 0.0f;
     }
     
     // Get loop boundaries (precomputed if available)
-    const float loop_start = loop_enabled && voice_loop_valid[voice] 
-        ? voice_loop_start_f[voice] : 0.0f;
-    const float loop_end = loop_enabled && voice_loop_valid[voice]
-        ? voice_loop_end_f[voice] : (float)table_size;
+    const float loop_start = loop_enabled && sv.loop_valid[voice] 
+        ? sv.loop_start_f[voice] : 0.0f;
+    const float loop_end = loop_enabled && sv.loop_valid[voice]
+        ? sv.loop_end_f[voice] : (float)table_size;
     const float loop_length = loop_end - loop_start;
     
     // Wrap phase
     if (phase >= loop_end) {
         if (one_shot && !loop_enabled) {
             phase = loop_end - 1e-6f;
-            voice_finished[voice] = 1;
+            sv.finished[voice] = 1;
         } else {
             phase = loop_start + fmodf(phase - loop_start, loop_length);
         }
     } else if (phase < loop_start) {
         if (one_shot && !loop_enabled) {
             phase = loop_start;
-            voice_finished[voice] = 1;
+            sv.finished[voice] = 1;
         } else {
             phase = loop_end - fmodf(loop_start - phase, loop_length);
         }
     }
     
-    voice_phase[voice] = phase;
+    sv.phase[voice] = phase;
     
     // Get sample
     float final_phase;
-    if (voice_cz_mode[voice] && voice_cz_mod_osc[voice] >= 0) {
-        int dv = voice_cz_mod_osc[voice];
-        float dm = (dv >= 0) ? voice_sample[dv] * voice_cz_mod_depth[voice] : 1.0f;
-        final_phase = cz_phasor(voice_cz_mode[voice], phase, 
-                                voice_cz_distortion[voice] + dm, table_size);
+#ifdef SYNTH_FEATURE_PHASE_DISTORTION
+    if (sv.cz_mode[voice] && sv.cz_mod_osc[voice] >= 0) {
+        int dv = sv.cz_mod_osc[voice];
+        float dm = (dv >= 0) ? sv.sample[dv] * sv.cz_mod_depth[voice] : 1.0f;
+        final_phase = cz_phasor(sv.cz_mode[voice], phase, 
+                                sv.cz_distortion[voice] + dm, table_size);
+#endif /* SYNTH_FEATURE_PHASE_DISTORTION */
     } else {
         final_phase = phase;
     }
@@ -284,88 +246,90 @@ float osc_next(int voice, float phase_inc) {
     if (idx < 0) idx = 0;
     
     // Check if interpolation is enabled for this voice
-    if (voice_interpolate[voice]) {
+    if (sv.interpolate[voice]) {
         // Linear interpolation
         float frac = final_phase - (float)idx;
         
         int next_idx = idx + 1;
         if (next_idx >= table_size) next_idx = 0;  // Wrap for seamless loops
         
-        float sample1 = voice_table[voice][idx];
-        float sample2 = voice_table[voice][next_idx];
+        float sample1 = sv.table[voice][idx];
+        float sample2 = sv.table[voice][next_idx];
         
         return sample1 + frac * (sample2 - sample1);
     } else {
         // No interpolation - just return the sample
-        return voice_table[voice][idx];
+        return sv.table[voice][idx];
     }
 }
 
 void osc_set_wave_table_index(int voice, int wave) {
   // if we were using a r/w wave table, adjust ref count
-  int old = voice_wave_table_index[voice];
+  int old = sv.wave_table_index[voice];
   if (old == wave) return;
-  if (wave_readonly[old] == 0) wave_refcount[old]--;
-  if (wave_readonly[wave] == 0) wave_refcount[wave]++;
-  if (wave_table_data[wave] && wave_size[wave] && wave_rate[wave] > 0.0) {
-    voice_wave_table_index[voice] = wave;
+  // old == -1 means voice was never assigned a wave table yet (e.g. first
+  // call from voice_reset).  Guard before indexing to avoid sw.readonly[-1].
+  if (old >= 0 && sw.readonly[old] == 0) sw.refcount[old]--;
+  if (wave >= 0 && sw.readonly[wave] == 0) sw.refcount[wave]++;
+  if (sw.data[wave] && sw.size[wave] && sw.rate[wave] > 0.0) {
+    sv.wave_table_index[voice] = wave;
     int update_freq = 0;
-    if (wave_one_shot[wave]) voice_finished[voice] = 1;
-    else voice_finished[voice] = 0;
+    if (sw.one_shot[wave]) sv.finished[voice] = 1;
+    else sv.finished[voice] = 0;
     if (
-      voice_table_rate[voice] != wave_rate[wave] ||
-      voice_table_size[voice] != wave_size[wave]
+      sv.table_rate[voice] != sw.rate[wave] ||
+      sv.table_size[voice] != sw.size[wave]
       ) update_freq = 1;
-    voice_table_rate[voice] = wave_rate[wave];
-    voice_table_size[voice] = wave_size[wave];
-    voice_table[voice] = wave_table_data[wave];
-    voice_one_shot[voice] = wave_one_shot[wave];
-    voice_loop_start[voice] = wave_loop_start[wave];
-    voice_loop_enabled[voice] = wave_loop_enabled[wave];
-    voice_loop_end[voice] = wave_loop_end[wave];
-    voice_midi_note[voice] = wave_midi_note[wave];
-    voice_offset_hz[voice] = wave_offset_hz[wave];
-    voice_direction[voice] = wave_direction[wave];
+    sv.table_rate[voice] = sw.rate[wave];
+    sv.table_size[voice] = sw.size[wave];
+    sv.table[voice] = sw.data[wave];
+    sv.one_shot[voice] = sw.one_shot[wave];
+    sv.loop_start[voice] = sw.loop_start[wave];
+    sv.loop_enabled[voice] = sw.loop_enabled[wave];
+    sv.loop_end[voice] = sw.loop_end[wave];
+    sv.midi_note[voice] = sw.midi_note[wave];
+    sv.offset_hz[voice] = sw.offset_hz[wave];
+    sv.direction[voice] = sw.direction[wave];
     //
-    int start = voice_loop_start[voice];
-    int end = voice_loop_end[voice];
-    voice_loop_start_f[voice] = (float)start;
-    voice_loop_end_f[voice] = (float)end;
+    int start = sv.loop_start[voice];
+    int end = sv.loop_end[voice];
+    sv.loop_start_f[voice] = (float)start;
+    sv.loop_end_f[voice] = (float)end;
     if (end > start) {
-      voice_loop_valid[voice] = 1;
-      voice_loop_length[voice] = (float)(end - start);
+      sv.loop_valid[voice] = 1;
+      sv.loop_length[voice] = (float)(end - start);
     } else {
-      voice_loop_valid[voice] = 0;
-      voice_loop_length[voice] = (float)voice_table_size[voice];
+      sv.loop_valid[voice] = 0;
+      sv.loop_length[voice] = (float)sv.table_size[voice];
     }
     //
-    // voice_phase[voice] = 0; // need to decide how to sync/reset phase???
+    // sv.phase[voice] = 0; // need to decide how to sync/reset phase???
     if (update_freq) {
-      osc_set_freq(voice, voice_freq[voice]);
+      osc_set_freq(voice, sv.freq[voice]);
     }
   }
 }
 
 void osc_trigger(int voice) {
-    voice_finished[voice] = 0;
+    sv.finished[voice] = 0;
     
-    if (voice_one_shot[voice]) {
-        if (voice_direction[voice]) {
-            voice_phase[voice] = (float)(voice_table_size[voice] - 1);
+    if (sv.one_shot[voice]) {
+        if (sv.direction[voice]) {
+            sv.phase[voice] = (float)(sv.table_size[voice] - 1);
         } else {
-            voice_phase[voice] = 0.0f;
+            sv.phase[voice] = 0.0f;
         }
     } else {
         // Preserve direction, but start at appropriate boundary
-        if (voice_direction[voice]) {
+        if (sv.direction[voice]) {
             // Backward playback: start at loop end
-            voice_phase[voice] = voice_loop_enabled[voice] 
-                ? (float)voice_loop_end[voice] - 1e-6f  // or voice_loop_end_f[voice]
-                : (float)(voice_table_size[voice] - 1);
+            sv.phase[voice] = sv.loop_enabled[voice] 
+                ? (float)sv.loop_end[voice] - 1e-6f  // or sv.loop_end_f[voice]
+                : (float)(sv.table_size[voice] - 1);
         } else {
             // Forward playback: start at loop start
-            voice_phase[voice] = voice_loop_enabled[voice] 
-                ? (float)voice_loop_start[voice]  // or voice_loop_start_f[voice]
+            sv.phase[voice] = sv.loop_enabled[voice] 
+                ? (float)sv.loop_start[voice]  // or sv.loop_start_f[voice]
                 : 0.0f;
         }
     }
@@ -381,17 +345,21 @@ float quantize_bits_int(float v, int bits) {
 // Only multiplication and addition, no transcendental functions
 float mmf_process(int n, float input) {
     // Calculate output using Direct Form II - only 5 multiplies, 4 adds
-    float output = voice_filter[n].b0 * input +
-                  voice_filter[n].b1 * voice_filter[n].x1 +
-                  voice_filter[n].b2 * voice_filter[n].x2 -
-                  voice_filter[n].a1 * voice_filter[n].y1 -
-                  voice_filter[n].a2 * voice_filter[n].y2;
+#ifdef SYNTH_FEATURE_FILTER
+    float output = sv.filter[n].b0 * input +
+                  sv.filter[n].b1 * sv.filter[n].x1 +
+                  sv.filter[n].b2 * sv.filter[n].x2 -
+                  sv.filter[n].a1 * sv.filter[n].y1 -
+                  sv.filter[n].a2 * sv.filter[n].y2;
+#endif /* SYNTH_FEATURE_FILTER */
     
     // Update delay lines
-    voice_filter[n].x2 = voice_filter[n].x1;
-    voice_filter[n].x1 = input;
-    voice_filter[n].y2 = voice_filter[n].y1;
-    voice_filter[n].y1 = output;
+#ifdef SYNTH_FEATURE_FILTER
+    sv.filter[n].x2 = sv.filter[n].x1;
+    sv.filter[n].x1 = input;
+    sv.filter[n].y2 = sv.filter[n].y1;
+    sv.filter[n].y1 = output;
+#endif /* SYNTH_FEATURE_FILTER */
     
     return output;
 }
@@ -399,55 +367,75 @@ float mmf_process(int n, float input) {
 // Initialize the envelope
 void envelope_init(int v, float attack_time, float decay_time,
                float sustain_level, float release_time) {
-    voice_amp_envelope[v].a = attack_time;
-    voice_amp_envelope[v].d = decay_time;
-    voice_amp_envelope[v].s = sustain_level;
-    voice_amp_envelope[v].r = release_time;
-    voice_amp_envelope[v].attack_time = attack_time * MAIN_SAMPLE_RATE; // convert seconds to samples
-    voice_amp_envelope[v].decay_time = decay_time * MAIN_SAMPLE_RATE;
-    voice_amp_envelope[v].sustain_level = fmaxf(0, fminf(1.0f, sustain_level)); // clamp 0 to 1
-    voice_amp_envelope[v].release_time = release_time * MAIN_SAMPLE_RATE;
-    voice_amp_envelope[v].sample_start = 0;
-    voice_amp_envelope[v].sample_release = 0;
-    voice_amp_envelope[v].is_active = 0;
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+    sv.amp_envelope[v].a = attack_time;
+    sv.amp_envelope[v].d = decay_time;
+    sv.amp_envelope[v].s = sustain_level;
+    sv.amp_envelope[v].r = release_time;
+    sv.amp_envelope[v].attack_time = attack_time * MAIN_SAMPLE_RATE; // convert seconds to samples
+    sv.amp_envelope[v].decay_time = decay_time * MAIN_SAMPLE_RATE;
+    sv.amp_envelope[v].sustain_level = fmaxf(0, fminf(1.0f, sustain_level)); // clamp 0 to 1
+    sv.amp_envelope[v].release_time = release_time * MAIN_SAMPLE_RATE;
+    sv.amp_envelope[v].sample_start = 0;
+    sv.amp_envelope[v].sample_release = 0;
+    sv.amp_envelope[v].is_active = 0;
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
 }
 
 void amp_envelope_trigger(int v, float f) {
     // If the voice was already active, capture its current level to avoid a pop
-    if (voice_amp_envelope[v].is_active) {
-        voice_amp_envelope[v].amplitude_at_trigger = voice_amp_envelope[v].current_amplitude;
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+    if (sv.amp_envelope[v].is_active) {
+        sv.amp_envelope[v].amplitude_at_trigger = sv.amp_envelope[v].current_amplitude;
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
     } else {
-        voice_amp_envelope[v].amplitude_at_trigger = 0.0f;
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+        sv.amp_envelope[v].amplitude_at_trigger = 0.0f;
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
     }
 
-    voice_amp_envelope[v].sample_start = SAMPLE_COUNT_GET();
-    voice_amp_envelope[v].sample_release = 0;
-    voice_amp_envelope[v].velocity = f;
-    voice_amp_envelope[v].is_active = 1;
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+    sv.amp_envelope[v].sample_start = SAMPLE_COUNT_GET();
+    sv.amp_envelope[v].sample_release = 0;
+    sv.amp_envelope[v].velocity = f;
+    sv.amp_envelope[v].is_active = 1;
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
 }
 
 // Release the envelope (note off)
 void amp_envelope_release(int v) {
-    if (voice_amp_envelope[v].is_active && voice_amp_envelope[v].sample_release == 0) {
-        voice_amp_envelope[v].sample_release = SAMPLE_COUNT_GET();
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+    if (sv.amp_envelope[v].is_active && sv.amp_envelope[v].sample_release == 0) {
+        sv.amp_envelope[v].sample_release = SAMPLE_COUNT_GET();
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
         // CRITICAL: Capture the exact height the envelope was at 
         // when the key was lifted.
-        voice_amp_envelope[v].amplitude_at_release = voice_amp_envelope[v].current_amplitude;
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+        sv.amp_envelope[v].amplitude_at_release = sv.amp_envelope[v].current_amplitude;
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
     }
 }
 
 float amp_envelope_step(int v) {
-    if (!voice_amp_envelope[v].is_active) return 0;
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+    if (!sv.amp_envelope[v].is_active) return 0;
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
 
     float out = 0.0f;
-    float samples_since_start = (float)(SAMPLE_COUNT_GET() - voice_amp_envelope[v].sample_start);
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+    float samples_since_start = (float)(SAMPLE_COUNT_GET() - sv.amp_envelope[v].sample_start);
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
 
 // 1. Attack phase (Legato-aware)
-    if (samples_since_start < voice_amp_envelope[v].attack_time) {
-        float attack_progress = samples_since_start / voice_amp_envelope[v].attack_time;
-        float start_val = voice_amp_envelope[v].amplitude_at_trigger;
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+    if (samples_since_start < sv.amp_envelope[v].attack_time) {
+        float attack_progress = samples_since_start / sv.amp_envelope[v].attack_time;
+        float start_val = sv.amp_envelope[v].amplitude_at_trigger;
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
         
-        if (voice_amp_envelope_mode[v] != 0) {
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+        if (sv.amp_envelope_mode[v] != 0) {
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
           // Linear interpolation: start_val -> 1.0
           out = start_val + (attack_progress * (1.0f - start_val));
         } else {
@@ -457,34 +445,48 @@ float amp_envelope_step(int v) {
         }
     } 
     // 2. Decay phase
-    else if (samples_since_start < (voice_amp_envelope[v].attack_time + voice_amp_envelope[v].decay_time)) {
-        float samples_in_decay = samples_since_start - voice_amp_envelope[v].attack_time;
-        float decay_progress = samples_in_decay / voice_amp_envelope[v].decay_time;
-        out = 1.0f - decay_progress * (1.0f - voice_amp_envelope[v].sustain_level);
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+    else if (samples_since_start < (sv.amp_envelope[v].attack_time + sv.amp_envelope[v].decay_time)) {
+        float samples_in_decay = samples_since_start - sv.amp_envelope[v].attack_time;
+        float decay_progress = samples_in_decay / sv.amp_envelope[v].decay_time;
+        out = 1.0f - decay_progress * (1.0f - sv.amp_envelope[v].sustain_level);
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
     }
     // 3. Sustain / Release Logic
     else {
-        if (voice_amp_envelope[v].sample_release == 0) {
-            out = voice_amp_envelope[v].sustain_level;
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+        if (sv.amp_envelope[v].sample_release == 0) {
+            out = sv.amp_envelope[v].sustain_level;
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
         } else {
             // RELEASE PHASE
-            float samples_since_release = (float)(SAMPLE_COUNT_GET() - voice_amp_envelope[v].sample_release);
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+            float samples_since_release = (float)(SAMPLE_COUNT_GET() - sv.amp_envelope[v].sample_release);
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
             
-            if (samples_since_release < voice_amp_envelope[v].release_time) {
-                float release_progress = samples_since_release / voice_amp_envelope[v].release_time;
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+            if (samples_since_release < sv.amp_envelope[v].release_time) {
+                float release_progress = samples_since_release / sv.amp_envelope[v].release_time;
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
                 
                 // FIX: Ramp down from the captured amplitude_at_release, NOT sustain_level
-                out = voice_amp_envelope[v].amplitude_at_release * (1.0f - release_progress);
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+                out = sv.amp_envelope[v].amplitude_at_release * (1.0f - release_progress);
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
             } else {
-                voice_amp_envelope[v].is_active = 0;
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+                sv.amp_envelope[v].is_active = 0;
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
                 out = 0.0f;
             }
         }
     }
 
     // Store the result so the Release function can "capture" it
-    voice_amp_envelope[v].current_amplitude = out;
-    return out * voice_amp_envelope[v].velocity;
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+    sv.amp_envelope[v].current_amplitude = out;
+    return out * sv.amp_envelope[v].velocity;
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
 }
 
 #include "util.h"
@@ -522,13 +524,16 @@ char *synth_stats(void) {
 #endif
 
 void synth_voice_bench(int voice) {
-  voice_mark_b[voice].tv_sec = 0;
-  voice_mark_b[voice].tv_nsec = 0;
-  clock_gettime(VOICE_CLOCK, &voice_mark_a[voice]);
-  voice_mark_go[voice] = 1;
+  sv.mark_b[voice].tv_sec = 0;
+  sv.mark_b[voice].tv_nsec = 0;
+  clock_gettime(VOICE_CLOCK, &sv.mark_a[voice]);
+  sv.mark_go[voice] = 1;
 }
 
 void synth(float *buffer, float *input, int num_frames, int num_channels, void *user) {
+  const int nvoices = synth_voice_count();
+  const int nframes = num_frames;
+  (void)nframes; /* available for future vectorised frame loop */
   static float *one_skred_frame;
   static uint64_t synth_random;
   static int first = 1;
@@ -548,85 +553,107 @@ void synth(float *buffer, float *input, int num_frames, int num_channels, void *
     float sample_right = 0.0f;
     float f = 0.0f;
     float whiteish = audio_rng_float(&synth_random);
-    for (int n = 0; n < VOICE_MAX; n++) {
-      if (voice_mark_go[n]) {
-        clock_gettime(VOICE_CLOCK, &voice_mark_b[n]);
-        voice_mark_go[n] = 0;
+    for (int n = 0; n < nvoices; n++) {
+      if (sv.mark_go[n]) {
+        clock_gettime(VOICE_CLOCK, &sv.mark_b[n]);
+        sv.mark_go[n] = 0;
       }
-      if (voice_finished[n]) {
-        voice_sample[n] = 0.0f;
+      if (sv.finished[n]) {
+        sv.sample[n] = 0.0f;
         one_skred_frame[skred_ptr++] = 0.0f;
         one_skred_frame[skred_ptr++] = 0.0f;
         continue;
       }  
-      if (voice_amp[n] < NEG_60_DB_AS_LINEAR) {
-        voice_sample[n] = 0.0f;
+      if (sv.amp[n] < NEG_60_DB_AS_LINEAR) {
+        sv.sample[n] = 0.0f;
         one_skred_frame[skred_ptr++] = 0.0f;
         one_skred_frame[skred_ptr++] = 0.0f;
         continue;
       }
-      if (voice_wave_table_index[n] == WAVE_TABLE_NOISE_ALT) {
+      if (sv.wave_table_index[n] == WAVE_TABLE_NOISE_ALT) {
         // bypass lots of stuff if this voice uses random source...
         // reuse the one white noise source for each sample
         f = whiteish;
       } else {
-        int mod = voice_freq_mod_osc[n];
+#ifdef SYNTH_FEATURE_MODULATION
+        int mod = sv.freq_mod_osc[n];
+#endif /* SYNTH_FEATURE_MODULATION */
         if (mod >= 0 && mod != n) {
           // try to use modulators phase_inc instead of recalculating...
           // REQUIRES re-thinking how I'm scaling frequency modulators via wire...
           // REVISIT experiments to see if this still makes sense
-          float g = voice_sample[mod] * voice_freq_mod_depth[n];
-          float inc = voice_phase_inc[n] + (voice_phase_inc[mod] * voice_freq_scale[n] * g);
+#ifdef SYNTH_FEATURE_MODULATION
+          float g = sv.sample[mod] * sv.freq_mod_depth[n];
+#endif /* SYNTH_FEATURE_MODULATION */
+          float inc = sv.phase_inc[n] + (sv.phase_inc[mod] * sv.freq_scale[n] * g);
           f = osc_next(n, inc);
         } else {
-          f = osc_next(n, voice_phase_inc[n]);
+          f = osc_next(n, sv.phase_inc[n]);
         }
       }
-      if (voice_sample_hold_max[n]) {
-        if (voice_sample_hold_count[n] == 0) {
-          voice_sample_hold[n] = f;
+#ifdef SYNTH_FEATURE_SAMPLE_HOLD
+      if (sv.sample_hold_max[n]) {
+        if (sv.sample_hold_count[n] == 0) {
+          sv.sample_hold[n] = f;
+#endif /* SYNTH_FEATURE_SAMPLE_HOLD */
         }
-        voice_sample[n] = voice_sample_hold[n];
-        voice_sample_hold_count[n]++;
-        if (voice_sample_hold_count[n] >= voice_sample_hold_max[n]) {
-          voice_sample_hold_count[n] = 0;
+#ifdef SYNTH_FEATURE_SAMPLE_HOLD
+        sv.sample[n] = sv.sample_hold[n];
+        sv.sample_hold_count[n]++;
+        if (sv.sample_hold_count[n] >= sv.sample_hold_max[n]) {
+          sv.sample_hold_count[n] = 0;
+#endif /* SYNTH_FEATURE_SAMPLE_HOLD */
         }
       } else {
-        voice_sample[n] = f;
+        sv.sample[n] = f;
       }
 
       // apply quantizer
-      if (voice_quantize[n]) voice_sample[n] = quantize_bits_int(voice_sample[n], voice_quantize[n]);
+#ifdef SYNTH_FEATURE_QUANTIZE
+      if (sv.quantize[n]) sv.sample[n] = quantize_bits_int(sv.sample[n], sv.quantize[n]);
+#endif /* SYNTH_FEATURE_QUANTIZE */
 
       // apply multi-mode filter
-      if (voice_filter_mode[n]) voice_sample[n] = mmf_process(n, voice_sample[n]);
+#ifdef SYNTH_FEATURE_FILTER
+      if (sv.filter_mode[n]) sv.sample[n] = mmf_process(n, sv.sample[n]);
+#endif /* SYNTH_FEATURE_FILTER */
 
       // apply amp to sample
-      float amp = voice_amp[n];
+      float amp = sv.amp[n];
       float env = 1.0f;
-      if (voice_use_amp_envelope[n]) env = amp_envelope_step(n) * voice_amp_envelope[n].velocity;
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+      if (sv.use_amp_envelope[n]) env = amp_envelope_step(n) * sv.amp_envelope[n].velocity;
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
       float mod = 1.0f;
-      if (voice_amp_mod_osc[n] >= 0) {
-        int m = voice_amp_mod_osc[n];
-        mod = voice_sample[m] * voice_amp_mod_depth[n];
+#ifdef SYNTH_FEATURE_MODULATION
+      if (sv.amp_mod_osc[n] >= 0) {
+        int m = sv.amp_mod_osc[n];
+        mod = sv.sample[m] * sv.amp_mod_depth[n];
+#endif /* SYNTH_FEATURE_MODULATION */
       }
       float final = amp * env * mod;
-      if (voice_smoother_enable[n]) {
-        voice_smoother_gain[n] += voice_smoother_smoothing[n] * (final - voice_smoother_gain[n]);
-        final = voice_smoother_gain[n];
+#ifdef SYNTH_FEATURE_SMOOTHER
+      if (sv.smoother_enable[n]) {
+        sv.smoother_gain[n] += sv.smoother_smoothing[n] * (final - sv.smoother_gain[n]);
+        final = sv.smoother_gain[n];
+#endif /* SYNTH_FEATURE_SMOOTHER */
       }
-      voice_sample[n] *= final;
+      sv.sample[n] *= final;
 
-      if (voice_disconnect[n] == 0) {
+      if (sv.disconnect[n] == 0) {
         // accumulate samples
-        if (voice_pan_mod_osc[n] >= 0) {
+#ifdef SYNTH_FEATURE_MODULATION
+        if (sv.pan_mod_osc[n] >= 0) {
+#endif /* SYNTH_FEATURE_MODULATION */
           // handle pan modulation
-          float q = voice_sample[voice_pan_mod_osc[n]] * voice_pan_mod_depth[n];
-          voice_pan_left[n]  = (1.0f - q) / 2.0f;
-          voice_pan_right[n] = (1.0f + q) / 2.0f;
+#ifdef SYNTH_FEATURE_MODULATION
+          float q = sv.sample[sv.pan_mod_osc[n]] * sv.pan_mod_depth[n];
+#endif /* SYNTH_FEATURE_MODULATION */
+          sv.pan_left[n]  = (1.0f - q) / 2.0f;
+          sv.pan_right[n] = (1.0f + q) / 2.0f;
         }
-        float left  = voice_sample[n] * voice_pan_left[n];
-        float right = voice_sample[n] * voice_pan_right[n];
+        float left  = sv.sample[n] * sv.pan_left[n];
+        float right = sv.sample[n] * sv.pan_right[n];
         sample_left  += left;
         sample_right += right;
         one_skred_frame[skred_ptr++] = left;
@@ -638,8 +665,8 @@ void synth(float *buffer, float *input, int num_frames, int num_channels, void *
     }
 #if 0
     // Mix down to stereo - divide by total voices for headroom
-    sample_left  /= (float)VOICE_MAX;
-    sample_right /= (float)VOICE_MAX;
+    sample_left  /= (float)nvoices;
+    sample_right /= (float)nvoices;
 #endif
 
     // Adjust to main volume: smooth it otherwise is sounds crummy with realtime changes
@@ -657,22 +684,28 @@ void synth(float *buffer, float *input, int num_frames, int num_channels, void *
 }
 
 int envelope_is_flat(int v) {
-  if (voice_amp_envelope[v].a == 0.0f &&
-    voice_amp_envelope[v].d == 0.0f &&
-    voice_amp_envelope[v].s == 1.0f &&
-    voice_amp_envelope[v].r == 0.0f) return 1;
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+  if (sv.amp_envelope[v].a == 0.0f &&
+    sv.amp_envelope[v].d == 0.0f &&
+    sv.amp_envelope[v].s == 1.0f &&
+    sv.amp_envelope[v].r == 0.0f) return 1;
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
   return 0;
 }
 
 int cz_set(int v, int n, float f) {
-  voice_cz_mode[v] = n;
-  voice_cz_distortion[v] = f;
+#ifdef SYNTH_FEATURE_PHASE_DISTORTION
+  sv.cz_mode[v] = n;
+  sv.cz_distortion[v] = f;
+#endif /* SYNTH_FEATURE_PHASE_DISTORTION */
   return 0;
 }
 
 int cmod_set(int voice, int o, float f) {
-  voice_cz_mod_osc[voice] = o;
-  voice_cz_mod_depth[voice] = f;
+#ifdef SYNTH_FEATURE_PHASE_DISTORTION
+  sv.cz_mod_osc[voice] = o;
+  sv.cz_mod_depth[voice] = f;
+#endif /* SYNTH_FEATURE_PHASE_DISTORTION */
   return 0;
 }
 
@@ -681,9 +714,10 @@ int cmod_set(int voice, int o, float f) {
 // maybe these should be in wire.[ch]?
 
 static int voice_invalid(int voice) {
-  if (voice < 0 || voice >= VOICE_MAX) return 1;
+  if (voice < 0 || voice >= synth_config.voice_max) return 1;
   return 0;
 }
+
 
 #define SYNTH_INVALID_VOICE (100)
 
@@ -698,109 +732,135 @@ char *voice_format(int v, char *out, int verbose) {
   {
     n = sprintf(ptr, "v%d w%d f%g a%g",
       v,
-      voice_wave_table_index[v],
-      voice_freq[v],
-      voice_user_amp[v]);
+      sv.wave_table_index[v],
+      sv.freq[v],
+      sv.user_amp[v]);
     ptr += n;
   }
   {
-    n = sprintf(ptr, " n%g", voice_last_midi_note[v]);
+    n = sprintf(ptr, " n%g", sv.last_midi_note[v]);
     ptr += n;
   }
-  if (verbose || voice_midi_transpose[v] || voice_midi_cents[v]) {
-    n = sprintf(ptr, " N%g,%g", voice_midi_transpose[v], voice_midi_cents[v]);
+  if (verbose || sv.midi_transpose[v] || sv.midi_cents[v]) {
+    n = sprintf(ptr, " N%g,%g", sv.midi_transpose[v], sv.midi_cents[v]);
     ptr += n;
   }
-  if (verbose || voice_link_midi_a[v] >= 0 || voice_link_midi_b[v] >= 0) {
-    n = sprintf(ptr, " G%g,%g", voice_link_midi_a[v], voice_link_midi_b[v]);
+  if (verbose || sv.link_midi_a[v] >= 0 || sv.link_midi_b[v] >= 0) {
+    n = sprintf(ptr, " G%g,%g", sv.link_midi_a[v], sv.link_midi_b[v]);
     ptr += n;
   }
-  if (verbose || voice_link_velo_a[v] >= 0 || voice_link_velo_b[v] >= 0) {
-    n = sprintf(ptr, " H%g,%g", voice_link_velo_a[v], voice_link_velo_b[v]);
+  if (verbose || sv.link_velo_a[v] >= 0 || sv.link_velo_b[v] >= 0) {
+    n = sprintf(ptr, " H%g,%g", sv.link_velo_a[v], sv.link_velo_b[v]);
     ptr += n;
   }
-  if (verbose || voice_link_trig[v] >= 0) {
-    n = sprintf(ptr, " L%g", voice_link_trig[v]);
+  if (verbose || sv.link_trig[v] >= 0) {
+    n = sprintf(ptr, " L%g", sv.link_trig[v]);
     ptr += n;
   }
-  if (verbose || voice_direction[v]) {
-    n = sprintf(ptr, " b%d", voice_direction[v]);
+  if (verbose || sv.direction[v]) {
+    n = sprintf(ptr, " b%d", sv.direction[v]);
     ptr += n;
   }
-  if (verbose || voice_loop_enabled[v]) {
+  if (verbose || sv.loop_enabled[v]) {
     n = sprintf(ptr, " B%d",
-      voice_loop_enabled[v]);
+      sv.loop_enabled[v]);
     ptr += n;
   }
-  if (verbose || voice_pan[v]) {
-    n = sprintf(ptr, " p%g", voice_pan[v]);
+  if (verbose || sv.pan[v]) {
+    n = sprintf(ptr, " p%g", sv.pan[v]);
     ptr += n;
   }
-  if (verbose || voice_note[v]) {
-    n = sprintf(ptr, " n%g", voice_note[v]);
+  if (verbose || sv.note[v]) {
+    n = sprintf(ptr, " n%g", sv.note[v]);
     ptr += n;
   }
-  if (verbose || voice_filter_mode[v]) {
+#ifdef SYNTH_FEATURE_FILTER
+  if (verbose || sv.filter_mode[v]) {
+#endif /* SYNTH_FEATURE_FILTER */
     n = sprintf(ptr, " J%d K%g Q%g",
-      voice_filter_mode[v],
-      voice_filter_freq[v],
-      voice_filter_res[v]);
+#ifdef SYNTH_FEATURE_FILTER
+      sv.filter_mode[v],
+      sv.filter_freq[v],
+      sv.filter_res[v]);
+#endif /* SYNTH_FEATURE_FILTER */
     ptr += n;
   }
-  if (verbose || voice_cz_mode[v]) {
-    n = sprintf(ptr, " c%d,%g", voice_cz_mode[v], voice_cz_distortion[v]);
+#ifdef SYNTH_FEATURE_PHASE_DISTORTION
+  if (verbose || sv.cz_mode[v]) {
+    n = sprintf(ptr, " c%d,%g", sv.cz_mode[v], sv.cz_distortion[v]);
+#endif /* SYNTH_FEATURE_PHASE_DISTORTION */
     ptr += n;
   }
-  if (verbose || voice_quantize[v]) {
-    n = sprintf(ptr, " q%d", voice_quantize[v]);
+#ifdef SYNTH_FEATURE_QUANTIZE
+  if (verbose || sv.quantize[v]) {
+    n = sprintf(ptr, " q%d", sv.quantize[v]);
+#endif /* SYNTH_FEATURE_QUANTIZE */
     ptr += n;
   }
-  if (verbose || voice_sample_hold_max[v]) {
-    n = sprintf(ptr, " h%d", voice_sample_hold_max[v]);
+#ifdef SYNTH_FEATURE_SAMPLE_HOLD
+  if (verbose || sv.sample_hold_max[v]) {
+    n = sprintf(ptr, " h%d", sv.sample_hold_max[v]);
+#endif /* SYNTH_FEATURE_SAMPLE_HOLD */
     ptr += n;
   }
-  if (verbose || (voice_amp_mod_osc[v] >= 0 && voice_amp_mod_depth[v] > 0)) {
-    n = sprintf(ptr, " A%d,%g", voice_amp_mod_osc[v], voice_amp_mod_depth[v]);
+#ifdef SYNTH_FEATURE_MODULATION
+  if (verbose || (sv.amp_mod_osc[v] >= 0 && sv.amp_mod_depth[v] > 0)) {
+    n = sprintf(ptr, " A%d,%g", sv.amp_mod_osc[v], sv.amp_mod_depth[v]);
+#endif /* SYNTH_FEATURE_MODULATION */
     ptr += n;
   }
-  if (verbose || (voice_cz_mod_osc[v] >= 0 && voice_cz_mod_depth[v] > 0)) {
-    n = sprintf(ptr, " C%d,%g", voice_cz_mod_osc[v], voice_cz_mod_depth[v]);
+#ifdef SYNTH_FEATURE_PHASE_DISTORTION
+  if (verbose || (sv.cz_mod_osc[v] >= 0 && sv.cz_mod_depth[v] > 0)) {
+    n = sprintf(ptr, " C%d,%g", sv.cz_mod_osc[v], sv.cz_mod_depth[v]);
+#endif /* SYNTH_FEATURE_PHASE_DISTORTION */
     ptr += n;
   }
-  if (verbose || (voice_freq_mod_osc[v] >= 0 && voice_freq_mod_depth[v] > 0)) {
-    n = sprintf(ptr, " F%d,%g", voice_freq_mod_osc[v], voice_freq_mod_depth[v]);
+#ifdef SYNTH_FEATURE_MODULATION
+  if (verbose || (sv.freq_mod_osc[v] >= 0 && sv.freq_mod_depth[v] > 0)) {
+    n = sprintf(ptr, " F%d,%g", sv.freq_mod_osc[v], sv.freq_mod_depth[v]);
+#endif /* SYNTH_FEATURE_MODULATION */
     ptr += n;
   }
-  if (verbose || (voice_pan_mod_osc[v] >= 0 && voice_pan_mod_depth[v] > 0)) {
-    n = sprintf(ptr, " P%d,%g", voice_pan_mod_osc[v], voice_pan_mod_depth[v]);
+#ifdef SYNTH_FEATURE_MODULATION
+  if (verbose || (sv.pan_mod_osc[v] >= 0 && sv.pan_mod_depth[v] > 0)) {
+    n = sprintf(ptr, " P%d,%g", sv.pan_mod_osc[v], sv.pan_mod_depth[v]);
+#endif /* SYNTH_FEATURE_MODULATION */
     ptr += n;
   }
-  if (verbose || voice_disconnect[v]) {
-    n = sprintf(ptr, " m%d", voice_disconnect[v]);
+  if (verbose || sv.disconnect[v]) {
+    n = sprintf(ptr, " m%d", sv.disconnect[v]);
     ptr += n;
   }
-  if (verbose || voice_record[v]) {
-    n = sprintf(ptr, " r%d", voice_record[v]);
+  if (verbose || sv.record[v]) {
+    n = sprintf(ptr, " r%d", sv.record[v]);
     ptr += n;
   }
-  if (verbose || voice_smoother_enable[v]) {
-    if (voice_smoother_smoothing[v] != SMOOTH_DEFAULT) {
-      n = sprintf(ptr, " s%g", voice_smoother_smoothing[v]);
+#ifdef SYNTH_FEATURE_SMOOTHER
+  if (verbose || sv.smoother_enable[v]) {
+    if (sv.smoother_smoothing[v] != SMOOTH_DEFAULT) {
+      n = sprintf(ptr, " s%g", sv.smoother_smoothing[v]);
+#endif /* SYNTH_FEATURE_SMOOTHER */
       ptr += n;
     }
   }
-  if (verbose || voice_glissando_enable[v]) {
-    n = sprintf(ptr, " g%g", voice_glissando_speed[v]);
+#ifdef SYNTH_FEATURE_GLISSANDO
+  if (verbose || sv.glissando_enable[v]) {
+    n = sprintf(ptr, " g%g", sv.glissando_speed[v]);
+#endif /* SYNTH_FEATURE_GLISSANDO */
     ptr += n;
   }
   if (verbose || !envelope_is_flat(v)) {
     n = sprintf(ptr, " t%g,%g,%g,%g",
-      voice_amp_envelope[v].a,
-      voice_amp_envelope[v].d,
-      voice_amp_envelope[v].s,
-      voice_amp_envelope[v].r);
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+      sv.amp_envelope[v].a,
+      sv.amp_envelope[v].d,
+      sv.amp_envelope[v].s,
+      sv.amp_envelope[v].r);
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
     ptr += n;
-    n = sprintf(ptr, " k%d", voice_amp_envelope_mode[v]);
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+    n = sprintf(ptr, " k%d", sv.amp_envelope_mode[v]);
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
     ptr += n;
   }
   if (verbose) {
@@ -808,53 +868,55 @@ char *voice_format(int v, char *out, int verbose) {
     ptr += n;
   }
   if (verbose) {
-    n = sprintf(ptr, " user_amp %g -> amp:%g", voice_user_amp[v], voice_amp[v]);
+    n = sprintf(ptr, " user_amp %g -> amp:%g", sv.user_amp[v], sv.amp[v]);
     ptr += n;
   }
   if (verbose) {
-    n = sprintf(ptr, " freq_scale:%g", voice_freq_scale[v]);
+    n = sprintf(ptr, " freq_scale:%g", sv.freq_scale[v]);
     ptr += n;
   }
   if (verbose) {
     n = sprintf(ptr, " finished:%d one_shot:%d",
-      voice_finished[v],
-      voice_one_shot[v]);
+      sv.finished[v],
+      sv.one_shot[v]);
     ptr += n;
   }
   if (verbose) {
-    n = sprintf(ptr, " sample:%g", voice_sample[v]);
+    n = sprintf(ptr, " sample:%g", sv.sample[v]);
     ptr += n;
   }
   if (verbose) {
-    n = sprintf(ptr, " smoother:%g", voice_smoother_gain[v]);
+#ifdef SYNTH_FEATURE_SMOOTHER
+    n = sprintf(ptr, " smoother:%g", sv.smoother_gain[v]);
+#endif /* SYNTH_FEATURE_SMOOTHER */
     ptr += n;
   }
   if (verbose) {
-    n = sprintf(ptr, " phase:%g phase_inc:%g", voice_phase[v], voice_phase_inc[v]);
+    n = sprintf(ptr, " phase:%g phase_inc:%g", sv.phase[v], sv.phase_inc[v]);
     ptr += n;
   }
   if (verbose) {
-    n = sprintf(ptr, " offset_hz:%g", voice_offset_hz[v]);
+    n = sprintf(ptr, " offset_hz:%g", sv.offset_hz[v]);
     ptr += n;
   }
   if (verbose) {
-    n = sprintf(ptr, " latency:%gms", (double)ts_diff_ns(&voice_mark_a[v], &voice_mark_b[v])/1000000.0);
+    n = sprintf(ptr, " latency:%gms", (double)ts_diff_ns(&sv.mark_a[v], &sv.mark_b[v])/1000000.0);
     ptr += n;
   }
   return out;
 }
 
 int amp_set(int voice, float f) {
-  voice_user_amp[voice] = f;
-  voice_amp[voice] = DB_TO_LINEAR(f);
+  sv.user_amp[voice] = f;
+  sv.amp[voice] = DB_TO_LINEAR(f);
   return 0;
 }
 
 int pan_set(int voice, float f) {
   if (f >= -1.0f && f <= 1.0f) {
-    voice_pan[voice] = f;
-    voice_pan_left[voice] = (1.0f - f) / 2.0f;
-    voice_pan_right[voice] = (1.0f + f) / 2.0f;
+    sv.pan[voice] = f;
+    sv.pan_left[voice] = (1.0f - f) / 2.0f;
+    sv.pan_right[voice] = (1.0f + f) / 2.0f;
   } else {
     return 100; // <--- LAZY! needs ERR_PAN_OUT_OF_RANGE;
   }
@@ -862,13 +924,15 @@ int pan_set(int voice, float f) {
 }
 
 int wave_quant(int voice, int n) {
-  voice_quantize[voice] = n;
+#ifdef SYNTH_FEATURE_QUANTIZE
+  sv.quantize[voice] = n;
+#endif /* SYNTH_FEATURE_QUANTIZE */
   return 0;
 }
 
 int freq_set(int voice, float f) {
   if (f >= 0 && f < (double)MAIN_SAMPLE_RATE) {
-    voice_freq[voice] = f;
+    sv.freq[voice] = f;
     osc_set_freq(voice, f);
     return 0;
   }
@@ -878,25 +942,27 @@ int freq_set(int voice, float f) {
 
 int wave_mute(int voice, int state) {
   if (state < 0) {
-    if (voice_disconnect[voice] == 0) state = 1;
+    if (sv.disconnect[voice] == 0) state = 1;
     else state = 0;
   }
-  voice_disconnect[voice] = state;
+  sv.disconnect[voice] = state;
   return 0;
 }
 
 int wave_dir(int voice, int state) {
   if (state < 0) {
-    if (voice_direction[voice] == 0) state = 1;
+    if (sv.direction[voice] == 0) state = 1;
     else state = 0;
   }
-  voice_direction[voice] = state;
+  sv.direction[voice] = state;
   return 0;
 }
 
 int pan_mod_set(int voice, int o, float f) {
-  voice_pan_mod_osc[voice] = o;
-  voice_pan_mod_depth[voice] = f;
+#ifdef SYNTH_FEATURE_MODULATION
+  sv.pan_mod_osc[voice] = o;
+  sv.pan_mod_depth[voice] = f;
+#endif /* SYNTH_FEATURE_MODULATION */
   return 0;
 }
 
@@ -904,30 +970,34 @@ int wave_set(int voice, int wave) {
   if (wave >= 0 && wave < WAVE_TABLE_MAX) {
     osc_set_wave_table_index(voice, wave);
     // AUGGGHHHH... i love the scope, but this needs fixing in a better way...
-    // if (scope_enable) scope_wave_update(voice_table[voice], voice_table_size[voice]);
+    // if (scope_enable) scope_wave_update(sv.table[voice], sv.table_size[voice]);
   } else return 100; // <-- more LAZY!!! ERR_INVALID_WAVE;
   return 0;
 }
 
 int amp_mod_set(int voice, int o, float f) {
-  voice_amp_mod_osc[voice] = o;
-  voice_amp_mod_depth[voice] = f;
+#ifdef SYNTH_FEATURE_MODULATION
+  sv.amp_mod_osc[voice] = o;
+  sv.amp_mod_depth[voice] = f;
+#endif /* SYNTH_FEATURE_MODULATION */
   return 0;
 }
 
 int freq_mod_set(int voice, int o, float f) {
-  voice_freq_mod_osc[voice] = o;
-  voice_freq_mod_depth[voice] = f;
-  voice_freq_scale[voice] = (float)voice_table_size[voice] / (float)voice_table_size[o];
+#ifdef SYNTH_FEATURE_MODULATION
+  sv.freq_mod_osc[voice] = o;
+  sv.freq_mod_depth[voice] = f;
+#endif /* SYNTH_FEATURE_MODULATION */
+  sv.freq_scale[voice] = (float)sv.table_size[voice] / (float)sv.table_size[o];
   return 0;
 }
 
 int wave_loop(int voice, int state) {
   if (state < 0) {
-    if (voice_loop_enabled[voice] == 0) state = 1;
+    if (sv.loop_enabled[voice] == 0) state = 1;
     else state = 0;
   }
-  voice_loop_enabled[voice] = state;
+  sv.loop_enabled[voice] = state;
   return 0;
 }
 
@@ -941,15 +1011,19 @@ int envelope_set(int voice, float a, float d, float s, float r) {
 void mmf_set_params(int n, float f, float resonance) {
     // Only recalculate if parameters changed
     if (
-      f == voice_filter[n].last_freq &&
-      resonance == voice_filter[n].last_resonance &&
-      voice_filter_mode[n] == voice_filter[n].last_mode) {
+#ifdef SYNTH_FEATURE_FILTER
+      f == sv.filter[n].last_freq &&
+      resonance == sv.filter[n].last_resonance &&
+      sv.filter_mode[n] == sv.filter[n].last_mode) {
+#endif /* SYNTH_FEATURE_FILTER */
         return;  // No work needed!
     }
 
-    voice_filter[n].last_freq = f;
-    voice_filter[n].last_resonance = resonance;
-    voice_filter[n].last_mode = voice_filter_mode[n];
+#ifdef SYNTH_FEATURE_FILTER
+    sv.filter[n].last_freq = f;
+    sv.filter[n].last_resonance = resonance;
+    sv.filter[n].last_mode = sv.filter_mode[n];
+#endif /* SYNTH_FEATURE_FILTER */
 
     // Calculate filter coefficients (expensive operations only done here)
     float omega = 2.0f * (float)M_PI * f / (float)MAIN_SAMPLE_RATE;
@@ -959,7 +1033,9 @@ void mmf_set_params(int n, float f, float resonance) {
 
     float a0, b0, b1, b2, a1, a2;
 
-    switch (voice_filter_mode[n]) {
+#ifdef SYNTH_FEATURE_FILTER
+    switch (sv.filter_mode[n]) {
+#endif /* SYNTH_FEATURE_FILTER */
       case 0:
         return;
       default:
@@ -1009,14 +1085,18 @@ void mmf_set_params(int n, float f, float resonance) {
     }
 
     // Normalize coefficients
-    voice_filter[n].b0 = b0 / a0;
-    voice_filter[n].b1 = b1 / a0;
-    voice_filter[n].b2 = b2 / a0;
-    voice_filter[n].a1 = a1 / a0;
-    voice_filter[n].a2 = a2 / a0;
+#ifdef SYNTH_FEATURE_FILTER
+    sv.filter[n].b0 = b0 / a0;
+    sv.filter[n].b1 = b1 / a0;
+    sv.filter[n].b2 = b2 / a0;
+    sv.filter[n].a1 = a1 / a0;
+    sv.filter[n].a2 = a2 / a0;
+#endif /* SYNTH_FEATURE_FILTER */
 
-    voice_filter_freq[n] = f;
-    voice_filter_res[n] = resonance;
+#ifdef SYNTH_FEATURE_FILTER
+    sv.filter_freq[n] = f;
+    sv.filter_res[n] = resonance;
+#endif /* SYNTH_FEATURE_FILTER */
 }
 
 
@@ -1026,16 +1106,22 @@ void mmf_set_params(int n, float f, float resonance) {
 // sample_rate: audio sample rate in Hz
 void mmf_init(int n, float f, float resonance) {
     // Clear delay lines
-    voice_filter[n].x1 = voice_filter[n].x2 = 0.0f;
-    voice_filter[n].y1 = voice_filter[n].y2 = 0.0f;
+#ifdef SYNTH_FEATURE_FILTER
+    sv.filter[n].x1 = sv.filter[n].x2 = 0.0f;
+    sv.filter[n].y1 = sv.filter[n].y2 = 0.0f;
+#endif /* SYNTH_FEATURE_FILTER */
 
     // Store parameters
-    voice_filter[n].last_freq = -1.0f;  // Force coefficient calculation
-    voice_filter[n].last_resonance = -1.0f;
-    voice_filter[n].last_mode = -1;
+#ifdef SYNTH_FEATURE_FILTER
+    sv.filter[n].last_freq = -1.0f;  // Force coefficient calculation
+    sv.filter[n].last_resonance = -1.0f;
+    sv.filter[n].last_mode = -1;
+#endif /* SYNTH_FEATURE_FILTER */
 
-    voice_filter_freq[n] = f;
-    voice_filter_res[n] = resonance;
+#ifdef SYNTH_FEATURE_FILTER
+    sv.filter_freq[n] = f;
+    sv.filter_res[n] = resonance;
+#endif /* SYNTH_FEATURE_FILTER */
 
     // Calculate initial coefficients
     mmf_set_params(n, f, resonance);
@@ -1043,24 +1129,36 @@ void mmf_init(int n, float f, float resonance) {
 
 
 int voice_copy(int v, int n) {
-  wave_set(n, voice_wave_table_index[v]);
-  amp_set(n, voice_user_amp[v]);
-  freq_set(n, voice_freq[v]);
-  pan_set(n, voice_pan[v]);
-  amp_mod_set(n, voice_amp_mod_osc[v], voice_amp_mod_depth[v]);
-  freq_mod_set(n, voice_freq_mod_osc[v], voice_freq_mod_depth[v]);
-  pan_mod_set(n, voice_pan_mod_osc[v], voice_pan_mod_depth[v]);
-  wave_loop(n, voice_loop_enabled[v]);
-  wave_dir(n, voice_direction[v]);
-  wave_quant(n, voice_quantize[v]);
-  voice_sample_hold_max[n] = voice_sample_hold_max[v];
-  voice_sample_hold_count[n] = voice_sample_hold_count[v];
-  voice_sample_hold[n] = voice_sample_hold[v];
-  envelope_set(n, voice_amp_envelope[v].a, voice_amp_envelope[v].d, voice_amp_envelope[v].s, voice_amp_envelope[v].r);
-  cz_set(n, voice_cz_mode[v], voice_cz_distortion[v]);
-  cmod_set(n, voice_cz_mod_osc[v], voice_cz_mod_depth[v]);
-  voice_filter_mode[n] = voice_filter_mode[v];
-  mmf_init(n, voice_filter_freq[v], voice_filter_res[v]);
+  wave_set(n, sv.wave_table_index[v]);
+  amp_set(n, sv.user_amp[v]);
+  freq_set(n, sv.freq[v]);
+  pan_set(n, sv.pan[v]);
+#ifdef SYNTH_FEATURE_MODULATION
+  amp_mod_set(n, sv.amp_mod_osc[v], sv.amp_mod_depth[v]);
+  freq_mod_set(n, sv.freq_mod_osc[v], sv.freq_mod_depth[v]);
+  pan_mod_set(n, sv.pan_mod_osc[v], sv.pan_mod_depth[v]);
+#endif /* SYNTH_FEATURE_MODULATION */
+  wave_loop(n, sv.loop_enabled[v]);
+  wave_dir(n, sv.direction[v]);
+#ifdef SYNTH_FEATURE_QUANTIZE
+  wave_quant(n, sv.quantize[v]);
+#endif /* SYNTH_FEATURE_QUANTIZE */
+#ifdef SYNTH_FEATURE_SAMPLE_HOLD
+  sv.sample_hold_max[n] = sv.sample_hold_max[v];
+  sv.sample_hold_count[n] = sv.sample_hold_count[v];
+  sv.sample_hold[n] = sv.sample_hold[v];
+#endif /* SYNTH_FEATURE_SAMPLE_HOLD */
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+  envelope_set(n, sv.amp_envelope[v].a, sv.amp_envelope[v].d, sv.amp_envelope[v].s, sv.amp_envelope[v].r);
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
+#ifdef SYNTH_FEATURE_PHASE_DISTORTION
+  cz_set(n, sv.cz_mode[v], sv.cz_distortion[v]);
+  cmod_set(n, sv.cz_mod_osc[v], sv.cz_mod_depth[v]);
+#endif /* SYNTH_FEATURE_PHASE_DISTORTION */
+#ifdef SYNTH_FEATURE_FILTER
+  sv.filter_mode[n] = sv.filter_mode[v];
+  mmf_init(n, sv.filter_freq[v], sv.filter_res[v]);
+#endif /* SYNTH_FEATURE_FILTER */
   // TODO stuff is missing from here...
   return 0;
 }
@@ -1090,19 +1188,19 @@ int voice_trigger(int voice) {
 }
 
 int wave_default(int voice) {
-  float g = midi2hz((float)voice_midi_note[voice], 0);
-  voice_freq[voice] = g;
-  voice_note[voice] = (float)voice_midi_note[voice];
+  float g = midi2hz((float)sv.midi_note[voice], 0);
+  sv.freq[voice] = g;
+  sv.note[voice] = (float)sv.midi_note[voice];
   osc_set_freq(voice, g);
-  // FIX FIX FIX scope_wave_update(voice_table[voice], voice_table_size[voice]);
+  // FIX FIX FIX scope_wave_update(sv.table[voice], sv.table_size[voice]);
   return 0;
 }
 
 int freq_midi(int voice, float note) {
   if (note >= 0.0 && note <= 127.0) {
-    voice_last_midi_note[voice] = note;
-    if (voice_midi_transpose[voice]) note += voice_midi_transpose[voice];
-    float g = midi2hz(note, voice_midi_cents[voice]);
+    sv.last_midi_note[voice] = note;
+    if (sv.midi_transpose[voice]) note += sv.midi_transpose[voice];
+    float g = midi2hz(note, sv.midi_cents[voice]);
     return freq_set(voice, g);
   }
   return 100; // <-- LAZY  ERR_INVALID_MIDI_NOTE;
@@ -1111,58 +1209,75 @@ int freq_midi(int voice, float note) {
 int envelope_velocity(int voice, float f);
 
 void voice_reset(int i) {
-  voice_wave_table_index[i] = -1;
-  voice_table_rate[i] = 0;
-  voice_table_size[i] = 0;
-  voice_sample[i] = 0;
-  voice_amp[i] = NEG_60_DB_AS_LINEAR;
-  voice_user_amp[i] = NEG_60_DB;
-  voice_pan[i] = 0;
-  voice_pan_left[i] = 0.5f;
-  voice_pan_right[i] = 0.5f;
+  sv.wave_table_index[i] = -1;
+  sv.table_rate[i] = 0;
+  sv.table_size[i] = 0;
+  sv.sample[i] = 0;
+  sv.amp[i] = NEG_60_DB_AS_LINEAR;
+  sv.user_amp[i] = NEG_60_DB;
+  sv.pan[i] = 0;
+  sv.pan_left[i] = 0.5f;
+  sv.pan_right[i] = 0.5f;
   // pan smoothing?
-  voice_use_amp_envelope[i] = 1;
-  voice_amp_mod_osc[i] = -1;
-  voice_freq_mod_osc[i] = -1;
-  voice_freq_mod_depth[i] = 0.0f;
-  voice_freq_scale[i] = 1.0f;
-  voice_pan_mod_osc[i] = -1;
-  voice_disconnect[i] = 0;
-  voice_quantize[i] = 0;
-  voice_direction[i] = 0;
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+  sv.use_amp_envelope[i] = 1;
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
+#ifdef SYNTH_FEATURE_MODULATION
+  sv.amp_mod_osc[i] = -1;
+  sv.freq_mod_osc[i] = -1;
+  sv.freq_mod_depth[i] = 0.0f;
+#endif /* SYNTH_FEATURE_MODULATION */
+  sv.freq_scale[i] = 1.0f;
+#ifdef SYNTH_FEATURE_MODULATION
+  sv.pan_mod_osc[i] = -1;
+#endif /* SYNTH_FEATURE_MODULATION */
+  sv.disconnect[i] = 0;
+#ifdef SYNTH_FEATURE_QUANTIZE
+  sv.quantize[i] = 0;
+#endif /* SYNTH_FEATURE_QUANTIZE */
+  sv.direction[i] = 0;
   envelope_init(i, 0.0f, 0.0f, 1.0f, 0.0f);
-  voice_amp_envelope_mode[i] = 0; // exp
-  voice_amp_envelope[i].is_active = 0;
-  voice_freq[i] = 440.0f;
-  voice_midi_note[i] = 69.0f;
-  voice_last_midi_note[i] = 69.0f;
-  voice_midi_transpose[i] = 0;
-  voice_midi_cents[i] = 0;
-  voice_link_midi_a[i] = -1;
-  voice_link_midi_b[i] = -1;
-  voice_link_velo_a[i] = -1;
-  voice_link_velo_b[i] = -1;
-  voice_link_trig[i] = -1;
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+  sv.amp_envelope_mode[i] = 0; // exp
+  sv.amp_envelope[i].is_active = 0;
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
+  sv.freq[i] = 440.0f;
+  sv.midi_note[i] = 69.0f;
+  sv.last_midi_note[i] = 69.0f;
+  sv.midi_transpose[i] = 0;
+  sv.midi_cents[i] = 0;
+  sv.link_midi_a[i] = -1;
+  sv.link_midi_b[i] = -1;
+  sv.link_velo_a[i] = -1;
+  sv.link_velo_b[i] = -1;
+  sv.link_trig[i] = -1;
   osc_set_wave_table_index(i, WAVE_TABLE_SINE);
-  voice_filter_mode[i] = 0;
+#ifdef SYNTH_FEATURE_FILTER
+  sv.filter_mode[i] = 0;
+#endif /* SYNTH_FEATURE_FILTER */
   mmf_init(i, 8000.0f, 0.707f);
   //
-  voice_smoother_enable[i] = 1;
-  voice_smoother_gain[i] = 0.0f;
-  voice_smoother_smoothing[i] = SMOOTH_DEFAULT;
+#ifdef SYNTH_FEATURE_SMOOTHER
+  sv.smoother_enable[i] = 1;
+  sv.smoother_gain[i] = 0.0f;
+  sv.smoother_smoothing[i] = SMOOTH_DEFAULT;
+#endif /* SYNTH_FEATURE_SMOOTHER */
   //
-  voice_glissando_enable[i] = 0;
-  voice_glissando_speed[i] = 0.0f;
-  voice_glissando_target[i] = voice_freq[i];
+#ifdef SYNTH_FEATURE_GLISSANDO
+  sv.glissando_enable[i] = 0;
+  sv.glissando_speed[i] = 0.0f;
+  sv.glissando_target[i] = sv.freq[i];
+#endif /* SYNTH_FEATURE_GLISSANDO */
 
-  voice_record[i] = 0;
+  sv.record[i] = 0;
 }
 
 void voice_init(void) {
-  for (int i=0; i<VOICE_MAX; i++) {
+  for (int i = 0; i < synth_config.voice_max; i++) {
     voice_reset(i);
   }
 }
+
 
 int wave_reset(int voice, int n) {
   if (voice_invalid(n)) voice_init();
@@ -1175,8 +1290,10 @@ int envelope_velocity(int voice, float f) {
   if (f == 0) {
     amp_envelope_release(voice);
   } else {
-    voice_use_amp_envelope[voice] = 1;
-    if (voice_one_shot[voice]) {
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+    sv.use_amp_envelope[voice] = 1;
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
+    if (sv.one_shot[voice]) {
       osc_trigger(voice);
     }
     //osc_trigger(voice);
@@ -1186,12 +1303,16 @@ int envelope_velocity(int voice, float f) {
 }
 
 int mmf_set_freq(int n, float f) {
-  mmf_set_params(n, f, voice_filter_res[n]);
+#ifdef SYNTH_FEATURE_FILTER
+  mmf_set_params(n, f, sv.filter_res[n]);
+#endif /* SYNTH_FEATURE_FILTER */
   return 0;
 }
 
 int mmf_set_res(int n, float res) {
-  if (res > 0) mmf_set_params(n, voice_filter_freq[n], res);
+#ifdef SYNTH_FEATURE_FILTER
+  if (res > 0) mmf_set_params(n, sv.filter_freq[n], res);
+#endif /* SYNTH_FEATURE_FILTER */
   return 0;
 }
 
@@ -1227,12 +1348,12 @@ void wave_table_init(int flag) {
   float *table;
 
   for (int i = 0 ; i < WAVE_TABLE_MAX; i++) {
-    wave_table_data[i] = NULL;
-    wave_size[i] = 0;
-    wave_is_miniwav[i] = 0;
-    wave_direction[i] = 0;
-    wave_readonly[i] = 0;
-    wave_refcount[i] = 0;
+    sw.data[i] = NULL;
+    sw.size[i] = 0;
+    sw.is_miniwav[i] = 0;
+    sw.direction[i] = 0;
+    sw.readonly[i] = 0;
+    sw.refcount[i] = 0;
   }
 
   uint64_t white_noise;
@@ -1250,14 +1371,14 @@ void wave_table_init(int flag) {
       case WAVE_TABLE_NOISE_ALT: name = "noise-alt"; break; // not used, here for laziness in experiment
       default: name = "?"; break;
     }
-    strncpy(wave_name[w], name, WAVE_NAME_MAX);
-    wave_table_data[w] = (float *)malloc(size * sizeof(float));
-    wave_size[w] = size;
-    wave_rate[w] = MAIN_SAMPLE_RATE;
-    wave_one_shot[w] = 0;
-    wave_loop_start[w] = 0;
-    wave_loop_end[w] = size-1;
-    wave_readonly[w] = 1;
+    strncpy(sw.name[w], name, WAVE_NAME_MAX);
+    sw.data[w] = (float *)malloc(size * sizeof(float));
+    sw.size[w] = size;
+    sw.rate[w] = MAIN_SAMPLE_RATE;
+    sw.one_shot[w] = 0;
+    sw.loop_start[w] = 0;
+    sw.loop_end[w] = size-1;
+    sw.readonly[w] = 1;
     int off = 0;
     float phase = 0;
     float delta = 1.0f / (float)size;
@@ -1274,7 +1395,7 @@ void wave_table_init(int flag) {
         case WAVE_TABLE_NOISE_ALT: f = audio_rng_float(&white_noise); break;
         default: f = 0; break;
       }
-      wave_table_data[w][off++] = f;
+      sw.data[w][off++] = f;
       phase += delta;
     }
   }
@@ -1287,38 +1408,38 @@ void wave_table_init(int flag) {
   int tmp = 0;
   for (int i = WAVE_TABLE_KRG1; i <= WAVE_TABLE_KRG32; i++) {
     int k = i - WAVE_TABLE_KRG1;
-    strncpy(wave_name[i], kwave_name[k], WAVE_NAME_MAX);
+    strncpy(sw.name[i], kwave_name[k], WAVE_NAME_MAX);
     int s = kwave_size[k];
     table = malloc(s * sizeof(float));
     for (int j = 0 ; j < s; j++) {
       table[j] = (float)kwave[k][j] / (float)32767;
     }
-    wave_table_data[i] = table;
-    wave_size[i] = s;
-    wave_rate[i] = MAIN_SAMPLE_RATE;
-    wave_one_shot[i] = 0;
-    wave_loop_start[i] = 0;
-    wave_loop_end[i] = s-1;
-    wave_direction[i] = 1; // krg retro waveforms are backwards?
-    wave_readonly[i] = 1;
+    sw.data[i] = table;
+    sw.size[i] = s;
+    sw.rate[i] = MAIN_SAMPLE_RATE;
+    sw.one_shot[i] = 0;
+    sw.loop_start[i] = 0;
+    sw.loop_end[i] = s-1;
+    sw.direction[i] = 1; // krg retro waveforms are backwards?
+    sw.readonly[i] = 1;
   }
 
   for (int i = EW_00; i <= EW_00+77; i++) {
     int k = i - EW_00;
-    //strncpy(wave_name[i], kwave_name[k], WAVE_NAME_MAX);
+    //strncpy(sw.name[i], kwave_name[k], WAVE_NAME_MAX);
     int s = ewave_size[k];
     table = malloc(s * sizeof(float));
     for (int j = 0 ; j < s; j++) {
       table[j] = (float)ewave[k][j] / (float)32767;
     }
-    wave_table_data[i] = table;
-    wave_size[i] = s;
-    wave_rate[i] = MAIN_SAMPLE_RATE;
-    wave_one_shot[i] = 0;
-    wave_loop_start[i] = 0;
-    wave_loop_end[i] = s-1;
-    wave_direction[i] = 0;
-    wave_readonly[i] = 1;
+    sw.data[i] = table;
+    sw.size[i] = s;
+    sw.rate[i] = MAIN_SAMPLE_RATE;
+    sw.one_shot[i] = 0;
+    sw.loop_start[i] = 0;
+    sw.loop_end[i] = s-1;
+    sw.direction[i] = 0;
+    sw.readonly[i] = 1;
   }
 
   // load AMY samples
@@ -1326,7 +1447,7 @@ void wave_table_init(int flag) {
   tmp = 0;
   for (int i = 0; i < PCM_SAMPLES; i++) {
     j = i + AMY_SAMPLE_00;
-    snprintf(wave_name[j], WAVE_NAME_MAX, "amy-%d", tmp++);
+    snprintf(sw.name[j], WAVE_NAME_MAX, "amy-%d", tmp++);
     if (j > AMY_SAMPLE_99-1) {
       //printf("# too many PCM samples... exit early\n");
       break;
@@ -1336,32 +1457,32 @@ void wave_table_init(int flag) {
       table[k] = (float)pcm[pcm_map[i].offset + k] / 32767.0f;
     }
     normalize_preserve_zero(table, (int)pcm_map[i].length);
-    wave_table_data[j] = table;
-    wave_size[j] = (int)pcm_map[i].length;
-    wave_rate[j] = PCM_AMY_SAMPLE_RATE;
-    wave_one_shot[j] = 1;
-    wave_loop_enabled[j] = 0;
-    wave_loop_start[j] = (int)pcm_map[i].loopstart;
-    wave_loop_end[j] = (int)pcm_map[i].loopend;
-    wave_midi_note[j] = (int)pcm_map[i].midinote;
-    wave_offset_hz[j] = midi2hz((float)pcm_map[i].midinote, 0);
-    wave_readonly[j] = 1;
+    sw.data[j] = table;
+    sw.size[j] = (int)pcm_map[i].length;
+    sw.rate[j] = PCM_AMY_SAMPLE_RATE;
+    sw.one_shot[j] = 1;
+    sw.loop_enabled[j] = 0;
+    sw.loop_start[j] = (int)pcm_map[i].loopstart;
+    sw.loop_end[j] = (int)pcm_map[i].loopend;
+    sw.midi_note[j] = (int)pcm_map[i].midinote;
+    sw.offset_hz[j] = midi2hz((float)pcm_map[i].midinote, 0);
+    sw.readonly[j] = 1;
   }
   //printf("# load AMY samples (%d to %d)\n", AMY_SAMPLE_00, j);
 }
 
 void wave_free_one(int i) {
-  if (wave_table_data[i]) {
-    if (wave_is_miniwav[i]) {
+  if (sw.data[i]) {
+    if (sw.is_miniwav[i]) {
       //printf("mw_free [%d]\n", i);
-      mw_free(wave_table_data[i]);
+      mw_free(sw.data[i]);
     } else {
       //printf("free [%d]\n", i);
-      free(wave_table_data[i]);
+      free(sw.data[i]);
     }
-    wave_table_data[i] = NULL;
-    wave_size[i] = 0;
-    wave_refcount[i] = 0;
+    sw.data[i] = NULL;
+    sw.size[i] = 0;
+    sw.refcount[i] = 0;
   }
 }
 

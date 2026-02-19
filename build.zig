@@ -45,6 +45,7 @@ pub fn build(b: *std.Build) void {
         "src/skode.c", "src/ands.c", "src/udp.c",
         "src/miniaudio.c", "src/skred-mem.c", "src/util.c",
         "src/skqueue.c",
+        "src/synth-alloc.c",
     }) catch unreachable;
 
     if (os_tag != .windows) {

@@ -7,6 +7,8 @@
 
 #include "synth-types.h"
 #include "synth.h"
+#include "synth-state.h"
+#include "synth-config.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -96,7 +98,7 @@ float voice_pop(voice_stack_t *s) {
 #include <stdio.h>
 #include <stdint.h>
 
-// TODO, use the voice_record[] array to determine
+// TODO, use the sv.record[] array to determine
 // which how many channels and voices to write to the
 // wave file (update the header too)
 
@@ -174,7 +176,7 @@ void save_wav(skode_t *ctx, char *filename, float *samples, long num_samples, in
 
   float fbig = 0.0;
   float fsmall = 0.0;
-  for (int i = 0; i < num_samples * VOICE_MAX * AUDIO_CHANNELS; i++) {
+  for (int i = 0; i < num_samples * synth_config.voice_max * AUDIO_CHANNELS; i++) {
     float g = samples[i];
     if (g > fbig) fbig = g;
     if (g < fsmall) fsmall = g;
@@ -192,8 +194,8 @@ void save_wav(skode_t *ctx, char *filename, float *samples, long num_samples, in
  
   // Convert scaled float samples to 16-bit PCM
 
-  for (int i = 0; i < num_samples * VOICE_MAX * AUDIO_CHANNELS; i++) {
-    int ri = (i % (VOICE_MAX * AUDIO_CHANNELS)) >> 1;
+  for (int i = 0; i < num_samples * synth_config.voice_max * AUDIO_CHANNELS; i++) {
+    int ri = (i % (synth_config.voice_max * AUDIO_CHANNELS)) >> 1;
     if (record_safe[ri] == 0) continue; // skip things that aren't recorded
     float g = samples[i];
     g *= scale;
@@ -216,8 +218,8 @@ void voice_show(skode_t *ctx, int v, char c, int verbose) {
 }
 
 int voice_show_all(skode_t *ctx, int voice, int verbose) {
-  for (int i=0; i<VOICE_MAX; i++) {
-    if (voice_user_amp[i] <= SILENT) continue;
+  for (int i=0; i<synth_config.voice_max; i++) {
+    if (sv.user_amp[i] <= SILENT) continue;
     char t = ' ';
     if (i == voice) t = '*';
     voice_show(ctx, i, t, verbose);
@@ -455,7 +457,7 @@ int data_load(skode_t *ctx, int wave_slot, int one_shot, float rate, float offse
     ctx->printf(ctx, "# no data len\n");
     return 100;
   }
-  if (wave_readonly[wave_slot] == 1) {
+  if (sw.readonly[wave_slot] == 1) {
     ctx->printf(ctx, "# cannot write to w%d r/o\n", wave_slot);
     return -1;
   }
@@ -463,7 +465,7 @@ int data_load(skode_t *ctx, int wave_slot, int one_shot, float rate, float offse
     ctx->printf(ctx, "# invalid rate %g > 0\n", rate);
     return -1;
   }
-  if (wave_refcount[wave_slot] > 0) {
+  if (sw.refcount[wave_slot] > 0) {
     ctx->printf(ctx, "# cannot write to w%d ref > 0\n", wave_slot);
     return -1;
   } else {
@@ -472,21 +474,21 @@ int data_load(skode_t *ctx, int wave_slot, int one_shot, float rate, float offse
   float *table = calloc(data_len, sizeof(float));
   for (int i=0; i<data_len; i++) table[i] = (float)data[i];
   int len = data_len;
-    snprintf(wave_name[wave_slot], WAVE_NAME_MAX, "data[%d]", data_len);
-    wave_is_miniwav[wave_slot] = 0;
-    wave_table_data[wave_slot] = table;
-    wave_size[wave_slot] = len;
-    wave_rate[wave_slot] = rate;
-    wave_one_shot[wave_slot] = (one_shot != 0);
-    wave_loop_enabled[wave_slot] = 0;
-    wave_loop_start[wave_slot] = 1;
-    wave_loop_end[wave_slot] = len;
+    snprintf(sw.name[wave_slot], WAVE_NAME_MAX, "data[%d]", data_len);
+    sw.is_miniwav[wave_slot] = 0;
+    sw.data[wave_slot] = table;
+    sw.size[wave_slot] = len;
+    sw.rate[wave_slot] = rate;
+    sw.one_shot[wave_slot] = (one_shot != 0);
+    sw.loop_enabled[wave_slot] = 0;
+    sw.loop_start[wave_slot] = 1;
+    sw.loop_end[wave_slot] = len;
     if (offset > 0) {
-      wave_offset_hz[wave_slot] = (float)len / rate * 440.0f;
-      wave_midi_note[wave_slot] = 69;
+      sw.offset_hz[wave_slot] = (float)len / rate * 440.0f;
+      sw.midi_note[wave_slot] = 69;
     } else {
-      wave_offset_hz[wave_slot] = 0.0f;
-      wave_midi_note[wave_slot] = 0;
+      sw.offset_hz[wave_slot] = 0.0f;
+      sw.midi_note[wave_slot] = 0;
     }
     char *name = "data";
     int channels = 1;
@@ -497,11 +499,11 @@ int data_load(skode_t *ctx, int wave_slot, int one_shot, float rate, float offse
 int wave_load(skode_t *ctx, int file_num, int wave_index, int ch, int normalize) {
   if (ctx == NULL) return 100; // fix todo
   if (wave_index < EXT_SAMPLE_000 || wave_index >= EXT_SAMPLE_999) return -1;
-  if (wave_readonly[wave_index] == 1) {
+  if (sw.readonly[wave_index] == 1) {
     ctx->printf(ctx, "# cannot write to w%d r/o\n", wave_index);
     return -1;
   }
-  if (wave_refcount[wave_index] > 0) {
+  if (sw.refcount[wave_index] > 0) {
     ctx->printf(ctx, "# cannot write to w%d ref > 0\n", wave_index);
     return -1;
   } else {
@@ -528,17 +530,17 @@ int wave_load(skode_t *ctx, int file_num, int wave_index, int ch, int normalize)
     ctx->printf(ctx, "# can not read %s\n", name);
     return -1;
   } else {
-    strncpy(wave_name[wave_index], name, WAVE_NAME_MAX);
-    wave_is_miniwav[wave_index] = 1;
-    wave_table_data[wave_index] = table;
-    wave_size[wave_index] = len;
-    wave_rate[wave_index] = (float)wav.SamplesRate;
-    wave_one_shot[wave_index] = 1;
-    wave_loop_enabled[wave_index] = 0;
-    wave_loop_start[wave_index] = 1;
-    wave_loop_end[wave_index] = len;
-    wave_midi_note[wave_index] = 69;
-    wave_offset_hz[wave_index] = (float)len / (float)wav.SamplesRate * 440.0f;
+    strncpy(sw.name[wave_index], name, WAVE_NAME_MAX);
+    sw.is_miniwav[wave_index] = 1;
+    sw.data[wave_index] = table;
+    sw.size[wave_index] = len;
+    sw.rate[wave_index] = (float)wav.SamplesRate;
+    sw.one_shot[wave_index] = 1;
+    sw.loop_enabled[wave_index] = 0;
+    sw.loop_start[wave_index] = 1;
+    sw.loop_end[wave_index] = len;
+    sw.midi_note[wave_index] = 69;
+    sw.offset_hz[wave_index] = (float)len / (float)wav.SamplesRate * 440.0f;
     ctx->printf(ctx, "# read %d frames from %s to %d (ch:%d sr:%d)\n",
       len, name, wave_index, wav.Channels, wav.SamplesRate);
     normalize_preserve_zero(table, len);
@@ -636,11 +638,11 @@ void scope_wave_update(const float *table, int size) {
 #endif
 
 int wavetable_show(skode_t *ctx, int n) {
-  if (n >= 0 && n < WAVE_TABLE_MAX && wave_table_data[n] && wave_size[n]) {
-    float *table = wave_table_data[n];
-    int readonly = wave_readonly[n];
-    int refcount = wave_refcount[n];
-    int size = wave_size[n];
+  if (n >= 0 && n < WAVE_TABLE_MAX && sw.data[n] && sw.size[n]) {
+    float *table = sw.data[n];
+    int readonly = sw.readonly[n];
+    int refcount = sw.refcount[n];
+    int size = sw.size[n];
     int crossing = 0;
     int zero = 0;
     float ttl = 0;
@@ -660,15 +662,15 @@ int wavetable_show(skode_t *ctx, int n) {
     }
     ctx->printf(ctx, "# w%d size:%d", n, size);
     ctx->printf(ctx, " rate:%g +hz:%g midi:%g",
-      wave_rate[n],
-      wave_offset_hz[n],
-      wave_midi_note[n]);
+      sw.rate[n],
+      sw.offset_hz[n],
+      sw.midi_note[n]);
     if (readonly) {
       ctx->printf(ctx, " r/o");
     } else {
       ctx->printf(ctx, " r/w ref:%d", refcount);
     }
-    ctx->printf(ctx, " '%s'", wave_name[n]);
+    ctx->printf(ctx, " '%s'", sw.name[n]);
     ctx->puts(ctx, "");
 #ifndef MINI
     if (scope_enable) {
@@ -685,8 +687,8 @@ int wavetable_show(skode_t *ctx, int n) {
 void wave_table_dynamic_expand(int n) {
   float fbig = 0.0;
   float fsmall = 0.0;
-  int len = wave_size[n];
-  float *samples = wave_table_data[n];
+  int len = sw.size[n];
+  float *samples = sw.data[n];
   if (len <= 0 || samples == NULL) {
     return;
   }
@@ -782,25 +784,31 @@ int skode_function(ands_t *s, int info) {
     case 'g___': // glissando speed
       if (argc) {
         if (arg[0] <= 0) {
-          voice_glissando_enable[voice] = 0;
+#ifdef SYNTH_FEATURE_GLISSANDO
+          sv.glissando_enable[voice] = 0;
+#endif /* SYNTH_FEATURE_GLISSANDO */
         } else {
-          voice_glissando_enable[voice] = 1;
-          voice_glissando_speed[voice] = arg[0];
+#ifdef SYNTH_FEATURE_GLISSANDO
+          sv.glissando_enable[voice] = 1;
+          sv.glissando_speed[voice] = arg[0];
+#endif /* SYNTH_FEATURE_GLISSANDO */
         }
       }
       break;
     case 'G___': // link-midi voice [voice]
       if (argc) {
-        voice_link_midi_a[voice] = x;
-        if (argc > 1) voice_link_midi_b[voice] = (int)arg[1];
+        sv.link_midi_a[voice] = x;
+        if (argc > 1) sv.link_midi_b[voice] = (int)arg[1];
       }
       break;
     case 'h___': // sample-hold phase-count
-      if (argc) { voice_sample_hold_max[voice] = x; } break;
+#ifdef SYNTH_FEATURE_SAMPLE_HOLD
+      if (argc) { sv.sample_hold_max[voice] = x; } break;
+#endif /* SYNTH_FEATURE_SAMPLE_HOLD */
     case 'H___': // link-velo voice [voice]
       if (argc) {
-        voice_link_velo_a[voice] = x;
-        if (argc > 1) voice_link_velo_b[voice] = (int)arg[1];
+        sv.link_velo_a[voice] = x;
+        if (argc > 1) sv.link_velo_b[voice] = (int)arg[1];
       }
       break;
     // TODO re-allocate the data/array buffer with the arg
@@ -817,19 +825,25 @@ int skode_function(ands_t *s, int info) {
     case 'I___': // log-event bool
       if (argc) {} break; // TODO en/dis-able send timestamp wire to the event logger
     case 'L___': // link-trigger voice
-      if (argc) { voice_link_trig[voice] = x; } break;
+      if (argc) { sv.link_trig[voice] = x; } break;
     case 'J___': // filter-mode selector
       if (argc) {
-        voice_filter_mode[voice] = x;
+#ifdef SYNTH_FEATURE_FILTER
+        sv.filter_mode[voice] = x;
+#endif /* SYNTH_FEATURE_FILTER */
         mmf_set_params(voice,
-          voice_filter_freq[voice],
-          voice_filter_res[voice]);
+#ifdef SYNTH_FEATURE_FILTER
+          sv.filter_freq[voice],
+          sv.filter_res[voice]);
+#endif /* SYNTH_FEATURE_FILTER */
       }
       break;
     case 'K___': // filter-cutoff freq
       if (argc) { mmf_set_freq(voice, arg[0]); } break;
     case 'k___': // adsr-mode bool
-      if (argc) { voice_amp_envelope_mode[voice] = x; } break;
+#ifdef SYNTH_FEATURE_AMP_ENVELOPE
+      if (argc) { sv.amp_envelope_mode[voice] = x; } break;
+#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
     case 'udp_': // show-udp
       if (argc) {
         ctx->printf(ctx, "# udp [%d] %d/%d\n", ctx->which, ctx->ip, ctx->port);
@@ -843,8 +857,8 @@ int skode_function(ands_t *s, int info) {
     case 'l___': // velocity amount
       if (argc) {
         envelope_velocity(voice, arg[0]);
-        if (voice_link_velo_a[voice] >= 0) envelope_velocity(voice_link_velo_a[voice], arg[0]);
-        if (voice_link_velo_b[voice] >= 0) envelope_velocity(voice_link_velo_b[voice], arg[0]);
+        if (sv.link_velo_a[voice] >= 0) envelope_velocity(sv.link_velo_a[voice], arg[0]);
+        if (sv.link_velo_b[voice] >= 0) envelope_velocity(sv.link_velo_b[voice], arg[0]);
       }
       break;
     case 'm___': // mute-audio bool
@@ -858,10 +872,10 @@ int skode_function(ands_t *s, int info) {
     case 'n___': // midi-freq note-number
       if (argc) {
         float note = arg[0];
-        if (isnan(note)) note = voice_last_midi_note[voice];
+        if (isnan(note)) note = sv.last_midi_note[voice];
         freq_midi(voice, note);
-        if (voice_link_midi_a[voice] >= 0) freq_midi(voice_link_midi_a[voice], note);
-        if (voice_link_midi_b[voice] >= 0) freq_midi(voice_link_midi_b[voice], note);
+        if (sv.link_midi_a[voice] >= 0) freq_midi(sv.link_midi_a[voice], note);
+        if (sv.link_midi_b[voice] >= 0) freq_midi(sv.link_midi_b[voice], note);
       }
       break;
     case 'N___': // detune-midi key cents
@@ -869,9 +883,9 @@ int skode_function(ands_t *s, int info) {
         if (isnan(arg[0])) {
           // do nothing
         } else {
-          voice_midi_transpose[voice] = arg[0];
+          sv.midi_transpose[voice] = arg[0];
         }
-        if (argc > 1) voice_midi_cents[voice] = arg[1];
+        if (argc > 1) sv.midi_cents[voice] = arg[1];
       }
       break;
     case 'p___': // pan value
@@ -892,7 +906,7 @@ int skode_function(ands_t *s, int info) {
       break;
 #ifndef MINI
     case 'r___': // record-mode bool
-      if (argc) { if (rec_state == 0) voice_record[voice] = x; }
+      if (argc) { if (rec_state == 0) sv.record[voice] = x; }
       break;
     case 'R!__':  // remove-events tag
       if (argc) {
@@ -932,10 +946,14 @@ int skode_function(ands_t *s, int info) {
     case 's___': // volume-smooth bool
       if (argc) {
         if (arg[0] <= 0) {
-          voice_smoother_enable[voice] = 0;
+#ifdef SYNTH_FEATURE_SMOOTHER
+          sv.smoother_enable[voice] = 0;
+#endif /* SYNTH_FEATURE_SMOOTHER */
         } else {
-          voice_smoother_enable[voice] = 1;
-          voice_smoother_smoothing[voice] = arg[0];
+#ifdef SYNTH_FEATURE_SMOOTHER
+          sv.smoother_enable[voice] = 1;
+          sv.smoother_smoothing[voice] = arg[0];
+#endif /* SYNTH_FEATURE_SMOOTHER */
         }
       }
       break;
@@ -949,11 +967,11 @@ int skode_function(ands_t *s, int info) {
       {
 #if 1
         envelope_velocity(voice, 1);
-        if (voice_link_velo_a[voice] >= 0) envelope_velocity(voice_link_velo_a[voice], 1);
-        if (voice_link_velo_b[voice] >= 0) envelope_velocity(voice_link_velo_b[voice], 1);
+        if (sv.link_velo_a[voice] >= 0) envelope_velocity(sv.link_velo_a[voice], 1);
+        if (sv.link_velo_b[voice] >= 0) envelope_velocity(sv.link_velo_b[voice], 1);
 #else
         voice_trigger(voice);
-        if (voice_link_trig[voice] > 0) voice_trigger(voice_link_trig[voice]);
+        if (sv.link_trig[voice] > 0) voice_trigger(sv.link_trig[voice]);
 #endif
       }
       break;
@@ -969,11 +987,11 @@ int skode_function(ands_t *s, int info) {
         int n;
         if (argc > 1) {
           n = (int)arg[1];
-          voice_interpolate[voice] = n;
+          sv.interpolate[voice] = n;
         }
         if (argc > 2) {
           n = (int)arg[2];
-          voice_one_shot[voice] = n;
+          sv.one_shot[voice] = n;
         }
 #ifndef MINI
         if (scope_enable) sprintf(scope->wave_text, "w%d", x);
@@ -989,7 +1007,7 @@ int skode_function(ands_t *s, int info) {
       } else if (argc == 0) {
         int c = 0;
         for (int i=0; i<WAVE_TABLE_MAX; i++) {
-          if (wave_table_data[i] && wave_readonly[i] == 0) {
+          if (sw.data[i] && sw.readonly[i] == 0) {
             wavetable_show(ctx, i);
             c++;
           }
@@ -1185,7 +1203,7 @@ int skode_function(ands_t *s, int info) {
           if (max_sec > rec_sec) {
             max_sec = rec_sec;
           }
-          max_samples = max_sec * (float)(MAIN_SAMPLE_RATE * AUDIO_CHANNELS * VOICE_MAX);
+          max_samples = max_sec * (float)(MAIN_SAMPLE_RATE * AUDIO_CHANNELS * synth_config.voice_max);
           rec_max = max_samples;
         }
         rec_ptr = 0;
@@ -1209,7 +1227,7 @@ int skode_function(ands_t *s, int info) {
           sprintf(name, "skred-%d-%lld.wav", pid, ms);
 #endif
           ctx->printf(ctx, "# file %s (%ld frames)\n", name, rec_ptr);
-          save_wav(ctx, name, recording, rec_ptr/VOICE_MAX/AUDIO_CHANNELS, voice_record, VOICE_MAX);
+          save_wav(ctx, name, recording, rec_ptr/synth_config.voice_max/AUDIO_CHANNELS, sv.record, synth_config.voice_max);
         }
       }
       break;
@@ -1342,9 +1360,9 @@ int audio_show(skode_t *ctx) {
     skode_init(ctx);
   }
   ctx->printf(ctx, "# synth backend is running\n");
-  ctx->printf(ctx, "# synth total voice count %d\n", VOICE_MAX);
+  ctx->printf(ctx, "# synth total voice count %d\n", synth_config.voice_max);
   int active = 0;
-  for (int i = 0; i < VOICE_MAX; i++) if (voice_amp[i] != 0) active++;
+  for (int i = 0; i < synth_config.voice_max; i++) if (sv.amp[i] != 0) active++;
   ctx->printf(ctx, "# synth active voice count %d\n", active);
 #ifdef _WIN32
   ctx->printf(ctx, "# synth sample count %lld\n", SAMPLE_COUNT_GET());
