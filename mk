@@ -1,3 +1,2 @@
 #!/bin/bash
-cd src
-make $@
+zig build -Doptimize=ReleaseFast
