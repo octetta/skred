@@ -583,7 +583,7 @@ void synth(float *buffer, float *input, int num_frames, int num_channels, void *
           // REQUIRES re-thinking how I'm scaling frequency modulators via wire...
           // REVISIT experiments to see if this still makes sense
 #ifdef SYNTH_FEATURE_MODULATION
-          float g = sv.sample[mod] * sv.freq_mod_depth[n];
+          float g = sv.sample[mod] * sv.freq_mod_depth[n] + sv.freq_mod_adder[n];
 #endif /* SYNTH_FEATURE_MODULATION */
           float inc = sv.phase_inc[n] + (sv.phase_inc[mod] * sv.freq_scale[n] * g);
           f = osc_next(n, inc);
@@ -628,7 +628,7 @@ void synth(float *buffer, float *input, int num_frames, int num_channels, void *
 #ifdef SYNTH_FEATURE_MODULATION
       if (sv.amp_mod_osc[n] >= 0) {
         int m = sv.amp_mod_osc[n];
-        mod = sv.sample[m] * sv.amp_mod_depth[n];
+        mod = sv.sample[m] * sv.amp_mod_depth[n] + sv.amp_mod_adder[n];
 #endif /* SYNTH_FEATURE_MODULATION */
       }
       float final = amp * env * mod;
@@ -647,7 +647,7 @@ void synth(float *buffer, float *input, int num_frames, int num_channels, void *
 #endif /* SYNTH_FEATURE_MODULATION */
           // handle pan modulation
 #ifdef SYNTH_FEATURE_MODULATION
-          float q = sv.sample[sv.pan_mod_osc[n]] * sv.pan_mod_depth[n];
+          float q = sv.sample[sv.pan_mod_osc[n]] * sv.pan_mod_depth[n] + sv.pan_mod_adder[n];
 #endif /* SYNTH_FEATURE_MODULATION */
           sv.pan_left[n]  = (1.0f - q) / 2.0f;
           sv.pan_right[n] = (1.0f + q) / 2.0f;
@@ -805,7 +805,7 @@ char *voice_format(int v, char *out, int verbose) {
   }
 #ifdef SYNTH_FEATURE_MODULATION
   if (verbose || (sv.amp_mod_osc[v] >= 0 && sv.amp_mod_depth[v] > 0)) {
-    n = sprintf(ptr, " A%d,%g", sv.amp_mod_osc[v], sv.amp_mod_depth[v]);
+    n = sprintf(ptr, " A%d,%g,%g", sv.amp_mod_osc[v], sv.amp_mod_depth[v], sv.amp_mod_adder[v]);
 #endif /* SYNTH_FEATURE_MODULATION */
     ptr += n;
   }
@@ -817,13 +817,13 @@ char *voice_format(int v, char *out, int verbose) {
   }
 #ifdef SYNTH_FEATURE_MODULATION
   if (verbose || (sv.freq_mod_osc[v] >= 0 && sv.freq_mod_depth[v] > 0)) {
-    n = sprintf(ptr, " F%d,%g", sv.freq_mod_osc[v], sv.freq_mod_depth[v]);
+    n = sprintf(ptr, " F%d,%g", sv.freq_mod_osc[v], sv.freq_mod_depth[v], sv.freq_mod_adder[v]);
 #endif /* SYNTH_FEATURE_MODULATION */
     ptr += n;
   }
 #ifdef SYNTH_FEATURE_MODULATION
   if (verbose || (sv.pan_mod_osc[v] >= 0 && sv.pan_mod_depth[v] > 0)) {
-    n = sprintf(ptr, " P%d,%g", sv.pan_mod_osc[v], sv.pan_mod_depth[v]);
+    n = sprintf(ptr, " P%d,%g", sv.pan_mod_osc[v], sv.pan_mod_depth[v], sv.pan_mod_adder[v]);
 #endif /* SYNTH_FEATURE_MODULATION */
     ptr += n;
   }
@@ -958,10 +958,11 @@ int wave_dir(int voice, int state) {
   return 0;
 }
 
-int pan_mod_set(int voice, int o, float f) {
+int pan_mod_set(int voice, int o, float f, float a) {
 #ifdef SYNTH_FEATURE_MODULATION
   sv.pan_mod_osc[voice] = o;
   sv.pan_mod_depth[voice] = f;
+  sv.pan_mod_adder[voice] = a;
 #endif /* SYNTH_FEATURE_MODULATION */
   return 0;
 }
@@ -975,18 +976,20 @@ int wave_set(int voice, int wave) {
   return 0;
 }
 
-int amp_mod_set(int voice, int o, float f) {
+int amp_mod_set(int voice, int o, float f, float a) {
 #ifdef SYNTH_FEATURE_MODULATION
   sv.amp_mod_osc[voice] = o;
   sv.amp_mod_depth[voice] = f;
+  sv.amp_mod_adder[voice] = a;
 #endif /* SYNTH_FEATURE_MODULATION */
   return 0;
 }
 
-int freq_mod_set(int voice, int o, float f) {
+int freq_mod_set(int voice, int o, float f, float a) {
 #ifdef SYNTH_FEATURE_MODULATION
   sv.freq_mod_osc[voice] = o;
   sv.freq_mod_depth[voice] = f;
+  sv.freq_mod_adder[voice] = a;
 #endif /* SYNTH_FEATURE_MODULATION */
   sv.freq_scale[voice] = (float)sv.table_size[voice] / (float)sv.table_size[o];
   return 0;
@@ -1134,9 +1137,9 @@ int voice_copy(int v, int n) {
   freq_set(n, sv.freq[v]);
   pan_set(n, sv.pan[v]);
 #ifdef SYNTH_FEATURE_MODULATION
-  amp_mod_set(n, sv.amp_mod_osc[v], sv.amp_mod_depth[v]);
-  freq_mod_set(n, sv.freq_mod_osc[v], sv.freq_mod_depth[v]);
-  pan_mod_set(n, sv.pan_mod_osc[v], sv.pan_mod_depth[v]);
+  amp_mod_set(n, sv.amp_mod_osc[v], sv.amp_mod_depth[v], sv.amp_mod_adder[v]);
+  freq_mod_set(n, sv.freq_mod_osc[v], sv.freq_mod_depth[v], sv.freq_mod_adder[v]);
+  pan_mod_set(n, sv.pan_mod_osc[v], sv.pan_mod_depth[v], sv.pan_mod_adder[v]);
 #endif /* SYNTH_FEATURE_MODULATION */
   wave_loop(n, sv.loop_enabled[v]);
   wave_dir(n, sv.direction[v]);
@@ -1224,12 +1227,17 @@ void voice_reset(int i) {
 #endif /* SYNTH_FEATURE_AMP_ENVELOPE */
 #ifdef SYNTH_FEATURE_MODULATION
   sv.amp_mod_osc[i] = -1;
+  sv.amp_mod_depth[i] = 0.0f;
+  sv.amp_mod_adder[i] = 0.0f;
   sv.freq_mod_osc[i] = -1;
   sv.freq_mod_depth[i] = 0.0f;
+  sv.freq_mod_adder[i] = 0.0f;
 #endif /* SYNTH_FEATURE_MODULATION */
   sv.freq_scale[i] = 1.0f;
 #ifdef SYNTH_FEATURE_MODULATION
   sv.pan_mod_osc[i] = -1;
+  sv.pan_mod_depth[i] = 0.0f;
+  sv.pan_mod_adder[i] = 0.0f;
 #endif /* SYNTH_FEATURE_MODULATION */
   sv.disconnect[i] = 0;
 #ifdef SYNTH_FEATURE_QUANTIZE

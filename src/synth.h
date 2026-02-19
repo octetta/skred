@@ -77,10 +77,10 @@ int wave_set(int voice, int wave);
 int wave_mute(int voice, int state);
 int wave_dir(int voice, int state);
 int freq_midi(int voice, float note);
-int amp_mod_set(int voice, int o, float f);
+int amp_mod_set(int voice, int o, float f, float a);
 int wave_reset(int voice, int n);
-int freq_mod_set(int voice, int o, float f);
-int pan_mod_set(int voice, int o, float f);
+int freq_mod_set(int voice, int o, float f, float a);
+int pan_mod_set(int voice, int o, float f, float a);
 
 char *voice_format(int v, char *out, int verbose);
 //void voice_show(int v, char c, int verbose);

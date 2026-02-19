@@ -142,10 +142,13 @@ typedef struct {
 #ifdef SYNTH_FEATURE_MODULATION
     int    * restrict freq_mod_osc;
     float  * restrict freq_mod_depth;
+    float  * restrict freq_mod_adder;
     int    * restrict pan_mod_osc;
     float  * restrict pan_mod_depth;
+    float  * restrict pan_mod_adder;
     int    * restrict amp_mod_osc;
     float  * restrict amp_mod_depth;
+    float  * restrict amp_mod_adder;
 #endif
 
 } synth_voices_t;

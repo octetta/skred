@@ -743,9 +743,11 @@ int skode_function(ands_t *s, int info) {
       break;
     case 'A___': // AM voice depth
       if (argc < 2) {
-        amp_mod_set(voice, -1, 0);
+        amp_mod_set(voice, -1, 0, 0);
       } else if (argc > 1) {
-        amp_mod_set(voice, x, arg[1]);
+        float a = 0;
+        if (argc > 2) a = arg[2];
+        amp_mod_set(voice, x, arg[1], a);
       }
       break;
     case 'b___': // wave-direction bool
@@ -776,9 +778,11 @@ int skode_function(ands_t *s, int info) {
       break;
     case 'F___': // FM voice depth
       if (argc <= 1) {
-        freq_mod_set(voice, -1, 0);
+        freq_mod_set(voice, -1, 0, 0);
       } else if (argc > 1) {
-        freq_mod_set(voice, x, arg[1]);
+        float a = 0;
+        if (argc > 2) a = arg[2];
+        freq_mod_set(voice, x, arg[1], a);
       }
       break;
     case 'g___': // glissando speed
@@ -893,9 +897,11 @@ int skode_function(ands_t *s, int info) {
       break;
     case 'P___': // pan-mod voice depth
       if (argc < 2) {
-        pan_mod_set(voice, -1, 0);
+        pan_mod_set(voice, -1, 0, 0);
       } else if (argc > 1) {
-        pan_mod_set(voice, x, arg[1]);
+        float a = 0;
+        if (argc > 2) a = arg[2];
+        pan_mod_set(voice, x, arg[1], a);
       }
       break;
     case 'q___':  // bit-crush bit-depth
