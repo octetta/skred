@@ -85,6 +85,9 @@ $(OUT)/udp.o: udp.c udp.h
 $(OUT)/ands.o: ands.c ands.h
 	$(CC) $(COPTS) -c $< -o $@
 
+$(OUT)/synth-alloc.o: synth-alloc.c
+	$(CC) $(COPTS) -c $< -o $@
+
 $(OUT)/skode.o: skode.c skode.h synth.def ands.h synth.c seq.c $(OUT)/ands.o
 	$(CC) $(COPTS) -Wno-multichar -c $< -o $@
 
@@ -107,6 +110,7 @@ OBJS = \
 	$(OUT)/util.o \
   $(OUT)/bestline.o \
   $(OUT)/skqueue.o \
+  $(OUT)/synth-alloc.o \
 	#
 
 $(SKRED) : $(OBJS) | $(OUT)

@@ -31,7 +31,10 @@ from a terminal.
 # quick start
 
 ```
-install zig 0.13.0
+# open a shell / cmd.exe / powershell
+# install zig 0.13.0
+git clone https://github.com/octetta/skred
+cd skred
 zig build
 ./zig-out/bin/skred # or skred.exe on Windows 
 v0 w0 f440 a0 l1    # start a 440Hz sine wave on voice 0
@@ -39,6 +42,10 @@ v1 m1 a0 f1 l1      # start a 1Hz modulator on voice 1
 v0 F1,1             # use v1 modulator to change v0's frequency 
 ??                  # show the running voices
 ```
+
+- on macOS you may need `xattr -d com.apple.quarantine zig-out/bin/skred`
+
+- on Windows you'll see a prompt about allowing network access... this is for incoming UDP skode commands
 
 # behind the scenes
 
@@ -55,8 +62,10 @@ v0 F1,1             # use v1 modulator to change v0's frequency
 - [bestline](https://github.com/jart/bestline) *command session by jart*
 
 ## inspiration
-- [POKEY](https://en.wikipedia.org/wiki/POKEY)
-- [SID](https://en.wikipedia.org/wiki/MOS_Technology_6581)
+- [POKEY](https://en.wikipedia.org/wiki/POKEY) *the wonderful Atari 8-bit computer sound chip*
+- [SID](https://en.wikipedia.org/wiki/MOS_Technology_6581) *the amazing Commodore 8-bit computer sound chip*
+- [Ensoniq DOC](http://www.buchty.net/ensoniq/5503.html) *the fantastic 8-bit sample playback chip that changed synths forever*
+- [GUS](https://en.wikipedia.org/wiki/Gravis_UltraSound) *the IBM PC era 16-bit sample playback card that rocked my world*
 - [PureData](https://msp.ucsd.edu/) *make sounds with visual coding*
 - [ChucK](https://chuck.cs.princeton.edu/) *music programming language with time at the center*
 - [SonicPi](https://sonic-pi.net/) *a free open-source live coding environment*
