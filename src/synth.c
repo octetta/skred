@@ -817,13 +817,13 @@ char *voice_format(int v, char *out, int verbose) {
   }
 #ifdef SYNTH_FEATURE_MODULATION
   if (verbose || (sv.freq_mod_osc[v] >= 0 && sv.freq_mod_depth[v] > 0)) {
-    n = sprintf(ptr, " F%d,%g", sv.freq_mod_osc[v], sv.freq_mod_depth[v], sv.freq_mod_adder[v]);
+    n = sprintf(ptr, " F%d,%g,%g", sv.freq_mod_osc[v], sv.freq_mod_depth[v], sv.freq_mod_adder[v]);
 #endif /* SYNTH_FEATURE_MODULATION */
     ptr += n;
   }
 #ifdef SYNTH_FEATURE_MODULATION
   if (verbose || (sv.pan_mod_osc[v] >= 0 && sv.pan_mod_depth[v] > 0)) {
-    n = sprintf(ptr, " P%d,%g", sv.pan_mod_osc[v], sv.pan_mod_depth[v], sv.pan_mod_adder[v]);
+    n = sprintf(ptr, " P%d,%g,%g", sv.pan_mod_osc[v], sv.pan_mod_depth[v], sv.pan_mod_adder[v]);
 #endif /* SYNTH_FEATURE_MODULATION */
     ptr += n;
   }

@@ -52,7 +52,7 @@ $(OUT)/udp.o: udp.c udp.h
 $(OUT)/ands.o: ands.c ands.h
 	$(CC) $(COPTS) -c $< -o $@
 
-$(OUT)/skode.o: skode.c skode.h synth.def ands.h $(OUT)/ands.o
+$(OUT)/skode.o: skode.c skode.h ands.h $(OUT)/ands.o
 	$(CC) $(COPTS) -Wno-multichar -c $< -o $@
 
 $(OUT)/skred-mem.o : skred-mem.c
