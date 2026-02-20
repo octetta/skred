@@ -4,7 +4,6 @@ TARGET = linux
 CC = gcc
 LIB = -lm -lasound -pthread -lpthread -lrt
 COPTS = -D_GNU_SOURCE -Wall -march=native -O3
-# COPTS = -D_GNU_SOURCE -Wall -march=native -g # -O3
 
 UNAME_S = $(shell uname -s)
 
@@ -13,8 +12,6 @@ ifeq ($(UNAME_S), Darwin)
 	LIB = -lm -pthread -lpthread -framework CoreAudio -framework CoreFoundation 
 	TARGET = darwin
 	COPTS = -g -D_GNU_SOURCE -D_IS_OSX_ -Wall -arch arm64  -arch x86_64
-	# COPTS = -D_GNU_SOURCE -D_IS_OSX_ -Wall -arch arm64 
-	# DOPTS = -Wl,-stack_size,0x800000
 endif
 
 OUT = build/$(TARGET)
@@ -23,8 +20,6 @@ WINOUT = build/win
 SKRED = $(OUT)/skred
 
 all : $(SKRED)
-
-basic : $(SKRED)
 
 test :
 	gcc -pthread -o test_queue test_queue.c skqueue.c -I.
@@ -49,12 +44,10 @@ $(OUT)/miniwav.o : miniwav.c miniwav.h
 $(OUT)/amysamples.o : amysamples.c amysamples.h
 	$(CC) $(COPTS) -c $< -o $@
 
-synth.def: skred.h
-
 $(OUT)/retro.o: retro/retro.c retro/retro.h
 	$(CC) $(COPTS) -c $< -o $@
 
-$(OUT)/synth.o: synth.c synth.h synth-types.h synth.def
+$(OUT)/synth.o: synth.c synth.h synth-types.h
 	$(CC) $(COPTS) -c $< -o $@
 
 $(OUT)/seq.o: seq.c seq.h
@@ -69,10 +62,10 @@ $(OUT)/ands.o: ands.c ands.h
 $(OUT)/synth-alloc.o: synth-alloc.c
 	$(CC) $(COPTS) -c $< -o $@
 
-$(OUT)/skode.o: skode.c skode.h synth.def ands.h synth.c seq.c $(OUT)/ands.o
+$(OUT)/skode.o: skode.c skode.h ands.h synth.c seq.c $(OUT)/ands.o
 	$(CC) $(COPTS) -Wno-multichar -c $< -o $@
 
-$(OUT)/skred.o: skred.c skred.h synth.def
+$(OUT)/skred.o: skred.c skred.h
 	mkdir -p $(OUT)
 	$(CC) $(COPTS) -c $< -o $@
 
@@ -96,7 +89,6 @@ OBJS = \
 
 $(SKRED) : $(OBJS) | $(OUT)
 	$(CC) $(COPTS) $(DOPTS) $(OBJS) -o $@ $(LIB)
-	# $(CC) $(COPTS) $(OBJS) -o $(OUT)/skred $(LIB)
 
 mini-skred : mini-skred.c $(OBJS)
 	$(CC) \
@@ -123,67 +115,15 @@ $(OUT)/bestline.o: bestline.c bestline.h
 $(OUT)/miniaudio.o: miniaudio.c miniaudio.h
 	$(CC) $(COPTS) -c $< -o $@
 
-# Linker Flags
-# -s -w strips debug info for smaller binaries
-# -H=windowsgui hides the terminal window on Windows launch
-# -extldflags '-static...' ensures all C++ dependencies are bundled into the exe
-WIN_LDFLAGS="-H=windowsgui -s -w -extldflags '-static -static-libgcc -static-libstdc++'"
-LINUX_LDFLAGS="-s -w"
-
-# go install fyne.io/tools/cmd/fyne@latest
-
 win : skred-windows
 
 skred-windows :
 	mkdir -p $(WINOUT)
 	$(MAKE) -f Makefile.win
 
-GOWINENV = CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++
-GOWINLD = -ldflags="-H=windowsgui -s -w -extldflags '-static -static-libgcc -static-libstdc++'"
-
-sk8-repl-linux:
-	mkdir -p $(OUT)
-	cd sk8-repl && go build -ldflags="-s -w" -o ../$(OUT)/sk8-repl .
-
-sk8-repl-windows:
-	mkdir -p $(WINOUT)
-	cd sk8-repl && \
-    CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
-    CC=x86_64-w64-mingw32-gcc \
-    CXX=x86_64-w64-mingw32-g++ \
-    go build -ldflags="-H=windowsgui -s -w -extldflags '-static'" -o ../$(WINOUT)/sk8-repl.exe .
-
 check : $(SKRED)
 	valgrind --tool=memcheck --leak-check=full ./$(SKRED) -n
 
 clean :
 	rm -rf build
-	rm -rf bundle-skred-*
 	find . -name '*.exe' -exec rm -f {} \;
-
-REL = bundle-skred-windows-2026-01-20-002
-
-install-win :
-	rm -rf $(REL)
-	mkdir -p $(REL)
-	mkdir -p $(REL)/sk
-	mkdir -p $(REL)/wav
-	cd $(REL) ; \
-    cp ../$(WINOUT)/skred.exe . ; \
-    cp ../../sk/909.sk sk ; \
-    cp ../../wav/24.wav wav ; \
-    # upx --best *.exe
-	rm -f $(REL).zip
-	zip -r $(REL).zip $(REL)
-
-install-darwin :
-	rm -rf $(REL)
-	mkdir -p $(REL)
-	mkdir -p $(REL)/sk
-	mkdir -p $(REL)/wav
-	cd $(REL) ; \
-    cp ../skred . ; \
-    cp ../sk/909.sk sk ; \
-    cp ../wav/24.wav wav ; \
-	rm -f $(REL).zip
-	zip -r $(REL).zip $(REL)
