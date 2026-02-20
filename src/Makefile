@@ -26,12 +26,6 @@ all : $(SKRED)
 
 basic : $(SKRED)
 
-GUI = \
-    repl-$(TARGET) \
-    #
-
-gui : $(GUI)
-
 test :
 	gcc -pthread -o test_queue test_queue.c skqueue.c -I.
 	gcc -pthread -o test_heap test_heap.c skqueue.c -I.
@@ -138,14 +132,7 @@ LINUX_LDFLAGS="-s -w"
 
 # go install fyne.io/tools/cmd/fyne@latest
 
-repl-linux:
-	mkdir -p $(OUT)
-	cd repl && go build -o ../$(OUT)/repl-$(TARGET) .
-	# cd sk8r && fyne package -exe ../$(OUT)/sk8r -os linux -tags flatpak -icon icon.png -app-id com.example.app -app-version 0.0.1
-
 win : skred-windows
-
-win-gui : udp-term-windows
 
 skred-windows :
 	mkdir -p $(WINOUT)
@@ -153,13 +140,6 @@ skred-windows :
 
 GOWINENV = CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++
 GOWINLD = -ldflags="-H=windowsgui -s -w -extldflags '-static -static-libgcc -static-libstdc++'"
-
-repl-windows:
-	mkdir -p $(WINOUT)
-	cd repl && \
-  $(GOWINENV) go build $(GOWINLD) -o skrepl.exe . && \
-	fyne package --os windows --name "skrepl" --icon icon.png --appID com.octetta.skrepl && \
-  cp skrepl.exe ../$(WINOUT)
 
 sk8-repl-linux:
 	mkdir -p $(OUT)
