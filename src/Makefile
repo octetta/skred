@@ -28,8 +28,6 @@ basic : $(SKRED)
 
 GUI = \
     repl-$(TARGET) \
-    manage-$(TARGET) \
-    udp-term-$(TARGET) \
     #
 
 gui : $(GUI)
@@ -140,28 +138,6 @@ LINUX_LDFLAGS="-s -w"
 
 # go install fyne.io/tools/cmd/fyne@latest
 
-manage-linux:
-	mkdir -p $(OUT)
-	cd manage && go build -o ../$(OUT)/manage-$(TARGET) .
-
-udp-term-linux:
-	mkdir -p $(OUT)
-	cd udp-term && go build -o ../$(OUT)/udp-term-$(TARGET) .
-
-manage-darwin:
-	mkdir -p $(OUT)
-	cd manage && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/manage-darwin-amd64 .
-	cd manage && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/manage-darwin-arm64 .
-	cd manage && lipo -create -output ../$(OUT)/manage-darwin-universal ../$(OUT)/manage-darwin-amd64 ../$(OUT)/manage-darwin-arm64
-	cd manage && fyne package -exe ../$(OUT)/manage-darwin-universal -os darwin -icon icon.png -name ../$(OUT)/manage
-
-udp-term-darwin:
-	mkdir -p $(OUT)
-	cd udp-term && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/udp-term-darwin-amd64 .
-	cd udp-term && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/udp-term-darwin-arm64 .
-	cd udp-term && lipo -create -output ../$(OUT)/udp-term-darwin-universal ../$(OUT)/udp-term-darwin-amd64 ../$(OUT)/udp-term-darwin-arm64
-	cd udp-term && fyne package -exe ../$(OUT)/udp-term-darwin-universal -os darwin -icon icon.png -name ../$(OUT)/udp-term
-
 repl-linux:
 	mkdir -p $(OUT)
 	cd repl && go build -o ../$(OUT)/repl-$(TARGET) .
@@ -184,19 +160,6 @@ repl-windows:
   $(GOWINENV) go build $(GOWINLD) -o skrepl.exe . && \
 	fyne package --os windows --name "skrepl" --icon icon.png --appID com.octetta.skrepl && \
   cp skrepl.exe ../$(WINOUT)
-
-manage-windows:
-	mkdir -p $(OUT)
-	cd manage && \
-  	$(GOWINENV) go build $(GOWINLD) -o manage.exe . && \
-    fyne package --os windows --name "manage" --icon icon.png --appID com.octetta.manage && \
-    mv manage.exe ../$(WINOUT)
-
-udp-term-windows:
-	mkdir -p $(OUT)
-	cd udp-term && \
-  	CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC=x86_64-w64-mingw32-gcc go build -o udp-term.exe . && \
-    mv udp-term.exe ../$(WINOUT)
 
 sk8-repl-linux:
 	mkdir -p $(OUT)
