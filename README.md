@@ -70,6 +70,8 @@ v0 F1,1             # use v1 modulator to change v0's frequency
 - [ChucK](https://chuck.cs.princeton.edu/) *music programming language with time at the center*
 - [SonicPi](https://sonic-pi.net/) *a free open-source live coding environment*
 - [AMY](https://github.com/shorepine/amy) *A high-performance fixed-point Music synthesizer librarY for microcontrollers* 
+- [Casio SK-1](https://en.wikipedia.org/wiki/Casio_SK-1) *first sampler that didn't feel like a science experiment*
+- [Casio CZ](https://en.wikipedia.org/wiki/Casio_CZ_synthesizers) *my very first synth*
 
 ## heroes
 - [Robert Moog](https://en.wikipedia.org/wiki/Robert_Moog)
