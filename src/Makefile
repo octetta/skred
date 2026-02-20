@@ -27,7 +27,6 @@ all : $(SKRED)
 basic : $(SKRED)
 
 GUI = \
-  sk8r-$(TARGET) \
     midi-sk8-$(TARGET) \
     repl-$(TARGET) \
     manage-$(TARGET) \
@@ -142,11 +141,6 @@ LINUX_LDFLAGS="-s -w"
 
 # go install fyne.io/tools/cmd/fyne@latest
 
-sk8r-linux:
-	mkdir -p $(OUT)
-	cd sk8r && go build -o ../$(OUT)/sk8r-$(TARGET) .
-	# cd sk8r && fyne package -exe ../$(OUT)/sk8r -os linux -tags flatpak -icon icon.png -app-id com.example.app -app-version 0.0.1
-
 manage-linux:
 	mkdir -p $(OUT)
 	cd manage && go build -o ../$(OUT)/manage-$(TARGET) .
@@ -173,13 +167,6 @@ repl-linux:
 	mkdir -p $(OUT)
 	cd repl && go build -o ../$(OUT)/repl-$(TARGET) .
 	# cd sk8r && fyne package -exe ../$(OUT)/sk8r -os linux -tags flatpak -icon icon.png -app-id com.example.app -app-version 0.0.1
-
-sk8r-darwin:
-	mkdir -p $(OUT)
-	cd sk8r && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/sk8r-darwin-amd64 .
-	cd sk8r && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/sk8r-darwin-arm64 .
-	lipo -create -output $(OUT)/sk8r-darwin-universal $(OUT)/sk8r-darwin-amd64 $(OUT)/sk8r-darwin-arm64
-	cd sk8r && fyne package -exe ../$(OUT)/sk8r-darwin-universal -os darwin -icon icon.png -name ../$(OUT)/sk8r
 
 win : skred-windows
 
@@ -211,18 +198,6 @@ udp-term-windows:
 	cd udp-term && \
   	CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC=x86_64-w64-mingw32-gcc go build -o udp-term.exe . && \
     mv udp-term.exe ../$(WINOUT)
-
-sk8r-windows:
-	mkdir -p $(WINOUT)
-	cd sk8r && \
-    $(GOWINENV) \
-    fyne package --release -os windows && \
-    cp sk8r.exe ../$(WINOUT)
-
-xsk8r-windows: # keep note of the old way we built things...
-	mkdir -p $(WINOUT)
-	cd sk8r && \
-  $(GOWINENV) go build $(GOWINLD) -o ../$(WINOUT)/sk8r.exe .
 
 setup-midi:
 	sudo dnf install mingw64-gcc mingw64-winpthreads-static alsa-lib-devel
@@ -275,7 +250,6 @@ install-win :
 	mkdir -p $(REL)/wav
 	cd $(REL) ; \
     cp ../$(WINOUT)/skred.exe . ; \
-    cp ../$(WINOUT)/sk8r.exe . ; \
     cp ../$(WINOUT)/midi-sk8.exe . ; \
     cp ../../sk/909.sk sk ; \
     cp ../../wav/24.wav wav ; \
@@ -290,7 +264,6 @@ install-darwin :
 	mkdir -p $(REL)/wav
 	cd $(REL) ; \
     cp ../skred . ; \
-    cp -r ../build/darwin/sk8r.app . ; \
     cp -r ../build/darwin/midi-sk8.app . ; \
     cp ../sk/909.sk sk ; \
     cp ../wav/24.wav wav ; \
