@@ -1,6 +1,2 @@
 [tools]
-elixir = "latest"
-emsdk = "latest"
-erlang = "latest"
-ripgrep = "latest"
 zig = "0.13.0"
