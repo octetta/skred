@@ -1,4 +1,0 @@
-#!/bin/bash
-TARGET=linux
-if [[ "$(uname)" == "Darwin" ]]; then TARGET=darwin; fi
-./src/build/$TARGET/scope $@

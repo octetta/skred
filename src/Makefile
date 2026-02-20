@@ -22,13 +22,9 @@ WINOUT = build/win
 
 SKRED = $(OUT)/skred
 
-SCOPE = $(OUT)/scope
-
 all : $(SKRED)
 
 basic : $(SKRED)
-
-visual : $(SCOPE)
 
 GUI = \
   sk8r-$(TARGET) \
@@ -51,10 +47,6 @@ $(OUT)/util.o : util.c
 $(OUT)/skred-mem.o : skred-mem.c
 	mkdir -p $(OUT)
 	$(CC) $(COPTS) -c $< -o $@
-
-$(SCOPE) :
-	mkdir -p $(OUT)
-	$(MAKE) -f Makefile.$(TARGET).scope
 
 $(OUT)/wav2data : wav2data.c miniwav.o
 	$(CC) $(COPTS) -D_GNU_SOURCE $^ -o $@
@@ -294,7 +286,6 @@ check : $(SKRED)
 
 clean :
 	rm -rf build
-	cd raylib/src && make clean
 	rm -rf bundle-skred-*
 	find . -name '*.exe' -exec rm -f {} \;
 
@@ -307,7 +298,6 @@ install-win :
 	mkdir -p $(REL)/wav
 	cd $(REL) ; \
     cp ../$(WINOUT)/skred.exe . ; \
-    cp ../$(WINOUT)/scope.exe . ; \
     cp ../$(WINOUT)/sk8r.exe . ; \
     cp ../$(WINOUT)/midi-sk8.exe . ; \
     cp ../$(WINOUT)/sk8-pad.exe . ; \
@@ -327,7 +317,6 @@ install-darwin :
     cp -r ../build/darwin/sk8r.app . ; \
     cp -r ../build/darwin/sk8-pad.app . ; \
     cp -r ../build/darwin/midi-sk8.app . ; \
-    cp -r ../build/darwin/Skope.app . ; \
     cp ../sk/909.sk sk ; \
     cp ../wav/24.wav wav ; \
 	rm -f $(REL).zip

@@ -5,7 +5,6 @@ OUT = build/win
 
 EXE = \
 	$(OUT)/skred.exe \
-	$(OUT)/scope.exe \
   #
 
 all : $(EXE)
@@ -81,24 +80,9 @@ OBJS = \
 $(OUT)/skred.exe : $(OBJS)
 	$(CC) $(COPTS) $^ -o $@ $(LIB) -static
 
-$(OUT)/scope.exe : scope.c $(OUT)/skred-mem.o build/win/libraylib.a
-	$(CC) -D_GNU_SOURCE -L build/win -I raylib/src $^ -o $@ -lraylib -lm -lgdi32 -lwinmm -lwinpthread -mwindows
-
-build/win/libraylib.a :
-	mkdir -p build/win
-	cd raylib/src && make clean && \
-  make PLATFORM=PLATFORM_DESKTOP RAYLIB_LIBTYPE=STATIC OS=Windows_NT \
-  CC=x86_64-w64-mingw32-gcc \
-  AR=x86_64-w64-mingw32-ar \
-  && cp libraylib.a ../../build/win/
-
 $(OUT)/miniaudio.o: miniaudio.c miniaudio.h
 	$(CC) -c $< -o $@
 
 clean :
 	rm -f $(OUT)/*.o
 	rm -f $(EXE)
-
-test-windows :
-	$(CC) test-windows-audio.c -o tone.exe
-	wine tone.exe
