@@ -28,7 +28,6 @@ basic : $(SKRED)
 
 GUI = \
   sk8r-$(TARGET) \
-  sk8-pad-$(TARGET) \
     midi-sk8-$(TARGET) \
     repl-$(TARGET) \
     manage-$(TARGET) \
@@ -184,7 +183,6 @@ sk8r-darwin:
 
 win : skred-windows
 
-# win-gui : sk8r-windows midi-sk8-windows sk8-pad-windows skred-windows repl-windows
 win-gui : udp-term-windows
 
 skred-windows :
@@ -248,27 +246,6 @@ midi-sk8-windows:
     fyne package --release -os windows && \
     cp midi-sk8.exe ../$(WINOUT)
 
-
-sk8-pad-linux:
-	mkdir -p $(OUT)
-	cd sk8-pad && go build -ldflags="-s -w" -o ../$(OUT)/sk8-pad-linux .
-
-sk8-pad-darwin:
-	mkdir -p $(OUT)
-	cd sk8-pad && \
-	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/sk8-pad-darwin-amd64 . && \
-	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/sk8-pad-darwin-arm64 . && \
-	lipo -create -output ../$(OUT)/sk8-pad-darwin-universal ../$(OUT)/sk8-pad-darwin-amd64 ../$(OUT)/sk8-pad-darwin-arm64
-	cd sk8-pad && fyne package -exe ../$(OUT)/sk8-pad-darwin-universal -os darwin -icon icon.png -name ../$(OUT)/sk8-pad
-
-sk8-pad-windows:
-	mkdir -p $(WINOUT)
-	cd sk8-pad && \
-    $(GOWINENV) \
-    fyne package --release -os windows && \
-    cp sk8-pad.exe ../$(WINOUT)
-
-
 sk8-repl-linux:
 	mkdir -p $(OUT)
 	cd sk8-repl && go build -ldflags="-s -w" -o ../$(OUT)/sk8-repl .
@@ -300,7 +277,6 @@ install-win :
     cp ../$(WINOUT)/skred.exe . ; \
     cp ../$(WINOUT)/sk8r.exe . ; \
     cp ../$(WINOUT)/midi-sk8.exe . ; \
-    cp ../$(WINOUT)/sk8-pad.exe . ; \
     cp ../../sk/909.sk sk ; \
     cp ../../wav/24.wav wav ; \
     # upx --best *.exe
@@ -315,7 +291,6 @@ install-darwin :
 	cd $(REL) ; \
     cp ../skred . ; \
     cp -r ../build/darwin/sk8r.app . ; \
-    cp -r ../build/darwin/sk8-pad.app . ; \
     cp -r ../build/darwin/midi-sk8.app . ; \
     cp ../sk/909.sk sk ; \
     cp ../wav/24.wav wav ; \
