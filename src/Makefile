@@ -27,7 +27,6 @@ all : $(SKRED)
 basic : $(SKRED)
 
 GUI = \
-    midi-sk8-$(TARGET) \
     repl-$(TARGET) \
     manage-$(TARGET) \
     udp-term-$(TARGET) \
@@ -199,28 +198,6 @@ udp-term-windows:
   	CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC=x86_64-w64-mingw32-gcc go build -o udp-term.exe . && \
     mv udp-term.exe ../$(WINOUT)
 
-setup-midi:
-	sudo dnf install mingw64-gcc mingw64-winpthreads-static alsa-lib-devel
-	cd midi-sk8 && go mod tidy
-
-midi-sk8-linux:
-	mkdir -p $(OUT)
-	cd midi-sk8 && go build -o ../$(OUT)/midi-sk8-linux .
-
-midi-sk8-darwin:
-	mkdir -p $(OUT)
-	cd midi-sk8 && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ../$(OUT)/midi-sk8-darwin-amd64 .
-	cd midi-sk8 && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o ../$(OUT)/midi-sk8-darwin-arm64 .
-	cd midi-sk8 && lipo -create -output ../$(OUT)/midi-sk8-darwin-universal ../$(OUT)/midi-sk8-darwin-amd64 ../$(OUT)/midi-sk8-darwin-arm64
-	cd midi-sk8 && fyne package -exe ../$(OUT)/midi-sk8-darwin-universal -os darwin -icon icon.png -name ../$(OUT)/midi-sk8
-
-midi-sk8-windows:
-	mkdir -p $(WINOUT)
-	cd midi-sk8 && \
-    $(GOWINENV) \
-    fyne package --release -os windows && \
-    cp midi-sk8.exe ../$(WINOUT)
-
 sk8-repl-linux:
 	mkdir -p $(OUT)
 	cd sk8-repl && go build -ldflags="-s -w" -o ../$(OUT)/sk8-repl .
@@ -250,7 +227,6 @@ install-win :
 	mkdir -p $(REL)/wav
 	cd $(REL) ; \
     cp ../$(WINOUT)/skred.exe . ; \
-    cp ../$(WINOUT)/midi-sk8.exe . ; \
     cp ../../sk/909.sk sk ; \
     cp ../../wav/24.wav wav ; \
     # upx --best *.exe
@@ -264,7 +240,6 @@ install-darwin :
 	mkdir -p $(REL)/wav
 	cd $(REL) ; \
     cp ../skred . ; \
-    cp -r ../build/darwin/midi-sk8.app . ; \
     cp ../sk/909.sk sk ; \
     cp ../wav/24.wav wav ; \
 	rm -f $(REL).zip
