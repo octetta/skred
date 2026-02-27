@@ -62,7 +62,7 @@ static double ands_strtod(char *s) {
 
 #define ARG_MAX (8)
 #define ATOM_MAX (4)
-#define ATOM_NIL (0x5f5f5f5f)
+#define ATOM_NIL (0x2d2d2d2d)
 #define VAR_MAX (10)
 
 // ============================================================================
@@ -139,7 +139,7 @@ typedef struct ands_s {
     int arg_cap;
     
     // Atom state
-    int atom_num;
+    atom_t atom_num;
     
     // Parser state
     int state;
@@ -173,11 +173,11 @@ typedef struct ands_s {
 
 /**
  * Pack atom string into 32-bit integer for fast switching.
- * Example: "f" becomes 'f___' (0x665f5f5f)
+ * Example: "f" becomes 'f---' (0x662d2d2d)
  * Uses network byte order for consistency.
  */
 static void atom_finish(ands_t *s) {
-    int i = ATOM_NIL;  // Start with '____' (0x5f5f5f5f)
+    uint32_t i = ATOM_NIL;  // Start with '----' (0x2d2d2d2d)
     char *p = (char *)&i;
     int len = s->atom.len < ATOM_MAX ? s->atom.len : ATOM_MAX;
     for (int n = 0; n < len; n++) {
@@ -488,7 +488,7 @@ void ands_free(ands_t *s) {
 }
 
 // Accessor functions
-int ands_atom_num(ands_t *s) { return s->atom_num; }
+uint32_t ands_atom_num(ands_t *s) { return s->atom_num; }
 int ands_arg_len(ands_t *s) { return s->arg_len; }
 double *ands_arg(ands_t *s) { return s->arg; }
 void *ands_user(ands_t *s) { return s->user; }

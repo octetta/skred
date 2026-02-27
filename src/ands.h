@@ -1,6 +1,8 @@
 #ifndef _ANDS_H_
 #define _ANDS_H_
 
+#include <stdint.h>
+
 enum {
   START = 0, // 0
   GET_NUMBER,
@@ -25,11 +27,12 @@ enum {
 };
 
 typedef struct ands_s ands_t;
+typedef uint32_t atom_t;
 
 ands_t *ands_new(int (*fn)(ands_t *s, int info), void *user);
 void ands_free(ands_t *s);
 int ands_consume(ands_t *s, char *line, int (*fn)(ands_t *s, int info));
-int ands_atom_num(ands_t *s);
+uint32_t ands_atom_num(ands_t *s);
 char *ands_atom_string(ands_t *s);
 int ands_arg_len(ands_t *s);
 double *ands_arg(ands_t *s);
@@ -64,6 +67,8 @@ double ands_get_local(ands_t *s, int n);
 
 char *ands_string_to_external(ands_t *s, char *dst, int len);
 char *ands_string_from_external(ands_t *s, char *src, int len);
+
+#define ATOM4(c) (c)
 
 #endif
 

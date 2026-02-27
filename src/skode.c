@@ -723,7 +723,7 @@ void wave_table_dynamic_expand(int n) {
 #include <unistd.h>
 
 int skode_function(ands_t *s, int info) {
-  int atom = ands_atom_num(s);
+  uint32_t atom = ands_atom_num(s);
   int argc = ands_arg_len(s);
   skode_t *ctx = (skode_t*)ands_user(s);
   double *arg = ands_arg(s);
@@ -738,10 +738,10 @@ int skode_function(ands_t *s, int info) {
     ctx->puts(ctx, "");
   }
   switch (atom) {
-    case 'a___': // amp loudness
+    case ATOM4('a---'): // amp loudness
       if (argc) amp_set(voice, arg[0]);
       break;
-    case 'A___': // AM voice depth
+    case ATOM4('A---'): // AM voice depth
       if (argc < 2) {
         amp_mod_set(voice, -1, 0, 0);
       } else if (argc > 1) {
@@ -750,11 +750,11 @@ int skode_function(ands_t *s, int info) {
         amp_mod_set(voice, x, arg[1], a);
       }
       break;
-    case 'b___': // wave-direction bool
+    case ATOM4('b---'): // wave-direction bool
       if (argc == 0) { wave_dir(voice, -1); } else { wave_dir(voice, x); } break;
-    case 'B___': // wave-loop bool
+    case ATOM4('B---'): // wave-loop bool
       if (argc == 0) { wave_loop(voice, -1); } else { wave_loop(voice, x); } break;
-    case 'c___': // phase-distortion algo distortion
+    case ATOM4('c---'): // phase-distortion algo distortion
       if (argc == 0) {
         cz_set(voice, 0, .5);
       } else if (argc == 1) {
@@ -763,20 +763,20 @@ int skode_function(ands_t *s, int info) {
         cz_set(voice, x, arg[1]);
       }
       break;
-    case 'C___': // PD-mod voice depth
+    case ATOM4('C---'): // PD-mod voice depth
       if (argc < 2) {
         cmod_set(voice, -1, 0);
       } else if (argc > 1) {
         cmod_set(voice, x, arg[1]);
       }
       break;
-    case 'D___': // data-size
+    case ATOM4('D---'): // data-size
       // need to use the data array in skode here, not ctx->data
       break;
-    case 'f___': // freq hz
+    case ATOM4('f---'): // freq hz
       if (argc) freq_set(voice, arg[0]);
       break;
-    case 'F___': // FM voice depth
+    case ATOM4('F---'): // FM voice depth
       if (argc <= 1) {
         freq_mod_set(voice, -1, 0, 0);
       } else if (argc > 1) {
@@ -785,7 +785,7 @@ int skode_function(ands_t *s, int info) {
         freq_mod_set(voice, x, arg[1], a);
       }
       break;
-    case 'g___': // glissando speed
+    case ATOM4('g---'): // glissando speed
       if (argc) {
         if (arg[0] <= 0) {
 #ifdef SYNTH_FEATURE_GLISSANDO
@@ -799,24 +799,24 @@ int skode_function(ands_t *s, int info) {
         }
       }
       break;
-    case 'G___': // link-midi voice [voice]
+    case ATOM4('G---'): // link-midi voice [voice]
       if (argc) {
         sv.link_midi_a[voice] = x;
         if (argc > 1) sv.link_midi_b[voice] = (int)arg[1];
       }
       break;
-    case 'h___': // sample-hold phase-count
+    case ATOM4('h---'): // sample-hold phase-count
 #ifdef SYNTH_FEATURE_SAMPLE_HOLD
       if (argc) { sv.sample_hold_max[voice] = x; } break;
 #endif /* SYNTH_FEATURE_SAMPLE_HOLD */
-    case 'H___': // link-velo voice [voice]
+    case ATOM4('H---'): // link-velo voice [voice]
       if (argc) {
         sv.link_velo_a[voice] = x;
         if (argc > 1) sv.link_velo_b[voice] = (int)arg[1];
       }
       break;
     // TODO re-allocate the data/array buffer with the arg
-    case '/D__': // resize-data count
+    case ATOM4('/D--'): // resize-data count
       if (argc) {
         // free and re-allocate...
         if (x > 0) ands_data_resize(ctx->parse, x);
@@ -826,11 +826,11 @@ int skode_function(ands_t *s, int info) {
         ands_data_cap(ctx->parse),
         ands_data_len(ctx->parse));
       break;
-    case 'I___': // log-event bool
+    case ATOM4('I---'): // log-event bool
       if (argc) {} break; // TODO en/dis-able send timestamp wire to the event logger
-    case 'L___': // link-trigger voice
+    case ATOM4('L---'): // link-trigger voice
       if (argc) { sv.link_trig[voice] = x; } break;
-    case 'J___': // filter-mode selector
+    case ATOM4('J---'): // filter-mode selector
       if (argc) {
 #ifdef SYNTH_FEATURE_FILTER
         sv.filter_mode[voice] = x;
@@ -842,38 +842,38 @@ int skode_function(ands_t *s, int info) {
 #endif /* SYNTH_FEATURE_FILTER */
       }
       break;
-    case 'K___': // filter-cutoff freq
+    case ATOM4('K---'): // filter-cutoff freq
       if (argc) { mmf_set_freq(voice, arg[0]); } break;
-    case 'k___': // adsr-mode bool
+    case ATOM4('k---'): // adsr-mode bool
 #ifdef SYNTH_FEATURE_AMP_ENVELOPE
       if (argc) { sv.amp_envelope_mode[voice] = x; } break;
 #endif /* SYNTH_FEATURE_AMP_ENVELOPE */
-    case 'udp_': // show-udp
+    case ATOM4('udp-'): // show-udp
       if (argc) {
         ctx->printf(ctx, "# udp [%d] %d/%d\n", ctx->which, ctx->ip, ctx->port);
       }
       break;
-    case 'log_': // log-enable bool
+    case ATOM4('log-'): // log-enable bool
       if (argc) {
         if (x) { ctx->log_enable = 1; } else { ctx->log_enable = 0; }
       }
       break;
-    case 'l___': // velocity amount
+    case ATOM4('l---'): // velocity amount
       if (argc) {
         envelope_velocity(voice, arg[0]);
         if (sv.link_velo_a[voice] >= 0) envelope_velocity(sv.link_velo_a[voice], arg[0]);
         if (sv.link_velo_b[voice] >= 0) envelope_velocity(sv.link_velo_b[voice], arg[0]);
       }
       break;
-    case 'm___': // mute-audio bool
+    case ATOM4('m---'): // mute-audio bool
       if (argc) { wave_mute(voice, x); }
       break;
 #ifndef MINI
-    case 'M___': // tempo bpm
+    case ATOM4('M---'): // tempo bpm
       if (argc) { tempo_set(arg[0]); }
       break;
 #endif
-    case 'n___': // midi-freq note-number
+    case ATOM4('n---'): // midi-freq note-number
       if (argc) {
         float note = arg[0];
         if (isnan(note)) note = sv.last_midi_note[voice];
@@ -882,7 +882,7 @@ int skode_function(ands_t *s, int info) {
         if (sv.link_midi_b[voice] >= 0) freq_midi(sv.link_midi_b[voice], note);
       }
       break;
-    case 'N___': // detune-midi key cents
+    case ATOM4('N---'): // detune-midi key cents
       if (argc) {
         if (isnan(arg[0])) {
           // do nothing
@@ -892,10 +892,10 @@ int skode_function(ands_t *s, int info) {
         if (argc > 1) sv.midi_cents[voice] = arg[1];
       }
       break;
-    case 'p___': // pan value
+    case ATOM4('p---'): // pan value
       if (argc) pan_set(voice, arg[0]);
       break;
-    case 'P___': // pan-mod voice depth
+    case ATOM4('P---'): // pan-mod voice depth
       if (argc < 2) {
         pan_mod_set(voice, -1, 0, 0);
       } else if (argc > 1) {
@@ -904,26 +904,26 @@ int skode_function(ands_t *s, int info) {
         pan_mod_set(voice, x, arg[1], a);
       }
       break;
-    case 'q___':  // bit-crush bit-depth
+    case ATOM4('q---'):  // bit-crush bit-depth
       if (argc) { wave_quant(voice, x); }
       break;
-    case 'Q___':
+    case ATOM4('Q---'):
       if (argc) { mmf_set_res(voice, arg[0]); }
       break;
 #ifndef MINI
-    case 'r___': // record-mode bool
+    case ATOM4('r---'): // record-mode bool
       if (argc) { if (rec_state == 0) sv.record[voice] = x; }
       break;
-    case 'R!__':  // remove-events tag
+    case ATOM4('R!--'):  // remove-events tag
       if (argc) {
         int tag = x;
         seq_kill_by_tag(tag);
       }
       break;
-    case 'R!!_':
+    case ATOM4('R!!-'):
       seq_kill_all();
       break;
-    case 'R\'__': // repeat-string-tempo count delay [tag]
+    case ATOM4('R\\--'): // repeat-string-tempo count delay [tag]
       if (argc > 1) {
         uint64_t qt = SAMPLE_COUNT_GET();
         double t = (tempo_time_per_step * 4.0f);
@@ -936,7 +936,7 @@ int skode_function(ands_t *s, int info) {
           qt += dt;
         }
       } break;
-    case 'R___': // repeat-string count delay [tag]
+    case ATOM4('R---'): // repeat-string count delay [tag]
       if (argc > 1) {
         uint64_t qt = SAMPLE_COUNT_GET();
         double fdt = arg[1] * (float)MAIN_SAMPLE_RATE;
@@ -949,7 +949,7 @@ int skode_function(ands_t *s, int info) {
         }
       } break;
 #endif
-    case 's___': // volume-smooth bool
+    case ATOM4('s---'): // volume-smooth bool
       if (argc) {
         if (arg[0] <= 0) {
 #ifdef SYNTH_FEATURE_SMOOTHER
@@ -963,13 +963,13 @@ int skode_function(ands_t *s, int info) {
         }
       }
       break;
-    case 'S___': // voice-reset voice
+    case ATOM4('S---'): // voice-reset voice
       if (argc) wave_reset(voice, x);
       break;
-    case 't___': // adsr-set attack decay sustain release
+    case ATOM4('t---'): // adsr-set attack decay sustain release
       if (argc > 3) envelope_set(voice, arg[0], arg[1], arg[2], arg[3]);
       break;
-    case 'T___': // trigger
+    case ATOM4('T---'): // trigger
       {
 #if 1
         envelope_velocity(voice, 1);
@@ -981,13 +981,13 @@ int skode_function(ands_t *s, int info) {
 #endif
       }
       break;
-    case 'v___': // voice-select voice
+    case ATOM4('v---'): // voice-select voice
       if (argc) voice_set(x, &ctx->voice);
       break;
-    case 'V___': // main-volume loudness
+    case ATOM4('V---'): // main-volume loudness
       if (argc) volume_set(arg[0]);
       break;
-    case 'w___': // wave-select which-wave interpolate? one-shot?
+    case ATOM4('w---'): // wave-select which-wave interpolate? one-shot?
       if (argc) {
         wave_set(voice, x);
         int n;
@@ -1004,7 +1004,7 @@ int skode_function(ands_t *s, int info) {
 #endif
       }
       break;
-    case 'W___': // wave-show which-wave
+    case ATOM4('W---'): // wave-show which-wave
       if (argc) {
         wavetable_show(ctx,x);
 #ifndef MINI
@@ -1024,7 +1024,7 @@ int skode_function(ands_t *s, int info) {
       }
       break;
 #ifndef MINI
-    case 'x___': // set-step-string step
+    case ATOM4('x---'): // set-step-string step
       if (argc) {
         if (arg[0] == NAN || x < 0) {
           ctx->step++;
@@ -1037,23 +1037,23 @@ int skode_function(ands_t *s, int info) {
         }
       }
       break;
-    case 'y___': // select-pattern which
+    case ATOM4('y---'): // select-pattern which
       if (argc) {
         ctx->pattern = x;
         scope_pattern_pointer = x;
       }
       break;
-    case 'Y___': // clear-pattern which
+    case ATOM4('Y---'): // clear-pattern which
       if (argc && x >= 0 && x < PATTERNS_MAX) {
         pattern_reset(x);
       }
       break;
-    case 'z___': // one-pattern-play-mode bool
+    case ATOM4('z---'): // one-pattern-play-mode bool
       if (argc) {
         seq_state_set(ctx->pattern, x);
       } else pattern_show(ctx, ctx->pattern);
       break;
-    case 'Z___': // all-pattern-play-mode bool
+    case ATOM4('Z---'): // all-pattern-play-mode bool
       if (argc) {
         seq_state_all(x);
       } else {
@@ -1062,30 +1062,30 @@ int skode_function(ands_t *s, int info) {
       }
       break;
 #endif
-    case '?___': // show-voice
+    case ATOM4('?---'): // show-voice
       voice_show(ctx, voice, ' ', ctx->verbose); break;
-    case '\\___': // verbose-show-voice
+    case ATOM4('\\---'): // verbose-show-voice
       voice_show(ctx, voice, ' ', 1); break;
-    case '??__': // show-active-voices
+    case ATOM4('??--'): // show-active-voices
       voice_show_all(ctx, voice, ctx->verbose); break;
-    case '?s__': // show-skode-string
+    case ATOM4('?s--'): // show-skode-string
       {
         ctx->printf(ctx, "# {%}s\n", ands_string(ctx->parse));
       }
       break;
-    case 'l>g_':
+    case ATOM4('l>g-'):
       if (argc) ands_local_to_global(ctx->parse, x);
       break;
-    case 'g>l_':
+    case ATOM4('g>l-'):
       if (argc) ands_global_to_local(ctx->parse, x);
       break;
-    case '/m__': // benchmark voice
+    case ATOM4('/m_-'): // benchmark voice
       synth_voice_bench(voice);
       break;
-    case '/q__': // quit
+    case ATOM4('/q--'): // quit
       ctx->quit = -1;
       return 0;
-    case '/d__': // data-to-wave slot rate rate offset
+    case ATOM4('/d--'): // data-to-wave slot rate rate offset
       {
         int wave_slot = EXT_SAMPLE_000;
         int one_shot = 0;
@@ -1098,30 +1098,30 @@ int skode_function(ands_t *s, int info) {
         data_load(ctx, wave_slot, one_shot, rate, offset);
       }
       break;
-    case '/f__': // flag-mode num
+    case ATOM4('/f--'): // flag-mode num
       if (argc) { ctx->flag = x; }
       else { ctx->printf(ctx, "# /f%d\n", ctx->flag); }
       break;
-    case '/c__': // chunk-mode bool
+    case ATOM4('/c--'): // chunk-mode bool
       if (argc) { ands_chunk_mode(ctx->parse, x); }
       else { ctx->printf(ctx, "# /c%d\n", ands_chunk_mode_get(ctx->parse)); }
       break;
-    case '/t__': // trace-mode num
+    case ATOM4('/t--'): // trace-mode num
       if (argc == 0) x = (ctx->trace) ? 0 : 1;
       ctx->trace = x;
       ands_trace_set(s, x > 1);
       break;
-    case '/v__': // verbose-mode num
+    case ATOM4('/v--'): // verbose-mode num
       if (argc == 0) x = (ctx->verbose) ? 0 : 1;
       ctx->verbose = x;
       break;
-    case '<e__': // external-string-to-skode external-index
+    case ATOM4('<e--'): // external-string-to-skode external-index
       if (arg == 0) {
       } else {
         ands_string_from_external(ctx->parse, EXTRA_PTR(x), STRING_BUF_LEN);
       }
       break;
-    case 'e>__': // skode-string-to-external external-index
+    case ATOM4('e>--'): // skode-string-to-external external-index
       if (arg == 0) {
       } else {
         char *s = ands_string(ctx->parse);
@@ -1130,7 +1130,7 @@ int skode_function(ands_t *s, int info) {
         strncpy(EXTRA_PTR(x), s, STRING_BUF_LEN);
       }
       break;
-    case 'e!__': // execute-string num
+    case ATOM4('e!--'): // execute-string num
       {
         char *s = "";
         if (arg == 0) {
@@ -1145,7 +1145,7 @@ int skode_function(ands_t *s, int info) {
         }
       }
       break;
-    case 'e?__': // show-execute-string [num]
+    case ATOM4('e?--'): // show-execute-string [num]
       if (arg) {
         ctx->printf(ctx, "# {%s} e>%d\n", EXTRA_PTR(x), x);
       } else {
@@ -1155,7 +1155,7 @@ int skode_function(ands_t *s, int info) {
         }
       }
       break;
-    case '/s__': // system-show num
+    case ATOM4('/s--'): // system-show num
       {
         if (argc == 0) {
           system_show(ctx);
@@ -1181,9 +1181,9 @@ int skode_function(ands_t *s, int info) {
         }
       }
       break;
-    case '/l__': // skode-load num
+    case ATOM4('/l--'): // skode-load num
       if (argc) { skode_load(ctx, voice, x); } break;
-    case '/w__': // wave-load num wave channel
+    case ATOM4('/w--'): // wave-load num wave channel
       {
         int file_num = 0;
         int wave_slot = EXT_SAMPLE_000;
@@ -1200,7 +1200,7 @@ int skode_function(ands_t *s, int info) {
       }
       break;
 #ifndef MINI
-    case '<___': // record duration
+    case ATOM4('<---'): // record duration
       if (arg) {
         rec_state = 0;
         float max_sec = arg[0];
@@ -1216,7 +1216,7 @@ int skode_function(ands_t *s, int info) {
         rec_state = 1;
       }
       break;
-    case '*___': // write-recorded
+    case ATOM4('*---'): // write-recorded
       {
         #include <sys/time.h>
         #include <unistd.h>
@@ -1237,23 +1237,23 @@ int skode_function(ands_t *s, int info) {
         }
       }
       break;
-    case '>___': // copy-voice dest-voice
+    case ATOM4('>---'): // copy-voice dest-voice
       if (arg) voice_copy(voice, x);
       break;
-    case '/___': // default-wave voice
+    case ATOM4('/---'): // default-wave voice
       wave_default(voice);
       break;
-    case '%___': // pattern-modulus num
+    case ATOM4('%---'): // pattern-modulus num
       if (arg) seq_modulo_set(ctx->pattern, x);
       break;
-    case 'x!__': // step-mute step
+    case ATOM4('x!--'): // step-mute step
       if (arg) seq_mute_set(ctx->pattern, x, 0);
       break;
-    case 'x@__': // step-unmute step
+    case ATOM4('x@--'): // step-unmute step
       if (arg) seq_mute_set(ctx->pattern, x, 1);
       break;
 #endif
-    case '=___':  // variable-set slot value
+    case ATOM4('=---'):  // variable-set slot value
       if (argc>1) ands_set_local(ctx->parse, x, arg[1]);
       else if (argc == 1) {
         double f = ands_get_local(ctx->parse, x);
@@ -1266,7 +1266,7 @@ int skode_function(ands_t *s, int info) {
         }
       }
       break;
-    case '/wex': // wave-expand wave
+    case ATOM4('/wex'): // wave-expand wave
       if (argc && x >= 200 && x <=999) wave_table_dynamic_expand(x);
       break;
     default:

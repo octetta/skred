@@ -49,15 +49,18 @@ int example_callback(ands_t *ctx, int info) {
     }
     printf("\n");
     switch (ands_atom_num(ctx)) {
-      case 'drop':
+      case ATOM4('drop'):
+        puts("DROP");
         ands_arg_drop(ctx);
         return 1;
         break;
       case 'swap':
+        puts("SWAP");
         ands_arg_swap(ctx);
         return 1;
         break;
-      case 'f___':
+      case ATOM4('f---'):
+        puts("FREQ");
         if (ands_arg_len(ctx) == 0) {
           ands_arg_clear(ctx);
           ands_arg(ctx)[0] = 355;
@@ -66,7 +69,8 @@ int example_callback(ands_t *ctx, int info) {
           return 1;
         }
         break;
-      case 'push':
+      case ATOM4('push'):
+        puts("PUSH");
         {
           double x = 0;
           if (ands_arg_len(ctx) == 0) return 0;
@@ -76,27 +80,30 @@ int example_callback(ands_t *ctx, int info) {
           return 1;
         }
         break;
-      case '=___':
+      case ATOM4('=---'):
+        puts("ASSIGN");
         if (ands_arg_len(ctx) > 1) {
           int n = (int)ands_arg(ctx)[0];
           double x = ands_arg(ctx)[1];
-          if (n>=0&&n<=0) {
+          if (n>=0&&n<=9) {
             printf("%d <- %g\n", n, x);
             ands_set_local(ctx, n, x);
           }
         }
         break;
-      case '/q__':
+      case ATOM4('/q--'):
         printf("QUIT\n");
         *user = -1;
         break;
-      case '/l__':
+      case ATOM4('/l--'):
+        puts("LOAD");
         if (ands_arg_len(ctx)) {
           printf("patch_load %d\n", (int)ands_arg(ctx)[0]);
           patch_load((int)ands_arg(ctx)[0]);
         }
         break;
-      case '/t__':
+      case ATOM4('/t--'):
+        puts("TRACE");
         if (ands_arg_len(ctx)) {
           ands_trace_set(ctx, (int)ands_arg(ctx)[0]);
         }
