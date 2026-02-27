@@ -18,14 +18,14 @@ enum {
 
 typedef struct {
   int state;
-  //uint64_t when;
   char what[QUEUED_MAX];
   int voice;
-  //int tag;
 } event_t;
 
 void seq(int frame_count, void (*queue_fn)(int voice, char *arg), void (*pattern_fn)(int voice, char *arg));
 void seq_init(void);
+void seq_rewind(void);
+uint64_t seq_master_tick(void);
 void pattern_reset(int p);
 int queue_item(uint64_t when, char *what, int voice, int tag);
 void tempo_set(float m);
@@ -33,6 +33,7 @@ void tempo_set(float m);
 void seq_modulo_set(int pattern, int m);
 void seq_mute_set(int pattern, int step, int m);
 void seq_step_set(int pattern, int step, char *scratch);
+void seq_pattern_length_set(int pattern, int len);
 void seq_state_set(int p, int state);
 void seq_state_all(int state);
 
@@ -44,6 +45,7 @@ extern int seq_modulo[PATTERNS_MAX];
 extern int seq_counter[PATTERNS_MAX];
 extern int seq_state[PATTERNS_MAX];
 extern int seq_pattern_mute[PATTERNS_MAX][SEQ_STEPS_MAX];
+extern int seq_pattern_length[PATTERNS_MAX];
 extern char seq_pattern[PATTERNS_MAX][SEQ_STEPS_MAX][STEP_MAX];
 
 extern float tempo_bpm;

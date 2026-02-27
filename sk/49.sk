@@ -2,7 +2,7 @@ v0 w208 f440 a20 r1 # bass drum preset
 
 v1 w205 f440 a20 r1 # snare drum preset
 
-:w3,300 # load hihat from file to wave slot 200
+/w3,300 # load hihat from file to wave slot 200
 v2 w300 f440 a30 r1 # put hihat into v2 (unused in this example)
 
 v10 w1 f277.183 a4 b1 J1 K1000 Q5.9504 c0,0 F12,1 P11,1 r1 # synth
@@ -13,10 +13,10 @@ v12 w0 f55 a1 m1 r1 # freq mod for synth
 
 v5 w2 a2 t0,1,0,0 # setup linked voice
 
-:w500,301,0 # load nugget01 left channel to slot 201
+/w500,301,0 # load nugget01 left channel to slot 201
 v20 w301 f440 a30 b1 B1 p-1 c0,0 r1 # put 201 into v20 pan full left
 
-:w500,302,1 # load nugget01 right channel to slot 202
+/w500,302,1 # load nugget01 right channel to slot 202
 v21 w302 f440 a30 b1 B1 p1 c0,0 r1 # put 202 to v21 pan full right
 
 Z0

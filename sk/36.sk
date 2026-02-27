@@ -6,7 +6,7 @@ M360
 v0 w208 f440 a20  # bass
 v1 w205 f440 a20  # snare
 
-:w3,300
+/w3,300
 v2 w300 a20 # cymbal or hi-hat?
 
 y0 # select pattern 0

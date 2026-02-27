@@ -12,12 +12,17 @@ int seq_frames_per_callback = 0;
 
 char seq_pattern[PATTERNS_MAX][SEQ_STEPS_MAX][STEP_MAX];
 int seq_pattern_mute[PATTERNS_MAX][SEQ_STEPS_MAX];
+int seq_pattern_length[PATTERNS_MAX];
 
 int scope_pattern_pointer = 0;
-int seq_pointer[PATTERNS_MAX];
-int seq_counter[PATTERNS_MAX];
+int seq_pointer[PATTERNS_MAX];  // read-only derived value, kept for external inspection
+int seq_counter[PATTERNS_MAX];  // kept for external inspection / compat
 int seq_state[PATTERNS_MAX];
 int seq_modulo[PATTERNS_MAX];
+
+// Master clock tick — ever-incrementing, never reset unless seq_rewind() is called.
+// All pattern positions are derived from this value so stop/start is always phase-coherent.
+static uint64_t master_tick = 0;
 
 float tempo_time_per_step = 60.0f;
 float tempo_bpm = 120.0f / 4.0f;
@@ -28,8 +33,17 @@ void tempo_set(float m) {
   tempo_bpm = m / 4.0;
   float bps = m / 60.f;
   float time_per_step = 1.0f / bps / 4.0f;
-  //printf("# BPM %g -> BPS %g -> time_per_step %g\n", m, bps, time_per_step);
   tempo_time_per_step = time_per_step;
+}
+
+// Rewind the master clock to zero. Call this on a deliberate global restart
+// if you want all patterns to re-enter from step 0.
+void seq_rewind(void) {
+  master_tick = 0;
+}
+
+uint64_t seq_master_tick(void) {
+  return master_tick;
 }
 
 #include "util.h"
@@ -45,7 +59,6 @@ char *seq_stats(void) {
   int n = 0;
   for (int i = 0; i < BENLEN; i++) {
     if (bench[i].state != BEN_B) continue;
-    //double maxcb = (double)bench[i].frames / (double)MAIN_SAMPLE_RATE * (double)S_TO_MS;
     double dms = ts_diff_ns(&bench[i].a, &bench[i].b) / (double)NS_TO_MS;
     n = sprintf(ptr, "# @%d %gms\n", bench[i].order, dms);
     ptr += n;
@@ -54,13 +67,23 @@ char *seq_stats(void) {
   return _stats;
 }
 
+// Compute the length of a pattern by scanning for the last non-empty step.
+// Returns 0 if the pattern is entirely empty.
+static int pattern_length_compute(int p) {
+  for (int s = SEQ_STEPS_MAX - 1; s >= 0; s--) {
+    if (seq_pattern[p][s][0] != '\0') return s + 1;
+  }
+  return 0;
+}
+
 static queue_t seq_q;
 
 void seq(int frame_count, void (*event_fn)(int voice, char *arg), void (*pattern_fn)(int voice, char *arg)) {
   BEN_MARK_A(bench, benchp, frame_count, bencho);
-  // run expired (ready) queued things...
+
+  // Run expired (ready) queued events.
   item_t item;
-  uint64_t now = SAMPLE_COUNT_GET(); // + frame_count; // not sure about adding frame count here but it's below from before?
+  uint64_t now = SAMPLE_COUNT_GET();
   static uint64_t last_ts = 0;
   while (1) {
     if (queue_get_filtered(&seq_q, now, &item)) {
@@ -74,39 +97,42 @@ void seq(int frame_count, void (*event_fn)(int voice, char *arg), void (*pattern
     }
   }
 
-  int advance = 0;
-  static double clock_sec = 0.0f;
+  // Advance the master clock one tick when enough time has elapsed.
+  static double clock_sec = 0.0;
   float frame_time_sec = (float)frame_count / (float)MAIN_SAMPLE_RATE;
   clock_sec += frame_time_sec;
+
+  int advance = 0;
   if (clock_sec >= tempo_time_per_step) {
-    advance = 1; // trigger next step
+    advance = 1;
     clock_sec -= tempo_time_per_step;
-  } else {
-    advance = 0;
+    master_tick++;
   }
 
   if (advance) {
-
     for (int p = 0; p < PATTERNS_MAX; p++) {
       if (seq_state[p] != SEQ_RUNNING) continue;
-      if (seq_modulo[p] > 1) {
-        if ((seq_counter[p] % seq_modulo[p]) != 0) {
-          seq_counter[p]++;
-          continue;
-        }
-      }
+
+      // Only fire on this pattern's modulo boundary.
+      if ((master_tick % (uint64_t)seq_modulo[p]) != 0) continue;
+
+      int len = seq_pattern_length[p];
+      if (len == 0) continue;
+
+      // Derive step position purely from the master clock — stop/start cannot
+      // cause a phase shift because there is no accumulated per-pattern pointer.
+      int step = (int)((master_tick / (uint64_t)seq_modulo[p]) % (uint64_t)len);
+
+      // Keep seq_pointer and seq_counter updated for any external code that reads them.
+      seq_pointer[p] = step;
       seq_counter[p]++;
-      if (seq_pattern_mute[p][seq_pointer[p]] == 0) {
-        pattern_fn(0, seq_pattern[p][seq_pointer[p]]);
-      }
-      seq_pointer[p]++;
-      switch (seq_pattern[p][seq_pointer[p]][0]) {
-        case '\0':
-          seq_pointer[p] = 0;
-          break;
+
+      if (seq_pattern_mute[p][step] == 0) {
+        pattern_fn(0, seq_pattern[p][step]);
       }
     }
   }
+
   BEN_MARK_B(bench, benchp, bencho);
 }
 
@@ -115,6 +141,7 @@ void pattern_reset(int p) {
   seq_state[p] = SEQ_STOPPED;
   seq_counter[p] = 0;
   seq_modulo[p] = 4;
+  seq_pattern_length[p] = 0;
   for (int s = 0; s < SEQ_STEPS_MAX; s++) {
     seq_pattern[p][s][0] = '\0';
     seq_pattern_mute[p][s] = 0;
@@ -123,6 +150,7 @@ void pattern_reset(int p) {
 
 void seq_init(void) {
   queue_init(&seq_q, QUEUE_SIZE);
+  master_tick = 0;
   for (int p = 0; p < PATTERNS_MAX; p++) {
     pattern_reset(p);
   }
@@ -142,20 +170,32 @@ void seq_mute_set(int pattern, int step, int m) {
 }
 
 void seq_step_set(int pattern, int step, char *scratch) {
-  if (strlen(scratch) == 0) seq_pattern[pattern][step][0] = '\0';
-  strcpy(seq_pattern[pattern][step], scratch);
+  if (strlen(scratch) == 0) {
+    seq_pattern[pattern][step][0] = '\0';
+  } else {
+    strcpy(seq_pattern[pattern][step], scratch);
+  }
+  // Recompute length whenever a step changes.
+  seq_pattern_length[pattern] = pattern_length_compute(pattern);
 }
 
+// Explicit length override — useful when you want to loop a fixed number of
+// steps regardless of whether later steps are populated.
+void seq_pattern_length_set(int pattern, int len) {
+  if (len < 0) len = 0;
+  if (len > SEQ_STEPS_MAX) len = SEQ_STEPS_MAX;
+  seq_pattern_length[pattern] = len;
+}
 
 void seq_state_set(int p, int state) {
   switch (state) {
     case 0: // stop
       seq_state[p] = SEQ_STOPPED;
-      seq_pointer[p] = 0;
+      // Do not reset seq_pointer here — it will be recomputed from master_tick
+      // on next start, so the pattern re-enters at the correct musical position.
       break;
     case 1: // start
       seq_state[p] = SEQ_RUNNING;
-      seq_pointer[p] = 0;
       break;
     case 2: // pause
       seq_state[p] = SEQ_PAUSED;
