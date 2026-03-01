@@ -1024,6 +1024,9 @@ int skode_function(ands_t *s, int info) {
       }
       break;
 #ifndef MINI
+    case ATOM4('>x--'): // goto-step #
+      seq_step_goto(ctx->pattern, x);
+      break;
     case ATOM4('x---'): // set-step-string step
       if (argc) {
         if (arg[0] == NAN || x < 0) {

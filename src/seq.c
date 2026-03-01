@@ -20,6 +20,11 @@ int seq_counter[PATTERNS_MAX];  // kept for external inspection / compat
 int seq_state[PATTERNS_MAX];
 int seq_modulo[PATTERNS_MAX];
 
+// Per-pattern offset applied to the master clock when deriving step position:
+//   step = ((master_tick / modulo) - seq_offset[p]) % length
+// Normally zero. seq_step_goto() writes this to force a specific step next tick.
+static int64_t seq_offset[PATTERNS_MAX];
+
 // Master clock tick — ever-incrementing, never reset unless seq_rewind() is called.
 // All pattern positions are derived from this value so stop/start is always phase-coherent.
 static uint64_t master_tick = 0;
@@ -36,8 +41,6 @@ void tempo_set(float m) {
   tempo_time_per_step = time_per_step;
 }
 
-// Rewind the master clock to zero. Call this on a deliberate global restart
-// if you want all patterns to re-enter from step 0.
 void seq_rewind(void) {
   master_tick = 0;
 }
@@ -67,8 +70,6 @@ char *seq_stats(void) {
   return _stats;
 }
 
-// Compute the length of a pattern by scanning for the last non-empty step.
-// Returns 0 if the pattern is entirely empty.
 static int pattern_length_compute(int p) {
   for (int s = SEQ_STEPS_MAX - 1; s >= 0; s--) {
     if (seq_pattern[p][s][0] != '\0') return s + 1;
@@ -113,17 +114,15 @@ void seq(int frame_count, void (*event_fn)(int voice, char *arg), void (*pattern
     for (int p = 0; p < PATTERNS_MAX; p++) {
       if (seq_state[p] != SEQ_RUNNING) continue;
 
-      // Only fire on this pattern's modulo boundary.
       if ((master_tick % (uint64_t)seq_modulo[p]) != 0) continue;
 
       int len = seq_pattern_length[p];
       if (len == 0) continue;
 
-      // Derive step position purely from the master clock — stop/start cannot
-      // cause a phase shift because there is no accumulated per-pattern pointer.
-      int step = (int)((master_tick / (uint64_t)seq_modulo[p]) % (uint64_t)len);
+      int64_t ticks_so_far = (int64_t)(master_tick / (uint64_t)seq_modulo[p]);
+      int64_t raw = ticks_so_far - seq_offset[p];
+      int step = (int)(((raw % (int64_t)len) + (int64_t)len) % (int64_t)len);
 
-      // Keep seq_pointer and seq_counter updated for any external code that reads them.
       seq_pointer[p] = step;
       seq_counter[p]++;
 
@@ -142,6 +141,7 @@ void pattern_reset(int p) {
   seq_counter[p] = 0;
   seq_modulo[p] = 4;
   seq_pattern_length[p] = 0;
+  seq_offset[p] = 0;
   for (int s = 0; s < SEQ_STEPS_MAX; s++) {
     seq_pattern[p][s][0] = '\0';
     seq_pattern_mute[p][s] = 0;
@@ -175,24 +175,29 @@ void seq_step_set(int pattern, int step, char *scratch) {
   } else {
     strcpy(seq_pattern[pattern][step], scratch);
   }
-  // Recompute length whenever a step changes.
   seq_pattern_length[pattern] = pattern_length_compute(pattern);
 }
 
-// Explicit length override — useful when you want to loop a fixed number of
-// steps regardless of whether later steps are populated.
 void seq_pattern_length_set(int pattern, int len) {
   if (len < 0) len = 0;
   if (len > SEQ_STEPS_MAX) len = SEQ_STEPS_MAX;
   seq_pattern_length[pattern] = len;
 }
 
+// Jump to a specific step on the next tick. Adjusts seq_offset so that
+// (ticks_so_far + 1 - offset) % len == step.
+void seq_step_goto(int pattern, int step) {
+  int len = seq_pattern_length[pattern];
+  if (len == 0) return;
+  if (step < 0 || step >= len) return;
+  int64_t ticks_so_far = (int64_t)(master_tick / (uint64_t)seq_modulo[pattern]);
+  seq_offset[pattern] = (ticks_so_far + 1) - (int64_t)step;
+}
+
 void seq_state_set(int p, int state) {
   switch (state) {
     case 0: // stop
       seq_state[p] = SEQ_STOPPED;
-      // Do not reset seq_pointer here — it will be recomputed from master_tick
-      // on next start, so the pattern re-enters at the correct musical position.
       break;
     case 1: // start
       seq_state[p] = SEQ_RUNNING;

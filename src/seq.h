@@ -34,6 +34,7 @@ void seq_modulo_set(int pattern, int m);
 void seq_mute_set(int pattern, int step, int m);
 void seq_step_set(int pattern, int step, char *scratch);
 void seq_pattern_length_set(int pattern, int len);
+void seq_step_goto(int pattern, int step);
 void seq_state_set(int p, int state);
 void seq_state_all(int state);
 
