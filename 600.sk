@@ -1,0 +1,239 @@
+# ============================================================
+# SKODE FULL 808 + 909 DRUM KIT — REVISED
+# ============================================================
+#
+# VOICE MAP:
+#
+# MODULATORS (m1, audio-silent)
+#   v16  808 clap AM swell
+#   v17  909 kick pitch sweep
+#   v18  909 snare pitch snap
+#   v19  conga pitch snap (dedicated, no conflict with v18)
+#
+# 808 VOICES
+#   v0         808 Kick
+#   v2–v4      808 Snare
+#   v7–v9      808 Clap (+ v16 modulator)
+#   v20        Closed HH / Open HH (shared, retrigger chokes)
+#   v23–v25    808 Cowbell
+#   v26–v27    808 Maracas
+#   v28–v29    808 Rimshot
+#   v30–v31    808 Conga Hi  (uses v19 modulator)
+#   v32–v33    808 Conga Lo  (uses v19 modulator)
+#
+# 909 VOICES
+#   v10–v12    909 Kick      (+ v17 modulator)
+#   v13–v15    909 Snare     (+ v18 modulator)
+#   v36–v38    909 Rimshot
+#   v39–v41    909 Cymbal
+#   v42–v44    909 Clap
+#
+# ============================================================
+
+# --- MODULATOR BANK -----------------------------------------
+# All m1 (silent), triggered atomically via H from master voice
+
+v16 w0 a0 t 0 .025 0 0 f 2  m1
+v17 w0 a0 t 0 .045 0 0 f 3  m1
+v18 w4 a0 t 0 .012 0 0 f 8  m1
+v19 w4 a0 t 0 .015 0 0 f 8  m1
+
+# ============================================================
+# 808 KICK
+# 50Hz sine, high-Q resonant LPF, long decay
+# ============================================================
+
+v0 w0 a0 t 0 .6 0 0 f 50 q0 J1 K 90 Q 5.0 l1
+
+# ============================================================
+# 808 SNARE
+# v2: 1-bit noise body bandpass 200Hz
+# v3: high-pass sizzle
+# v4: 180Hz sine snap
+# ============================================================
+
+v2 w6 a0  t 0 .100 0 0 q1 J2 K 200  Q 0.50 H3,4,-1,-1
+v3 w6 a-8 t 0 .050 0 0    J0 K 1000 Q 0.20
+v4 w0 a-2 t 0 .100 0 0 f 180 l1
+
+# ============================================================
+# 808 CLAP
+# v7:  2-bit noise crack 800Hz bandpass 10ms
+# v8:  2-bit noise body  600Hz bandpass 30ms
+# v9:  tail 1200Hz lowpass 60ms + AM swell via v16
+# v16: AM modulator swells v9 in over 25ms
+# ============================================================
+
+v7 w6 a8  t 0 .010 0 0 q2 J2 K 800  Q 0.60 H8,9,16,-1
+v8 w6 a4  t 0 .030 0 0 q1 J2 K 600  Q 0.50
+v9 w6 a0  t 0 .060 0 0    J1 K 1200 Q 0.20 A16,0.7,0.3 l1
+
+# ============================================================
+# CLOSED / OPEN HI-HAT (shared voice v20)
+# Closed: short 18ms burst — retrigger kills open naturally
+# Open:   redefine v20 inline in pattern with longer decay
+# Both: 1-bit noise, high bandpass, dry character
+# ============================================================
+
+v20 w6 a0 t 0 .018 0 0 q1 J2 K 8000 Q 0.30 l1
+
+# ============================================================
+# 808 COWBELL
+# Two detuned triangle waves — triangle is less aggressive
+# than square at these frequencies, avoids harsh aliasing
+# v23: 562Hz primary
+# v24: 470Hz detuned second oscillator
+# v25: noise click transient for attack bite
+# Both tonal voices: bandpass Q 0.70 for metallic body
+# ============================================================
+
+v23 w4 a0  t 0 .500 0 0 f 562 q0 J2 K 562 Q 0.70 H24,25,-1,-1
+v24 w4 a-2 t 0 .400 0 0 f 470 q0 J2 K 470 Q 0.65
+v25 w6 a-4 t 0 .008 0 0 q1 J1 K 600 Q 0.20 l1
+
+# ============================================================
+# 808 MARACAS
+# Broadband noise, very short, HPF strips everything below 5kHz
+# Two layers: sharp attack + brief body
+# ============================================================
+
+v26 w6 a0  t 0 .010 0 0 q2 J0 K 5000 Q 0.20 H27,-1,-1,-1
+v27 w6 a-6 t 0 .025 0 0 q1 J2 K 7000 Q 0.20 l1
+
+# ============================================================
+# 808 RIMSHOT
+# v28: 400Hz sine click — the rim tone, very short
+# v29: broadband noise HPF — the shot crack
+# ============================================================
+
+v28 w0 a0  t 0 .025 0 0 f 400 q0 J2 K 400 Q 0.55 H29,-1,-1,-1
+v29 w6 a-2 t 0 .015 0 0 q1 J0 K 800 Q 0.20 l1
+
+# ============================================================
+# 808 CONGA HI
+# Pitched sine with fast decay + noise attack
+# Uses dedicated v19 modulator — no conflict with 909 snare
+# F19,40,320: sweeps 360Hz to 320Hz over 15ms
+# ============================================================
+
+v30 w0 a0  t 0 .120 0 0 f 320 q0 F19,40,320 J2 K 400 Q 0.55 H31,-1,-1,-1
+v31 w6 a-4 t 0 .018 0 0 q1 J0 K 500 Q 0.20 l1
+
+# ============================================================
+# 808 CONGA LO
+# Lower pitched, longer decay
+# F19,30,220: sweeps 250Hz to 220Hz over 15ms
+# ============================================================
+
+v32 w0 a0  t 0 .180 0 0 f 220 q0 F19,30,220 J2 K 280 Q 0.55 H33,-1,-1,-1
+v33 w6 a-4 t 0 .018 0 0 q1 J0 K 400 Q 0.20 l1
+
+# ============================================================
+# 909 KICK
+# v10: Saw click transient 6ms 1-bit grit
+# v11: pitch-swept sine F17,55,52 snaps 107Hz to 52Hz
+# v12: static sub bloom high-Q resonant 52Hz
+# v17: FM modulator atomic via H
+#
+# SWEEP: t=0ms f=107Hz  t=22ms f=79Hz  t=45ms f=52Hz
+# ============================================================
+
+v10 w2 a6  t 0 .006 0 0 f 130 q1 J1 K 280 Q 0.30 H11,12,17,-1
+v11 w0 a2  t 0 .045 0 0 f 52  q0 F17,55,52  J1 K 180 Q 0.40
+v12 w0 a0  t 0 .380 0 0 f 52  q0            J1 K 80  Q 4.80 l1
+
+# ============================================================
+# 909 SNARE
+# v13: broadband noise HPF 200Hz — membrane strike
+# v14: wire rattle noise high bandpass 3500Hz
+# v15: subtle sine body 160Hz at -4dB
+# v18: FM modulator atomic via H — now conflict-free
+# ============================================================
+
+v13 w6 a8  t 0 .018 0 0 q1 J0 K 200  Q 0.30 H14,15,18,-1
+v14 w6 a4  t 0 .120 0 0 q2 J2 K 3500 Q 0.25
+v15 w0 a-4 t 0 .070 0 0 f 160 q0 J1 K 300 Q 0.40 l1
+
+# ============================================================
+# 909 RIMSHOT
+# Harder and snappier than 808 rimshot
+# v36: short Saw click with harmonic bite
+# v37: tight noise burst HPF
+# v38: 600Hz sine snap
+# ============================================================
+
+v36 w2 a2  t 0 .010 0 0 f 600 q1 J2 K 600  Q 0.50 H37,38,-1,-1
+v37 w6 a0  t 0 .012 0 0 q1 J0 K 1000 Q 0.20
+v38 w0 a-4 t 0 .020 0 0 f 600 q0 J2 K 700  Q 0.40 l1
+
+# ============================================================
+# 909 CYMBAL
+# Detuned triangle waves — softer than square, less aliasing
+# at high frequencies, more realistic cymbal shimmer
+# Long decay for crash character
+# v39: 3800Hz triangle primary
+# v40: 4050Hz triangle detuned
+# v41: noise wash tail HPF
+# ============================================================
+
+v39 w4 a-2 t 0 .800 0 0 f 3800 q1 J2 K 3800 Q 0.55 H40,41,-1,-1
+v40 w4 a-4 t 0 .600 0 0 f 4050 q1 J2 K 4100 Q 0.50
+v41 w6 a-6 t 0 .500 0 0 q2 J0 K 5000 Q 0.20 l1
+
+# ============================================================
+# 909 CLAP
+# Tighter and harder than 808 clap, no AM swell
+# v42: 1-bit noise crack higher center than 808
+# v43: mid noise body
+# v44: short dry tail
+# ============================================================
+
+v42 w6 a10 t 0 .008 0 0 q1 J2 K 1100 Q 0.65 H43,44,-1,-1
+v43 w6 a4  t 0 .025 0 0 q2 J2 K 900  Q 0.55
+v44 w6 a0  t 0 .050 0 0    J1 K 1800 Q 0.20 l1
+
+# ============================================================
+# DEMO PATTERN — 808/909 HYBRID GROOVE 120 BPM
+#
+# y0 %4  kick + snare backbone        4 steps = 1 bar
+# y1 %2  hi-hats swung eighth notes   8 steps = 1 bar
+# y2 %4  clap + 909 snare backbeats   4 steps = 1 bar
+# y3 %4  percussion accents           4 steps = 1 bar
+# ============================================================
+
+M120
+
+# --- PATTERN 0: KICK + SNARE --------------------------------
+y0 %4
+{v0l3}x0
+{v2l3}x1
+{v0l3}x2
+{v0l2 +.5 v0l1}x2
+{v2l3}x3
+
+# --- PATTERN 1: HI-HATS swung eighth note grid --------------
+y1 %2
+{v20l2}x0
+{+.1 v20l2}x1
+{v20l2}x2
+{+.1 v20l2}x3
+{v20l2}x4
+{+.1 v20l2}x5
+{v20l2}x6
+{+.1 v20l2}x7
+
+# --- PATTERN 2: CLAP + 909 SNARE LAYER ----------------------
+y2 %4
+{v7l3}x1
+{+.3 v13l2}x1
+{v7l3}x3
+{+.3 v13l2}x3
+
+# --- PATTERN 3: PERCUSSION ACCENTS --------------------------
+y3 %4
+{v23l2}x0
+{v26l3 +.5 v26l1}x1
+{v26l3}x2
+{v26l2 +.5 v23l1}x3
+
+Z1

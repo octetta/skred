@@ -96,7 +96,7 @@ float osc_get_phase_inc(int v, float f) {
   // Compute the frequency in "table samples per system sample"
   // This works even if table_rate ≠ system rate
   float g = f;
-  if (sv.one_shot[v]) g /= sv.offset_hz[v];
+  if (sv.one_shot[v] && sv.offset_hz[v] > 0.0f) g /= sv.offset_hz[v];
   float phase_inc = (g * (float)sv.table_size[v]) / sv.table_rate[v] * (sv.table_rate[v] / MAIN_SAMPLE_RATE);
   return phase_inc;
 }
@@ -251,7 +251,8 @@ float osc_next(int voice, float phase_inc) {
         float frac = final_phase - (float)idx;
         
         int next_idx = idx + 1;
-        if (next_idx >= table_size) next_idx = 0;  // Wrap for seamless loops
+        //if (next_idx >= table_size) next_idx = 0;  // Wrap for seamless loops
+        if (next_idx >= table_size) next_idx = sv.one_shot[voice] ? table_size - 1 : 0;
         
         float sample1 = sv.table[voice][idx];
         float sample2 = sv.table[voice][next_idx];
@@ -282,6 +283,7 @@ void osc_set_wave_table_index(int voice, int wave) {
       ) update_freq = 1;
     sv.table_rate[voice] = sw.rate[wave];
     sv.table_size[voice] = sw.size[wave];
+    sv.table_size_rate[voice] = (float)sv.table_size[voice] / MAIN_SAMPLE_RATE;
     sv.table[voice] = sw.data[wave];
     sv.one_shot[voice] = sw.one_shot[wave];
     sv.loop_start[voice] = sw.loop_start[wave];
@@ -559,7 +561,8 @@ void synth(float *buffer, float *input, int num_frames, int num_channels, void *
         sv.mark_go[n] = 0;
       }
       if (sv.finished[n]) {
-        sv.sample[n] = 0.0f;
+        //sv.sample[n] = 0.0f; // remove to try the below
+        // hold last value to modulator consumers see statle output after one-shot ends
         one_skred_frame[skred_ptr++] = 0.0f;
         one_skred_frame[skred_ptr++] = 0.0f;
         continue;
@@ -576,20 +579,22 @@ void synth(float *buffer, float *input, int num_frames, int num_channels, void *
         f = whiteish;
       } else {
 #ifdef SYNTH_FEATURE_MODULATION
-        int mod = sv.freq_mod_osc[n];
-#endif /* SYNTH_FEATURE_MODULATION */
-        if (mod >= 0 && mod != n) {
-          // try to use modulators phase_inc instead of recalculating...
-          // REQUIRES re-thinking how I'm scaling frequency modulators via wire...
-          // REVISIT experiments to see if this still makes sense
-#ifdef SYNTH_FEATURE_MODULATION
+        if (sv.freq_mod_osc[n] >= 0 && sv.freq_mod_osc[n] != n) {
+          int mod = sv.freq_mod_osc[n];
           float g = sv.sample[mod] * sv.freq_mod_depth[n] + sv.freq_mod_adder[n];
-#endif /* SYNTH_FEATURE_MODULATION */
-          float inc = sv.phase_inc[n] + (sv.phase_inc[mod] * sv.freq_scale[n] * g);
+          float inc;
+          if (sv.freq_mod_mode[n]) {
+            inc = (g * sv.table_size_rate[n]);
+          } else {
+            inc = sv.phase_inc[n] + (sv.phase_inc[mod] * sv.freq_scale[n] * g);
+          }
           f = osc_next(n, inc);
         } else {
           f = osc_next(n, sv.phase_inc[n]);
-        }
+          }
+#else
+        f = osc_next(n, sv.phase_inc[n]);
+#endif
       }
 #ifdef SYNTH_FEATURE_SAMPLE_HOLD
       if (sv.sample_hold_max[n]) {
@@ -745,12 +750,30 @@ char *voice_format(int v, char *out, int verbose) {
     n = sprintf(ptr, " N%g,%g", sv.midi_transpose[v], sv.midi_cents[v]);
     ptr += n;
   }
-  if (verbose || sv.link_midi_a[v] >= 0 || sv.link_midi_b[v] >= 0) {
-    n = sprintf(ptr, " G%g,%g", sv.link_midi_a[v], sv.link_midi_b[v]);
+  if (verbose
+    || sv.link_midi_a[v] >= 0
+    || sv.link_midi_b[v] >= 0
+    || sv.link_midi_c[v] >= 0
+    || sv.link_midi_d[v] >= 0
+  ) {
+    n = sprintf(ptr, " G%g,%g,%g,%g",
+      sv.link_midi_a[v],
+      sv.link_midi_b[v],
+      sv.link_midi_c[v],
+      sv.link_midi_d[v]);
     ptr += n;
   }
-  if (verbose || sv.link_velo_a[v] >= 0 || sv.link_velo_b[v] >= 0) {
-    n = sprintf(ptr, " H%g,%g", sv.link_velo_a[v], sv.link_velo_b[v]);
+  if (verbose
+    || sv.link_velo_a[v] >= 0
+    || sv.link_velo_b[v] >= 0
+    || sv.link_velo_c[v] >= 0
+    || sv.link_velo_d[v] >= 0
+  ) {
+    n = sprintf(ptr, " H%g,%g,%g,%g",
+      sv.link_velo_a[v],
+      sv.link_velo_b[v],
+      sv.link_velo_c[v],
+      sv.link_velo_d[v]);
     ptr += n;
   }
   if (verbose || sv.link_trig[v] >= 0) {
@@ -1232,6 +1255,7 @@ void voice_reset(int i) {
   sv.freq_mod_osc[i] = -1;
   sv.freq_mod_depth[i] = 0.0f;
   sv.freq_mod_adder[i] = 0.0f;
+  sv.freq_mod_mode[i] = 0;
 #endif /* SYNTH_FEATURE_MODULATION */
   sv.freq_scale[i] = 1.0f;
 #ifdef SYNTH_FEATURE_MODULATION
@@ -1256,8 +1280,12 @@ void voice_reset(int i) {
   sv.midi_cents[i] = 0;
   sv.link_midi_a[i] = -1;
   sv.link_midi_b[i] = -1;
+  sv.link_midi_c[i] = -1;
+  sv.link_midi_d[i] = -1;
   sv.link_velo_a[i] = -1;
   sv.link_velo_b[i] = -1;
+  sv.link_velo_c[i] = -1;
+  sv.link_velo_d[i] = -1;
   sv.link_trig[i] = -1;
   osc_set_wave_table_index(i, WAVE_TABLE_SINE);
 #ifdef SYNTH_FEATURE_FILTER

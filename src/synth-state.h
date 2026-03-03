@@ -43,6 +43,7 @@ typedef struct {
     float ** restrict table;        /* per-voice pointer to wave data */
     int    * restrict table_size;
     float  * restrict table_rate;
+    float  * restrict table_size_rate;
     int    * restrict one_shot;
     int    * restrict finished;
     int    * restrict direction;
@@ -75,8 +76,12 @@ typedef struct {
     float  * restrict freq_scale;
     float  * restrict link_midi_a;
     float  * restrict link_midi_b;
+    float  * restrict link_midi_c;
+    float  * restrict link_midi_d;
     float  * restrict link_velo_a;
     float  * restrict link_velo_b;
+    float  * restrict link_velo_c;
+    float  * restrict link_velo_d;
     float  * restrict link_trig;
 
     /* --- config flags --- */
@@ -143,6 +148,7 @@ typedef struct {
     int    * restrict freq_mod_osc;
     float  * restrict freq_mod_depth;
     float  * restrict freq_mod_adder;
+    int    * restrict freq_mod_mode;
     int    * restrict pan_mod_osc;
     float  * restrict pan_mod_depth;
     float  * restrict pan_mod_adder;

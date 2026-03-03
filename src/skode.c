@@ -643,23 +643,6 @@ int wavetable_show(skode_t *ctx, int n) {
     int readonly = sw.readonly[n];
     int refcount = sw.refcount[n];
     int size = sw.size[n];
-    int crossing = 0;
-    int zero = 0;
-    float ttl = 0;
-    float min = table[0];
-    float max = table[0];
-    for (int i = 1; i < size; i++) {
-      if (table[i] < min) min = table[i];
-      if (table[i] > max) max = table[i];
-      ttl += table[i];
-      if (table[i-1] == 0.0 || table[i] == 0.0) {
-        // Prevent ambiguity with multiple zeroes
-        zero++;
-      } else if ((table[i-1] > 0 && table[i] < 0) || (table[i-1] < 0 && table[i] > 0)) {
-        // Check for sign change
-        crossing++;
-      }
-    }
     ctx->printf(ctx, "# w%d size:%d", n, size);
     ctx->printf(ctx, " rate:%g +hz:%g midi:%g",
       sw.rate[n],
@@ -785,6 +768,9 @@ int skode_function(ands_t *s, int info) {
         freq_mod_set(voice, x, arg[1], a);
       }
       break;
+    case ATOM4('FF--'): // FM mode
+      if (argc) sv.freq_mod_mode[voice] = x;
+      break;
     case ATOM4('g---'): // glissando speed
       if (argc) {
         if (arg[0] <= 0) {
@@ -803,16 +789,20 @@ int skode_function(ands_t *s, int info) {
       if (argc) {
         sv.link_midi_a[voice] = x;
         if (argc > 1) sv.link_midi_b[voice] = (int)arg[1];
+        if (argc > 2) sv.link_midi_c[voice] = (int)arg[2];
+        if (argc > 3) sv.link_midi_d[voice] = (int)arg[3];
       }
       break;
     case ATOM4('h---'): // sample-hold phase-count
 #ifdef SYNTH_FEATURE_SAMPLE_HOLD
       if (argc) { sv.sample_hold_max[voice] = x; } break;
 #endif /* SYNTH_FEATURE_SAMPLE_HOLD */
-    case ATOM4('H---'): // link-velo voice [voice]
+    case ATOM4('H---'): // link-velo voice [voice [voice [voice]]]
       if (argc) {
         sv.link_velo_a[voice] = x;
         if (argc > 1) sv.link_velo_b[voice] = (int)arg[1];
+        if (argc > 2) sv.link_velo_c[voice] = (int)arg[2];
+        if (argc > 3) sv.link_velo_d[voice] = (int)arg[3];
       }
       break;
     // TODO re-allocate the data/array buffer with the arg
@@ -863,6 +853,8 @@ int skode_function(ands_t *s, int info) {
         envelope_velocity(voice, arg[0]);
         if (sv.link_velo_a[voice] >= 0) envelope_velocity(sv.link_velo_a[voice], arg[0]);
         if (sv.link_velo_b[voice] >= 0) envelope_velocity(sv.link_velo_b[voice], arg[0]);
+        if (sv.link_velo_c[voice] >= 0) envelope_velocity(sv.link_velo_c[voice], arg[0]);
+        if (sv.link_velo_d[voice] >= 0) envelope_velocity(sv.link_velo_d[voice], arg[0]);
       }
       break;
     case ATOM4('m---'): // mute-audio bool
@@ -880,6 +872,8 @@ int skode_function(ands_t *s, int info) {
         freq_midi(voice, note);
         if (sv.link_midi_a[voice] >= 0) freq_midi(sv.link_midi_a[voice], note);
         if (sv.link_midi_b[voice] >= 0) freq_midi(sv.link_midi_b[voice], note);
+        if (sv.link_midi_c[voice] >= 0) freq_midi(sv.link_midi_c[voice], note);
+        if (sv.link_midi_d[voice] >= 0) freq_midi(sv.link_midi_d[voice], note);
       }
       break;
     case ATOM4('N---'): // detune-midi key cents
@@ -975,6 +969,8 @@ int skode_function(ands_t *s, int info) {
         envelope_velocity(voice, 1);
         if (sv.link_velo_a[voice] >= 0) envelope_velocity(sv.link_velo_a[voice], 1);
         if (sv.link_velo_b[voice] >= 0) envelope_velocity(sv.link_velo_b[voice], 1);
+        if (sv.link_velo_c[voice] >= 0) envelope_velocity(sv.link_velo_c[voice], 1);
+        if (sv.link_velo_d[voice] >= 0) envelope_velocity(sv.link_velo_d[voice], 1);
 #else
         voice_trigger(voice);
         if (sv.link_trig[voice] > 0) voice_trigger(sv.link_trig[voice]);

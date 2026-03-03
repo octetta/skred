@@ -106,6 +106,7 @@ void synth_alloc_voices(int voice_max) {
     VALLOC(table,            float *);
     VALLOC(table_size,       int);
     VALLOC(table_rate,       float);
+    VALLOC(table_size_rate,  float);
     VALLOC(one_shot,         int);
     VALLOC(finished,         int);
     VALLOC(direction,        int);
@@ -138,8 +139,12 @@ void synth_alloc_voices(int voice_max) {
     VALLOC(freq_scale,       float);
     VALLOC(link_midi_a,      float);
     VALLOC(link_midi_b,      float);
+    VALLOC(link_midi_c,      float);
+    VALLOC(link_midi_d,      float);
     VALLOC(link_velo_a,      float);
     VALLOC(link_velo_b,      float);
+    VALLOC(link_velo_c,      float);
+    VALLOC(link_velo_d,      float);
     VALLOC(link_trig,        float);
 
     /* config flags */
@@ -202,6 +207,7 @@ void synth_alloc_voices(int voice_max) {
     VALLOC(freq_mod_osc,    int);
     VALLOC(freq_mod_depth,  float);
     VALLOC(freq_mod_adder,  float);
+    VALLOC(freq_mod_mode,   int);
     VALLOC(pan_mod_osc,     int);
     VALLOC(pan_mod_depth,   float);
     VALLOC(pan_mod_adder,   float);
@@ -213,7 +219,7 @@ void synth_alloc_voices(int voice_max) {
 
 void synth_free_voices(void) {
     VFREE(phase);            VFREE(phase_inc);       VFREE(table);
-    VFREE(table_size);       VFREE(table_rate);      VFREE(one_shot);
+    VFREE(table_size);       VFREE(table_rate);      VFREE(table_size_rate); VFREE(one_shot);
     VFREE(finished);         VFREE(direction);       VFREE(loop_enabled);
     VFREE(loop_start);       VFREE(loop_end);        VFREE(loop_start_f);
     VFREE(loop_end_f);       VFREE(loop_valid);      VFREE(loop_length);
@@ -224,7 +230,10 @@ void synth_free_voices(void) {
     VFREE(last_midi_note);   VFREE(midi_transpose);  VFREE(midi_cents);
     VFREE(offset_hz);        VFREE(freq_scale);
     VFREE(link_midi_a);      VFREE(link_midi_b);
-    VFREE(link_velo_a);      VFREE(link_velo_b);     VFREE(link_trig);
+    VFREE(link_midi_c);      VFREE(link_midi_d);
+    VFREE(link_velo_a);      VFREE(link_velo_b);
+    VFREE(link_velo_c);      VFREE(link_velo_d);
+    VFREE(link_trig);
     VFREE(wave_table_index); VFREE(disconnect);      VFREE(record);
     VFREE(interpolate);      VFREE(phase_reset);
     VFREE(mark_go);          VFREE(mark_a);          VFREE(mark_b);
@@ -253,7 +262,7 @@ void synth_free_voices(void) {
     VFREE(sample_hold);      VFREE(sample_hold_count); VFREE(sample_hold_max);
 #endif
 #ifdef SYNTH_FEATURE_MODULATION
-    VFREE(freq_mod_osc);     VFREE(freq_mod_depth); VFREE(freq_mod_adder);
+    VFREE(freq_mod_osc);     VFREE(freq_mod_depth); VFREE(freq_mod_adder); VFREE(freq_mod_mode);
     VFREE(pan_mod_osc);      VFREE(pan_mod_depth);  VFREE(pan_mod_adder);
     VFREE(amp_mod_osc);      VFREE(amp_mod_depth);  VFREE(amp_mod_adder);
 #endif
