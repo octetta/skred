@@ -1,0 +1,1023 @@
+#
+# ============================================================
+# --- MODULATOR BANK -----------------------------------------
+v16 w0 a0 t 0 .025 0 0 f 2  m1
+v17 w0 a0 t 0 .045 0 0 f 3  m1
+v18 w4 a0 t 0 .012 0 0 f 8  m1
+# ============================================================
+# 808 KICK
+# 50Hz sine, high-Q resonant LPF, long decay
+# ============================================================
+v0 w0 a0 t 0 .6 0 0 f 50 q0 J1 K 90 Q 5.0 l1
+# ============================================================
+# 808 SNARE
+# v2: 1-bit noise body bandpass 200Hz
+# v3: high-pass sizzle
+# v4: 180Hz sine snap
+# ============================================================
+v2 w6 a0  t 0 .100 0 0 q1 J2 K 200  Q 0.50 H3,4,-1,-1
+v3 w6 a-8 t 0 .050 0 0    J0 K 1000 Q 0.20
+v4 w0 a-2 t 0 .100 0 0 f 180 l1
+# ============================================================
+# 808 CLAP
+# v7:  2-bit noise crack 800Hz bandpass 10ms
+# v8:  2-bit noise body  600Hz bandpass 30ms
+# v9:  short tail 1200Hz lowpass 60ms + AM swell via v16
+# ============================================================
+v7 w6 a8  t 0 .010 0 0 q2 J2 K 800  Q 0.60 H8,9,16,-1
+v8 w6 a4  t 0 .030 0 0 q1 J2 K 600  Q 0.50
+v9 w6 a0  t 0 .060 0 0    J1 K 1200 Q 0.20 A16,0.7,0.3 l1
+# ============================================================
+# CLOSED HI-HAT (808/909 shared voice v20)
+# Retriggering v20 naturally chokes open HH
+# Short 1-bit noise burst, high bandpass, very dry
+# ============================================================
+v20 w6 a0 t 0 .018 0 0 q1 J2 K 8000 Q 0.30 l1
+# ============================================================
+# OPEN HI-HAT (808/909 shared voice v20)
+# Same voice — closed HH retrigger kills this naturally
+# Longer decay, slightly lower center for more body
+# To trigger open HH use the v20 definition below
+# overwriting v20 with longer decay before triggering
+# ============================================================
+# open HH is triggered by redefining v20 with longer decay:
+# v20 w6 a0 t 0 .320 0 0 q1 J2 K 7000 Q 0.25 l1
+# closed HH kills it by retriggering the short version
+# ============================================================
+# 808 COWBELL
+# Classic TR-808 cowbell: two detuned square waves
+# v23: 540Hz square — primary pitch
+# v24: 450Hz square — detuned second oscillator
+# v25: shared noise click transient for attack bite
+# High-Q bandpass on both tonal voices for metallic ring
+# Q kept under 1.0 — resonance from filter not Q>1 squeal
+# ============================================================
+v23 w1 a-2 t 0 .500 0 0 f 540 q0 J2 K 540 Q 0.80 H24,25,-1,-1
+v24 w1 a-4 t 0 .400 0 0 f 450 q0 J2 K 450 Q 0.70
+v25 w6 a-6 t 0 .008 0 0 q1 J1 K 600 Q 0.20 l1
+# ============================================================
+# 808 MARACAS
+# Very short broadband noise burst — HPF strips low end
+# Two layers: attack transient + body
+# ============================================================
+v26 w6 a-2 t 0 .012 0 0 q2 J0 K 5000 Q 0.20 H27,-1,-1,-1
+v27 w6 a-8 t 0 .030 0 0 q1 J2 K 7000 Q 0.25 l1
+# ============================================================
+# 808 RIMSHOT
+# Short pitched click + noise burst
+# v28: 400Hz sine click — very short, the "rim" tone
+# v29: broadband noise HPF — the "shot" crack
+# ============================================================
+v28 w0 a0  t 0 .025 0 0 f 400 q0 J2 K 400 Q 0.60 H29,-1,-1,-1
+v29 w6 a-2 t 0 .015 0 0 q1 J0 K 800 Q 0.20 l1
+# ============================================================
+# 808 CONGA HI
+# Pitched sine with fast decay, mid-Q bandpass
+# Subtle pitch snap modulated by v18 (reused)
+# ============================================================
+v30 w0 a0 t 0 .120 0 0 f 320 q0 F18,40,320 J2 K 400 Q 0.55 H31,-1,-1,-1
+v31 w6 a-6 t 0 .020 0 0 q1 J0 K 500 Q 0.20 l1
+# ============================================================
+# 808 CONGA LO
+# Lower pitched version of conga, longer decay
+# ============================================================
+v32 w0 a0 t 0 .180 0 0 f 220 q0 F18,30,220 J2 K 280 Q 0.55 H33,-1,-1,-1
+v33 w6 a-6 t 0 .020 0 0 q1 J0 K 400 Q 0.20 l1
+# ============================================================
+# 909 KICK
+# v10: Saw click transient 6ms 1-bit grit
+# v11: pitch-swept sine F17,55,52 snaps 107Hz to 52Hz
+# v12: static sub bloom high-Q resonant 52Hz
+# v17: FM modulator atomic via H
+#
+# SWEEP: t=0ms f=107Hz  t=22ms f=79Hz  t=45ms f=52Hz
+# ============================================================
+v10 w2 a6  t 0 .006 0 0 f 130 q1 J1 K 280 Q 0.30 H11,12,17,-1
+v11 w0 a2  t 0 .045 0 0 f 52  q0 F17,55,52  J1 K 180 Q 0.40
+v12 w0 a0  t 0 .380 0 0 f 52  q0            J1 K 80  Q 4.80 l1
+# ============================================================
+# 909 SNARE
+# v13: broadband noise HPF 200Hz — membrane strike
+# v14: wire rattle noise high bandpass 3500Hz
+# v15: subtle sine body 160Hz pulled back -4dB
+# No pitch sweep — was causing sqweep artifact
+# ============================================================
+v13 w6 a8  t 0 .018 0 0 q1 J0 K 200  Q 0.30 H14,15,-1,-1
+v14 w6 a4  t 0 .120 0 0 q2 J2 K 3500 Q 0.25
+v15 w0 a-4 t 0 .070 0 0 f 160 q0 J1 K 300 Q 0.40 l1
+# ============================================================
+# 909 RIMSHOT
+# Harder and snappier than 808 rimshot
+# v36: short Saw click — more harmonic bite than sine
+# v37: tight noise burst HPF
+# v38: subtle 600Hz sine snap
+# ============================================================
+v36 w2 a2  t 0 .010 0 0 f 600 q1 J2 K 600 Q 0.50 H37,38,-1,-1
+v37 w6 a0  t 0 .012 0 0 q1 J0 K 1000 Q 0.20
+v38 w0 a-4 t 0 .020 0 0 f 600 q0 J2 K 700 Q 0.40 l1
+# ============================================================
+# 909 CYMBAL (crash/ride character)
+# Multiple detuned square waves for metallic shimmer
+# All Q < 1.0 — metallic from waveform not resonance
+# Long decay for crash character
+# v39: 4000Hz square primary
+# v40: 4140Hz square detuned +3.5%
+# v41: noise wash tail
+# ============================================================
+v39 w1 a-4 t 0 .800 0 0 f 4000 q1 J2 K 4000 Q 0.60 H40,41,-1,-1
+v40 w1 a-6 t 0 .600 0 0 f 4140 q1 J2 K 4200 Q 0.50
+v41 w6 a-8 t 0 .500 0 0 q2 J0 K 6000 Q 0.20 l1
+# ============================================================
+# 909 CLAP
+# Tighter and harder than 808 clap
+# v42: very short 1-bit noise crack — higher center than 808
+# v43: mid noise body
+# v44: short tail — no AM swell, 909 clap is drier
+# ============================================================
+v42 w6 a10 t 0 .008 0 0 q1 J2 K 1100 Q 0.65 H43,44,-1,-1
+v43 w6 a4  t 0 .025 0 0 q2 J2 K 900  Q 0.55
+v44 w6 a0  t 0 .050 0 0    J1 K 1800 Q 0.20 l1
+# ============================================================
+# DEMO PATTERN — classic 808/909 hybrid groove at 120 BPM
+#
+# 16 step grid across 4 patterns
+# y0 %4  = kick/snare on quarter note grid  (4 steps = 1 bar)
+# y1 %2  = hi-hats on eighth note grid      (8 steps = 1 bar)
+# y2 %4  = clap/rimshot accent pattern
+# y3 %4  = percussion accents
+#
+# step grid at %4:  x0=beat1  x1=beat2  x2=beat3  x3=beat4
+# step grid at %2:  x0-x7 = 8 eighth notes across the bar
+# ============================================================
+M120
+# --- PATTERN 0: KICK + SNARE --------------------------------
+y0 %4
+{v0l3}x0
+{v2l3}x1
+{v0l3}x2
+{v0l2 +.5 v0l1}x2
+{v2l3}x3
+# --- PATTERN 1: HI-HATS (eighth note grid) ------------------
+# swung feel: every odd step lands +.1 late
+y1 %2
+{v20l2}x0
+{v20l2 +.1}x1
+{v20l2}x2
+{v20l2 +.1}x3
+{v20l2}x4
+{v20l2 +.1}x5
+{v20l2}x6
+{v20l2 +.1}x7
+# --- PATTERN 2: CLAP + 909 SNARE LAYER ----------------------
+y2 %4
+{v7l3}x1
+{v13l2 +.5 v7l1}x1
+{v7l3}x3
+{v13l2}x3
+# --- PATTERN 3: PERCUSSION ACCENTS --------------------------
+y3 %4
+{v23l2}x0
+{v26l3 +.5 v26l2}x1
+{v26l3}x2
+{v23l1 +.5 v26l2}x3
+Z1
+/q
+/l600
+Z0
+??
+v0l1
+v0l3
+v2l1
+v2l3
+v7l1
+v7l5
+v7l4
+v20l4
+v23l4
+v26l4
+v28l4
+v30l4
+v32l4
+v10l4
+v36l4
+v39l4
+v42l4
+v16l4
+v39l4
+v16l4
+v42l4
+v36l4
+v10l4
+Z
+{v10l3}x0
+{}
+z1
+z
+{}x1
+{}x2
+{}x3
+{}x4
+{}x5
+{v2l3}x1
+{v10l3+.75v10l3}x0
+{v10l3+.75v10l3+.125v10l3}x0
+{v10l3+.75v10l3+.01v10l3}x0
+M100
+{v10l3+.75v10l3}x0
+z
+{v2l3+.5v3l1}x1
+{v2l3+.5v2l1}x1
+{v2l3+.25v2l1}x1
+{v2l3+.25v2l.5}x1
+{v2l3+.25v2l.75}x1
+M120
+M160
+M120
+??
+?
+v0l5
+v0l1
+?
+z
+??
+Z
+{v10l3}x2{v2l3}x4
+Z
+z
+{v10l3}x2{v2l3}x3
+{}x4
+z
+v10l5
+{v10l3+.75v10l3} x2
+z
+q
+/q
+/l900
+Z
+/q
+/l600
+??
+Z
+y1z0
+y2z0
+y3z0
+Z
+y0z0
+y1z1
+y1z0
+y2z0
+y2z1
+y2z0
+y3z1
+z
+z0
+v23l2
+v26l2
+v23 w1 a0  t 0 .400 0 0 f 800 q0 J2 K 800 Q 0.85 H24,25,-1,-1
+v24 w1 a-2 t 0 .300 0 0 f 540 q0 J2 K 540 Q 0.80
+v25 w6 a2  t 0 .006 0 0 q1 J0 K 1000 Q 0.20 l1
+v23l4
+v23 w1 a0  t 0 .400 0 0 f 720 q0 J2 K 720 Q 0.85 H24,25,-1,-1
+v24 w1 a-2 t 0 .300 0 0 f 480 q0 J2 K 480 Q 0.80
+v25 w6 a2  t 0 .006 0 0 q1 J0 K 1000 Q 0.20 l1
+v23l4
+v23l2
+v23l1
+??
+v24l1
+v25l1
+v23l1
+v25q0
+v23l1
+v25l1
+v24l1
+v23 w1 a2  t 0 .600 0 0 f 270 q0 J2 K 270 Q 0.85 H24,25,-1,-1
+v24 w1 a-4 t 0 .400 0 0 f 812 q0 J2 K 820 Q 0.75
+v25 w6 a4  t 0 .005 0 0 q1 J0 K 800 Q 0.20 l1
+v23l1
+??
+v23r1
+v24r1
+v25r1
+??
+>5 ; v23l1
+v23 w1 a2  t 0 .600 0 0 f 270 q0 J2 K 270 Q 0.85 H24,25,-1,-1
+v24 w1 a-4 t 0 .400 0 0 f 812 q0 J2 K 820 Q 0.75
+v25 w6 a4  t 0 .005 0 0 q1 J0 K 800 Q 0.20 l1
+v23l1
+<5 ; v23l1
+v23r1v24r1v25r1
+<5 ; v23l1
+v23 w1 a2  t 0 .700 0 0 f 270 q0 J2 K 270 Q 0.85 H24,25,-1,-1
+v24 w1 a0  t 0 .650 0 0 f 812 q0 J2 K 820 Q 0.80
+v25 w6 a6  t 0 .005 0 0 q1 J2 K 1500 Q 0.40 l1
+v23 w1 a2  t 0 .700 0 0 f 270 q0 J1 K 2000 Q 0.30 A24,0.3,0.7 H24,25,-1,-1
+v24 w1 a0  t 0 .650 0 0 f 812 q0 J1 K 2000 Q 0.30 A23,0.3,0.7
+v25 w6 a6  t 0 .015 0 0 q1 J2 K 1500 Q 0.35 l1
+v23l1
+??
+v23r1v24r1v25r1
+<2v23l1
+v23 w4 a2  t 0 .700 0 0 f 270 q1 J1 K 3000 Q 0.30 A24,0.4,0.6 H24,25,-1,-1
+v24 w4 a0  t 0 .650 0 0 f 812 q1 J1 K 3000 Q 0.30 A23,0.4,0.6
+v25 w6 a6  t 0 .015 0 0 q1 J2 K 1500 Q 0.35 l1
+v23l1
+v25w5
+v23 w4 a2  t 0 .700 0 0 f 270 q1 J1 K 3000 Q 0.30 A24,0.4,0.6 H24,25,-1,-1
+v24 w4 a0  t 0 .650 0 0 f 812 q1 J1 K 3000 Q 0.30 A23,0.4,0.6
+v25 w6 a6  t 0 .015 0 0 q1 J2 K 1500 Q 0.35 l1
+v23l1
+v23r1v24r1v25r1
+<2v23l1
+v23 w1 a2  t 0 .700 0 0 f 270 q1 J1 K 1800 Q 0.30 A24,0.4,0.6 H24,25,-1,-1
+v24 w1 a0  t 0 .650 0 0 f 812 q0 J1 K 1800 Q 0.30 A23,0.4,0.6
+v25 w6 a6  t 0 .015 0 0 q1 J2 K 1500 Q 0.35 l1
+v23l1
+v25l1
+t0 .1 0 0
+v25l1
+t0 .05 0 0
+v25l1
+v23l1
+f440l1
+f330l1
+f400l1
+f380l1
+??
+Q1
+l1
+Q10
+l1
+v23 w1 a2  t 0 .700 0 0 f 270 q1 J1 K 1800 Q 0.30 A24,0.4,0.6 H24,25,-1,-1
+v24 w1 a0  t 0 .650 0 0 f 812 q0 J1 K 1800 Q 0.30 A23,0.4,0.6
+v25 w6 a6  t 0 .015 0 0 q1 J2 K 1500 Q 0.35 l1
+v23l1
+v23r1v24r1v25r1
+<2v23l1
+v23 w2 a2  t 0 .800 0 0 f 270 q0 J1 K 900 Q 0.40 A24,0.4,0.6 H24,25,-1,-1
+v24 w1 a-2 t 0 .750 0 0 f 812 q0 J1 K 900 Q 0.40 A23,0.4,0.6
+v25 w6 a6  t 0 .015 0 0 q1 J2 K 1500 Q 0.35 l1
+v23l1
+v23 w2 a2  t 0 .900 0 0 f 270 q0 J1 K 900 Q 0.40 A24,0.4,0.6 H24,25,-1,-1
+v24 w1 a-4 t 0 .850 0 0 f 812 q0 J1 K 900 Q 0.40 A23,0.4,0.6
+v25 w6 a6  t 0 .015 0 0 q1 J2 K 1500 Q 0.35 l1
+v23 w2 a2  t 0 .900 0 0 f 270 q0 J0 A24,0.6,0.4 H24,25,-1,-1
+v24 w1 a-3 t 0 .850 0 0 f 812 q0 J2 K 900 Q 0.80 A23,0.6,0.4
+v25 w6 a8  t 0 .015 0 0 q1 J0 l1
+v23l1
+v23 w2 a2  t 0 .900 0 0 f 270 q0 J0 A24,0.6,0.4 H24,25,-1,-1
+v24 w1 a-6 t 0 .850 0 0 f 812 q0 J2 K 840 Q 0.95 A23,0.6,0.4
+v25 w6 a8  t 0 .015 0 0 q1 J0 l1
+v23l1
+v23 w2 a2  t 0 .900 0 0 f 812 q0 J1 K 2500 Q 0.40 H24,25,-1,-1
+v24 w0 a-6 t 0 .850 0 0 f 270 q0 J1 K 400  Q 0.30
+v25 w6 a8  t 0 .015 0 0 q1 J0 l1
+v23l1
+v23r1v24r1v25r1;<2v23l1+5*
+?
+v23 w1 a2  t 0 .900 0 0 f 812 q0 J1 K 2000 Q 0.40 H24,25,-1,-1
+v24 w0 a-6 t 0 .900 0 0 f 540 q0 J1 K 1200 Q 0.30
+v25 w6 a6  t 0 .015 0 0 q1 J0 l1
+v23l1
+{v23l1}x0z1
+z0
+v23r1v24r1v25r1;<2v23l1+5*
+v23 w2 a-2 t 0 .900 0 0 f 540 q0 J1 K 2500 Q 0.35 H24,25,-1,-1
+v24 w1 a2  t 0 .900 0 0 f 812 q0 J2 K 900  Q 0.85
+v25 w6 a6  t 0 .015 0 0 q1 J0 l1
+v23l1
+v23r1v24r1v25r1;<2v23l1+5*
+v23 w2 a-10 t 0 .900 0 0 f 540 q0 J1 K 2500 Q 0.35 H24,25,-1,-1
+v24 w1 a2   t 0 .900 0 0 f 812 q0 J1 K 1400 Q 0.40
+v25 w6 a6   t 0 .015 0 0 q1 J0 l1
+v23l1
+v23r1v24r1v25r1;<2v23l1+5*
+v23 w2 a-10 t 0 .350 0 0 f 540 q0 J1 K 2500 Q 0.35 H24,25,-1,-1
+v24 w1 a2   t 0 .380 0 0 f 812 q0 J1 K 1100 Q 0.40
+v25 w6 a6   t 0 .015 0 0 q1 J0 l1
+v23l1
+v23 w2 a-10 t 0 .350 0 0 f 540 q0 J1 K 2500 Q 0.35 H24,25,-1,-1
+v24 w1 a2   t 0 .380 0 0 f 812 q0 J1 K 1100 Q 0.40
+v25 w6 a6   t 0 .015 0 0 q1 J0 l1
+v23l1
+v23r1v24r1v25r1;<2v23l1+5*
+??
+/q
+/w505,505
+v23 w2 a-10 t 0 .350 0 0 f 540 q0 J1 K 2500 Q 0.35 H24,25,-1,-1
+v24 w1 a2   t 0 .380 0 0 f 812 q0 J1 K 1100 Q 0.40
+v25 w6 a6   t 0 .015 0 0 q1 J0 l1
+v23l1
+{v0l2}x0
+{v23l2}x1
+z1
+z0
+z1
+M100
+z0
+(0 .25 .5 .75 1) /d 300
+??
+v1 a0 l1
+v2 m1 a0 f1 l1 w2
+v1F2,1
+F2,10
+?
+v2f.5
+f1
+a1
+?
+a4
+a0
+??
+v1F2,20
+v1F2,20,20
+v1F2,20,40
+v1F2,0,40
+v1F2,1,40
+v1F2,10,40
+v1F2,20,40
+v1F2,20,0
+v1F2,20,10
+v1F2,20,20
+v2q1
+v2q2
+v2q3
+q0
+?
+w2,0,1
+l1
+??
+v0l1
+v0l5
+v0f220l5
+v0f110l5
+w23?
+??
+w505
+l1
+l2
+f440l1
+v23l1
+v23f440l1
+v23f220l1
+v23f540l1
+z1
+z0
+??
+v1l1
+v2l1
+v2f.5l1
+v2f1
+??
+v2
+f1l1
+v1f440l1
+v2l1
+??
+v1F-1
+v2?
+f1
+v2F2,100
+v2l1
+v19 w300,1,1 a0 t 0 1 0 0 f 3 m1
+v23 w2 a-10 t 0 .350 0 0 f 540 q0 J1 K 2500 Q 0.35 A19,1.0,0.0 H24,25,-1,-1
+v24 w1 a2   t 0 .380 0 0 f 812 q0 J1 K 1100 Q 0.40 A19,1.0,0.0
+v25 w6 a6   t 0 .015 0 0 q1 J0 l1
+v23l1
+v19 w300,1,1 a0 t 0 1 0 0 f 3 m1
+v23 w2 a-10 t 0 .350 0 0 f 540 q0 J1 K 2500 Q 0.35 A19,1.0,0.0 H24,25,-1,-1
+v24 w1 a2   t 0 .380 0 0 f 812 q0 J1 K 1100 Q 0.40 A19,1.0,0.0
+v25 w6 a6   t 0 .015 0 0 q1 J0 l1
+v23l1
+v23H24,25,19
+v23l1
+??
+v23 H24,25,19
+?
+H25,25,25,25
+l1
+??
+v23 H24,25,19,0
+?
+v23 H24,25,19,10
+?
+/q
+/l909
+Z1
+/q
+( 1 .82 .67 .54 .44 .35 .28 .22 .17 .13 .09 .07 .04 .025 .012 .003 ) /d300
+v10 w300 1 1 a0 l1
+v11 a0 l1
+v10 A10,1
+v10 A-
+?
+??
+v11A10,1
+v10l1
+v10f1
+v10l1
+??
+v11A10,10
+v10l1
+v11A-
+?
+v11F10,1
+v11F10,10
+??
+v10a1
+l1
+v10a0
+f10
+w300,1,0
+l1
+S10
+v10w300f1a0l1
+v10w300 1 0 f1a0l1
+v10w300 1 1 f1a0l1
+l1
+w300 1 0
+l1
+a1
+l1
+??
+/q
+( 1 .82 .67 .54 .44 .35 .28 .22 .17 .13 .09 .07 .04 .025 .012 .003 ) /d300
+v0 w300 l1 a0
+f440
+v1w2a0l1
+v0f441
+v0f440
+??
+w300 1 0
+w300 1 1
+w300 1 0
+l1
+f441
+??
+v0a1
+w1 1 1
+v1l0
+v0l1
+f1
+l1
+v1
+?
+l1
+F0,1
+v0l1
+??
+A-1
+F0,1,1
+F-1
+l1
+??
+F-
+?
+v1
+?
+F-
+v2w2a0l1
+f1
+v1F2,1
+v1F2,10
+?
+??
+v2
+w3
+??
+w3,1,1
+v2l1
+?
+w3 0 1
+l1
+f.5l1
+??
+f1
+l1
+f440l1
+??
+f1
+l1
+?
+/q
+v0 a0 l1
+v1 w2 1 1 a0 l1
+v0 F1,1
+??
+v1f1
+v1l1
+l1
+?
+w2 1 0
+?
+l1
+v0
+?
+F1,10
+v1l1
+??
+v0F-
+v1w2l1
+v0F1,1
+v0F1,10
+v0F1,100
+v1w0
+v1w2
+v1w3 1 1
+l1
+(0 .25 .5 .75 1) /d 300
+v1w300 1 1
+l1
+?
+l1
+v0
+?
+F-
+v1l1
+?
+v1m1
+v0l1
+F1,100
+l1
+v0F1,1,1
+v1
+l1
+??
+v0F1,10,0
+(1 .75 .5 .25 0) /d301
+v1w301 1 1
+??
+v1l1
+??
+# exponential decay curve — 16 points matching 808 hardware RC discharge
+( 1 .82 .67 .54 .44 .35 .28 .22 .17 .13 .09 .07 .04 .025 .012 .003 )
+/d300
+# v19: one-shot exponential decay modulator
+# f3 = plays over ~333ms, drives amplitude of v23 and v24
+# must be in H chain — one-shot requires l1+ to start
+v19 w300,1,1 a0 t 0 1 0 0 f 3 m1
+# v23: saw at 540Hz — provides 540, 1080, 1620, 2160Hz harmonic series
+# v24: square at 812Hz — dominant fundamental, lowpass kills 2436Hz harmonic
+# v25: noise transient — short attack click
+v23 w2 a-10 t 0 .350 0 0 f 540 q0 J1 K 2500 Q 0.35 A19,1.0,0.0 H24,25,19,-1
+v24 w1 a2   t 0 .380 0 0 f 812 q0 J1 K 1100 Q 0.40 A19,1.0,0.0
+v25 w6 a6   t 0 .015 0 0 q1 J0 l1
+v23l1
+v30w505a0l1
+/w505,505
+w0
+/w505,505
+??
+v23l1
+v30l0
+/w505,505
+# exponential decay curve
+( 1 .82 .67 .54 .44 .35 .28 .22 .17 .13 .09 .07 .04 .025 .012 .003 )
+/d300
+v19 w300,1,1 a0 t 0 2 0 0 f 1 m1
+v23 w2 a-10 t 0 .900 0 0 q0 J1 K 2500 Q 0.35 A19,1.0,0.0 G24,-1,-1,-1 H24,25,19,-1
+v24 w1 a2   t 0 .900 0 0 q0 J1 K 1100 Q 0.40 A19,1.0,0.0 N17,90
+v25 w6 a6   t 0 .015 0 0 q1 J0 l1
+v23l1
+v23l173.6l
+# exponential decay curve
+( 1 .82 .67 .54 .44 .35 .28 .22 .17 .13 .09 .07 .04 .025 .012 .003 )
+/d300
+v19 w300,1,1 a0 t 0 2 0 0 f 1 m1
+v23 w2 a-10 t 0 .900 0 0 f 540 q0 J1 K 2500 Q 0.35 A19,1.0,0.0 H24,25,19,-1
+v24 w1 a2   t 0 .900 0 0 f 812 q0 J1 K 1100 Q 0.40 A19,1.0,0.0
+v25 w6 a6   t 0 .015 0 0 q1 J0 l1
+v23l1
+/q
+/l808
+/q
+/l808
+v0l1
+v2l1
+v7l1
+v20l1
+v23l1
+v26l1
+v28l1
+v30l1
+v32l1
+v10l1
+v13l1
+v36l1
+v39l1
+v42l1
+??
+v0l1
+{v0l2v10l2}x0z1
+v0p-1
+v10?
+v10p1
+v11p1
+v12p1
+v13l1
+v2l1
+{v2l2;v13l2}x1
+v2p-1
+v13p1
+??
+z
+{v0l2v10l2+.5v0l2}x0
+??
+v0
+?
+f20
+f50
+f55
+f110
+f60
+f55
+v7l2
+v20l1
+v20l5
+y1{v20l5}x0
+z1
+%2
+%1
+??
+z
+v20?
+v50m1a0l1f1
+v20P50,1
+v50
+?
+f.1
+f.25
+v23l1
+y1
+{v23l1}x0
+y1{v20l5}x0
+y2{v23l1}x0
+z1
+%8
+%3
+%6
+%12
+%7
+%10
+%8
+y2{+.25v23l1}x0
+y2{+.5v23l1}x0
+%4
+y2{+.75v23l1}x0
+y2{+.5v23l1}x0
+y2{+.125v23l1}x0
+y2{v23l1}x0
+y2{v23l1+.125v23l1}x0
+y2{v23l1+.25v23l1}x0
+y2{+.25v23l1+.25v23l1}x0
+y2{+.25v23l1+.125v23l1}x0
+y2{+.125v23l1+.25v23l1}x0
+y2{v23l1+.25v23l1}x0
+y2{v23l1+.25v23l.5}x0
+y2{v23l1+.25v23l.75}x0
+y2{v23l1+.125v23l.75}x0
+y2{v23l1+.33v23l.75}x0
+y2{v23l1+.5v23l.75}x0
+y2{v23l1+.75v23l.75}x0
+y2{v23l1+.5v23l.75}x0
+{#}x1
+y2{v23l1+.25v23l.75}x0
+y2{v23l1+.25v23l1}x0
+y2{v23l1+.5v23l1}x0
+y2{v23l1+.75v23l1}x0
+y2{v23l1+.75v23l1+.125v23l1}x0
+y2{v23l1+.75v23l1+.1v23l1}x0
+y2{v23l1+.33v23l1}x0
+z
+%2
+%8
+??
+Z
+v10
+?
+f60
+v11?v12?v5?
+v11?;v12?lv5?
+v11?;v12?lv5?;
+v11?;v12?v5?;
+v10?; v11? ; v12 ? v5?;
+v5f10
+v5f1
+v5f2
+v5f3
+v5f4
+# w301: fast exponential decay for kick pitch sweep
+( 1 .75 .54 .37 .25 .16 .10 .06 .035 .018 .009 .004 .001 0 0 0 )
+/d301
+# v1: kick pitch sweep modulator — fast RC curve, 200ms
+v1 w301,1,1 a0 t 0 1 0 0 f 5 m1
+# 808 kick — sweep from 100Hz down to 50Hz over 200ms, decay 220ms
+# w301: fast exponential decay for kick sweep
+( 1 .75 .54 .37 .25 .16 .10 .06 .035 .018 .009 .004 .001 0 0 0 )
+# w301: fast decay for pitch sweep — done in ~30ms
+( 1 .6 .3 .12 .04 .01 0 0 0 0 0 0 0 0 0 0 )
+/d301
+# v1: pitch sweep modulator — f33 = 30ms one-shot
+v1 w301,1,1 a0 t 0 1 0 0 f 33 m1
+# w301: fast decay for pitch sweep — done in ~30ms
+( 1 .6 .3 .12 .04 .01 0 0 0 0 0 0 0 0 0 0 )
+/d301
+# v1: pitch sweep modulator — f33 = 30ms one-shot
+v1 w301,1,1 a0 t 0 1 0 0 f 33 m1
+# 808 kick:
+# t 0.022 = 22ms attack matches the measured peak arrival
+# d 0.180 = decay after peak
+# F1,30,49: sweeps 79Hz → 49Hz over 30ms matching measured sweep
+# K 180 Q 3.5: filter above fundamental, resonance adds sub bloom
+# NO high Q — the reference doesn't show resonant ringing
+v0 w0 a2 t 0.022 0.180 0 0 f 49 q0 F1,30,49 J1 K 180 Q 3.5 H1,-1,-1,-1 l1
+# w301: linear sweep 1.0 → 0.0 (just the falling half)
+( 1 .93 .87 .80 .73 .67 .60 .53 .47 .40 .33 .27 .20 .13 .07 0 )
+/d301
+v1 w301,1,1 a0 t 0 1 0 0 f 33 m1
+v0 w0 a2 t 0.022 0.180 0 0 f 49 q0 F1,29,49 J1 K 180 Q 3.5 H1,-1,-1,-1 l1
+v0l1
+v0l5
+v0l10
+??
+v0r1v1r1<3v0l1+3*
+/q
+v0a0l1
+v1a0l1m1f1
+v0F1,1
+v0F1,10
+??
+/q
+v0r1v1r1
+v0f100a0l1
+v1m1a0f1l1
+??
+v0F1,10
+# w301: linear sweep 1.0 → 0.0 over 30ms
+( 1 .87 .74 .62 .51 .40 .30 .21 .14 .08 .04 .015 .004 0 0 0 )
+/d301
+# v1: one-shot sweep modulator, f33 = 30ms playback
+v1 w301,1,1 a0 t 0 1 0 0 f 33 m1
+# FF1 enables frequency shift mode on v0
+# F1,30,49: shift = (sample × 30) + 49
+#   sample=1.0 → 79Hz at trigger
+#   sample=0.0 → 49Hz after 30ms
+# t 0.022 = 22ms attack matching measured reference peak
+# t 0.180 = decay
+v0 w0 a2 t 0.022 0.180 0 0 f 49 q0 FF1 F1,30,49 J1 K 120 Q 3.5 H1,-1,-1,-1 l1
+?
+v0l4
+v0l1
+v0l2
+v0l3
+/s3
+{v0l1}x0
+z1
+{v0l2}x0
+/w506,506
+v10w506a0l1
+v10w506a0l2
+# w301: linear sweep 1.0 → 0.0 over 30ms
+( 1 .87 .74 .62 .51 .40 .30 .21 .14 .08 .04 .015 .004 0 0 0 )
+# w301: linear sweep 1.0 → 0.0 over 30ms
+( 1 .87 .74 .62 .51 .40 .30 .21 .14 .08 .04 .015 .004 0 0 0 )
+/d301
+# v1: one-shot sweep modulator, f33 = 30ms playback
+v1 w301,1,1 a0 t 0 1 0 0 f 33 m1
+# FF1 enables frequency shift mode on v0
+# F1,30,49: shift = (sample × 30) + 49
+#   sample=1.0 → 79Hz at trigger
+#   sample=0.0 → 49Hz after 30ms
+# t 0.022 = 22ms attack matching measured reference peak
+# t 0.180 = decay
+v0 w0 a2 t 0.022 0.180 0 0 f 49 q0 FF1 F1,30,49 J1 K 120 Q 3.5 H1,-1,-1,-1 l1
+v0l2
+v0r1
+<2v0l2+2*
+( 1 .87 .74 .62 .51 .40 .30 .21 .14 .08 .04 .015 .004 0 0 0 )
+/d301
+v1 w301,1,1 a0 t 0 1 0 0 f 33 m1
+v0 w0 a2 t 0.022 0.120 0 0 f 0 q0 FF1 F1,30,49 J1 K 120 Q 3.5 H1,-1,-1,-1 l1
+v0l1
+v0l5
+v1 w301,1,1 a0 t 0 1 0 0 f 33 m1
+v0 w0 a2 t 0.022 0.120 0 0 f 49 q0 FF1 F1,30,49 J1 K 120 Q 3.5 H1,-1,-1,-1 l1
+v0l5
+v0l1
+v0l2
+/w506,506
+v10w506a0l5
+v10w506a0l2
+v10w506a0l3
+{v0l3}x0z1
+{v10l3}x1
+z0
+?
+S100
+/l0
+/l1
+/l2
+/l3
+/l4
+/l5
+/l6
+/l7
+/l8
+/l9
+/l10
+/l11
+/l12
+/l909
+Z1
+v1 w301,1,1 a0 t 0 1 0 0 f 33 m1
+v0 w0 a2 t 0.022 0.120 0 0 f 49 q0 FF1 F1,30,49 J1 K 120 Q 3.5 H1,-1,-1,-1 l1
+v0l2
+v0l3
+v0r1<3v0l1+3*
+v1 w301,1,1 a0 t 0 1 0 0 f 33 m1
+v0 w0 a2 t 0.022 0.120 0 0 f 49 q0 FF1 F1,30,49 J1 K 120 Q 3.5 H1,-1,-1,-1 l1
+v0l3
+( 1 .87 .74 .62 .51 .40 .30 .21 .14 .08 .04 .015 .004 0 0 0 )
+/d301
+v1 w301,1,1 a0 t 0 1 0 0 f 33 m1
+v2 w6 a4 t 0 .008 0 0 q1 J1 K 2500 Q 0.30
+v0 w0 a2 t 0.022 0.200 0 0 f 49 q0 FF1 F1,40,49 J1 K 120 Q 3.5 H1,2,-1,-1 l1
+v0l5
+v0l3
+{v0l3}x0z1
+??
+/w506,506
+v10w506a0l1
+{v10l3}x1
+??
+v2w5
+q2
+q1
+q3
+h5
+h10
+h2
+q1
+f220
+f880
+v1f66
+v1f110
+v1f50
+v1f20
+v1f5
+v1f10
+v1f1
+v1f2
+v1f3
+v1f4
+v1f5
+v1f6
+v1f8
+v1f20
+v1f26
+v1f16
+??
+v0f40
+v0f20
+v0f10
+v0f5
+f100
+f100K1000
+f100K1000Q10
+f100K1000Q1
+f100K2000Q1
+f100K4000Q1
+??
+v0J0
+v1f20
+v1f60
+k1
+v2J0
+v2J2
+# Fast descending "vocal moan" envelope for pitch glide (roughly linear drop)
+( 1 .90 .80 .70 .60 .50 .41 .33 .26 .20 .15 .10 .06 .03 .01 0 )
+/d310
+# Pitch-envelope modulator (one-shot, silent)
+v10 w310,1,1 a0 t 0 0.28 0 0 f 3.57 m1    # ~280 ms total glide duration
+# Main "oww" voice – saw wave + resonant lowpass to fake vocal formants
+v0 w2 a-3 t 0.012 0.22 0.18 0.08 f 160
+    J1 K 1600 Q 2.1                      # resonance peak around ~900–1300 Hz region
+    FF1
+    F10,280,120                          # sweep: trigger=120+280=400 Hz → rest=120 Hz
+    H10,11,-1,-1                         # trigger pitch mod + tiny noise burst
+    l1                                   # master trigger point
+# Very short breathy/grunt noise transient at onset (optional but adds realism)
+v11 w6 a-16 t 0 0.035 0 0 q0
+    J2 K 1400 Q 0.9                      # bandpass around mid formant range
+v0l1
+v0 w0 a-90 t 0 .001 0 0 f 1 H1,2,3,4 l1
+v1 w5 a6  t 0 .015 0 0 q4 J2 K 3500 Q 0.55
+v2 w5 a5  t 0 .015 0 0 q4 J2 K 3500 Q 0.55
+v3 w5 a4  t 0 .020 0 0 q4 J2 K 3500 Q 0.55
+v4 w5 a3  t 0 .160 0 0 q3 J2 K 3200 Q 0.65
+v0l1
+v0l2
+?
+??
+S100
+/q
