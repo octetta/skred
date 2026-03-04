@@ -367,128 +367,93 @@ float mmf_process(int n, float input) {
 }
 
 // Initialize the envelope
-void envelope_init(int v, float attack_time, float decay_time,
-               float sustain_level, float release_time) {
-#ifdef SYNTH_FEATURE_AMP_ENVELOPE
-    sv.amp_envelope[v].a = attack_time;
-    sv.amp_envelope[v].d = decay_time;
-    sv.amp_envelope[v].s = sustain_level;
-    sv.amp_envelope[v].r = release_time;
-    sv.amp_envelope[v].attack_time = attack_time * MAIN_SAMPLE_RATE; // convert seconds to samples
-    sv.amp_envelope[v].decay_time = decay_time * MAIN_SAMPLE_RATE;
-    sv.amp_envelope[v].sustain_level = fmaxf(0, fminf(1.0f, sustain_level)); // clamp 0 to 1
-    sv.amp_envelope[v].release_time = release_time * MAIN_SAMPLE_RATE;
-    sv.amp_envelope[v].sample_start = 0;
-    sv.amp_envelope[v].sample_release = 0;
-    sv.amp_envelope[v].is_active = 0;
-#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
+
+void envelope_init_e(envelope_t *e, float a, float d, float s, float r) {
+    e->a = a;
+    e->d = d;
+    e->s = s;
+    e->r = r;
+    e->attack_time          = a * MAIN_SAMPLE_RATE;
+    e->decay_time           = d * MAIN_SAMPLE_RATE;
+    e->sustain_level        = fmaxf(0, fminf(1.0f, s));
+    e->release_time         = r * MAIN_SAMPLE_RATE;
+    e->sample_start         = 0;
+    e->sample_release       = 0;
+    e->is_active            = 0;
+    e->velocity             = 1.0f;
+    e->amplitude_at_release = 0.0f;
+    e->amplitude_at_trigger = 0.0f;
+    e->current_amplitude    = 0.0f;
+}
+
+void envelope_init(int v, float a, float d, float s, float r) {
+    envelope_init_e(&sv.amp_envelope[v], a, d, s, r);
+}
+
+void envelope_trigger_e(envelope_t *e, float f) {
+    if (e->is_active)
+        e->amplitude_at_trigger = e->current_amplitude;
+    else
+        e->amplitude_at_trigger = 0.0f;
+    e->sample_start   = SAMPLE_COUNT_GET();
+    e->sample_release = 0;
+    e->velocity       = f;
+    e->is_active      = 1;
 }
 
 void amp_envelope_trigger(int v, float f) {
-    // If the voice was already active, capture its current level to avoid a pop
-#ifdef SYNTH_FEATURE_AMP_ENVELOPE
-    if (sv.amp_envelope[v].is_active) {
-        sv.amp_envelope[v].amplitude_at_trigger = sv.amp_envelope[v].current_amplitude;
-#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
-    } else {
-#ifdef SYNTH_FEATURE_AMP_ENVELOPE
-        sv.amp_envelope[v].amplitude_at_trigger = 0.0f;
-#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
-    }
-
-#ifdef SYNTH_FEATURE_AMP_ENVELOPE
-    sv.amp_envelope[v].sample_start = SAMPLE_COUNT_GET();
-    sv.amp_envelope[v].sample_release = 0;
-    sv.amp_envelope[v].velocity = f;
-    sv.amp_envelope[v].is_active = 1;
-#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
+    envelope_trigger_e(&sv.amp_envelope[v], f);
 }
 
-// Release the envelope (note off)
+void envelope_release_e(envelope_t *e) {
+    if (e->is_active && e->sample_release == 0) {
+        e->sample_release       = SAMPLE_COUNT_GET();
+        e->amplitude_at_release = e->current_amplitude;
+    }
+}
+
 void amp_envelope_release(int v) {
-#ifdef SYNTH_FEATURE_AMP_ENVELOPE
-    if (sv.amp_envelope[v].is_active && sv.amp_envelope[v].sample_release == 0) {
-        sv.amp_envelope[v].sample_release = SAMPLE_COUNT_GET();
-#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
-        // CRITICAL: Capture the exact height the envelope was at 
-        // when the key was lifted.
-#ifdef SYNTH_FEATURE_AMP_ENVELOPE
-        sv.amp_envelope[v].amplitude_at_release = sv.amp_envelope[v].current_amplitude;
-#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
-    }
+    envelope_release_e(&sv.amp_envelope[v]);
 }
 
-float amp_envelope_step(int v) {
-#ifdef SYNTH_FEATURE_AMP_ENVELOPE
-    if (!sv.amp_envelope[v].is_active) return 0;
-#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
+float envelope_step_e(envelope_t *e) {
+    if (!e->is_active) return 0.0f;
 
     float out = 0.0f;
-#ifdef SYNTH_FEATURE_AMP_ENVELOPE
-    float samples_since_start = (float)(SAMPLE_COUNT_GET() - sv.amp_envelope[v].sample_start);
-#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
+    float samples_since_start = (float)(SAMPLE_COUNT_GET() - e->sample_start);
 
-// 1. Attack phase (Legato-aware)
-#ifdef SYNTH_FEATURE_AMP_ENVELOPE
-    if (samples_since_start < sv.amp_envelope[v].attack_time) {
-        float attack_progress = samples_since_start / sv.amp_envelope[v].attack_time;
-        float start_val = sv.amp_envelope[v].amplitude_at_trigger;
-#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
-        
-#ifdef SYNTH_FEATURE_AMP_ENVELOPE
-        if (sv.amp_envelope_mode[v] != 0) {
-#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
-          // Linear interpolation: start_val -> 1.0
-          out = start_val + (attack_progress * (1.0f - start_val));
-        } else {
-          float curved_progress = attack_progress * attack_progress;
-          // Makes it "snap" in
-          out = start_val + (curved_progress * (1.0f - start_val));
-        }
-    } 
-    // 2. Decay phase
-#ifdef SYNTH_FEATURE_AMP_ENVELOPE
-    else if (samples_since_start < (sv.amp_envelope[v].attack_time + sv.amp_envelope[v].decay_time)) {
-        float samples_in_decay = samples_since_start - sv.amp_envelope[v].attack_time;
-        float decay_progress = samples_in_decay / sv.amp_envelope[v].decay_time;
-        out = 1.0f - decay_progress * (1.0f - sv.amp_envelope[v].sustain_level);
-#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
+    if (samples_since_start < e->attack_time) {
+        float attack_progress = samples_since_start / e->attack_time;
+        float start_val = e->amplitude_at_trigger;
+        float curved_progress = attack_progress * attack_progress;
+        out = start_val + (curved_progress * (1.0f - start_val));
     }
-    // 3. Sustain / Release Logic
+    else if (samples_since_start < (e->attack_time + e->decay_time)) {
+        float samples_in_decay = samples_since_start - e->attack_time;
+        float decay_progress = samples_in_decay / e->decay_time;
+        out = 1.0f - decay_progress * (1.0f - e->sustain_level);
+    }
     else {
-#ifdef SYNTH_FEATURE_AMP_ENVELOPE
-        if (sv.amp_envelope[v].sample_release == 0) {
-            out = sv.amp_envelope[v].sustain_level;
-#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
+        if (e->sample_release == 0) {
+            out = e->sustain_level;
         } else {
-            // RELEASE PHASE
-#ifdef SYNTH_FEATURE_AMP_ENVELOPE
-            float samples_since_release = (float)(SAMPLE_COUNT_GET() - sv.amp_envelope[v].sample_release);
-#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
-            
-#ifdef SYNTH_FEATURE_AMP_ENVELOPE
-            if (samples_since_release < sv.amp_envelope[v].release_time) {
-                float release_progress = samples_since_release / sv.amp_envelope[v].release_time;
-#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
-                
-                // FIX: Ramp down from the captured amplitude_at_release, NOT sustain_level
-#ifdef SYNTH_FEATURE_AMP_ENVELOPE
-                out = sv.amp_envelope[v].amplitude_at_release * (1.0f - release_progress);
-#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
+            float samples_since_release = (float)(SAMPLE_COUNT_GET() - e->sample_release);
+            if (samples_since_release < e->release_time) {
+                float release_progress = samples_since_release / e->release_time;
+                out = e->amplitude_at_release * (1.0f - release_progress);
             } else {
-#ifdef SYNTH_FEATURE_AMP_ENVELOPE
-                sv.amp_envelope[v].is_active = 0;
-#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
+                e->is_active = 0;
                 out = 0.0f;
             }
         }
     }
 
-    // Store the result so the Release function can "capture" it
-#ifdef SYNTH_FEATURE_AMP_ENVELOPE
-    sv.amp_envelope[v].current_amplitude = out;
-    return out * sv.amp_envelope[v].velocity;
-#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
+    e->current_amplitude = out;
+    return out * e->velocity;
+}
+
+float amp_envelope_step(int v) {
+    return envelope_step_e(&sv.amp_envelope[v]);
 }
 
 #include "util.h"
@@ -531,6 +496,10 @@ void synth_voice_bench(int voice) {
   clock_gettime(VOICE_CLOCK, &sv.mark_a[voice]);
   sv.mark_go[voice] = 1;
 }
+
+void mmf_set_params(int n, float f, float resonance);
+
+#define FILTER_UC (16)
 
 void synth(float *buffer, float *input, int num_frames, int num_channels, void *user) {
   const int nvoices = synth_voice_count();
@@ -620,8 +589,22 @@ void synth(float *buffer, float *input, int num_frames, int num_channels, void *
 
       // apply multi-mode filter
 #ifdef SYNTH_FEATURE_FILTER
-      if (sv.filter_mode[n]) sv.sample[n] = mmf_process(n, sv.sample[n]);
-#endif /* SYNTH_FEATURE_FILTER */
+if (sv.filter_mode[n]) {
+if (sv.filter_update_counter[n] <= 0) {
+    float cutoff = sv.filter_freq[n];
+    if (sv.use_filter_envelope[n]) {
+        float env = envelope_step_e(&sv.filter_envelope[n]);
+        env = fmaxf(0.0f, fminf(1.0f, env));
+        cutoff = cutoff + (env * sv.filter_env_depth[n]);
+    }
+    cutoff = fmaxf(20.0f, fminf(20000.0f, cutoff));
+    mmf_set_params(n, cutoff, sv.filter_res[n]);
+    sv.filter_update_counter[n] = FILTER_UC;
+}
+sv.filter_update_counter[n]--;
+sv.sample[n] = mmf_process(n, sv.sample[n]);
+}
+#endif
 
       // apply amp to sample
       float amp = sv.amp[n];
@@ -1120,8 +1103,8 @@ void mmf_set_params(int n, float f, float resonance) {
 #endif /* SYNTH_FEATURE_FILTER */
 
 #ifdef SYNTH_FEATURE_FILTER
-    sv.filter_freq[n] = f;
-    sv.filter_res[n] = resonance;
+    //sv.filter_freq[n] = f;
+    //sv.filter_res[n] = resonance;
 #endif /* SYNTH_FEATURE_FILTER */
 }
 
@@ -1290,6 +1273,10 @@ void voice_reset(int i) {
   osc_set_wave_table_index(i, WAVE_TABLE_SINE);
 #ifdef SYNTH_FEATURE_FILTER
   sv.filter_mode[i] = 0;
+  sv.use_filter_envelope[i]   = 0;
+  sv.filter_env_depth[i]      = 0.0f;
+  sv.filter_update_counter[i] = FILTER_UC;
+  envelope_init_e(&sv.filter_envelope[i], 0.0f, 0.0f, 1.0f, 0.0f);
 #endif /* SYNTH_FEATURE_FILTER */
   mmf_init(i, 8000.0f, 0.707f);
   //
@@ -1322,24 +1309,26 @@ int wave_reset(int voice, int n) {
 }
 
 int envelope_velocity(int voice, float f) {
-  if (voice_invalid(voice)) return SYNTH_INVALID_VOICE;
-  if (f == 0) {
-    amp_envelope_release(voice);
-  } else {
-#ifdef SYNTH_FEATURE_AMP_ENVELOPE
-    sv.use_amp_envelope[voice] = 1;
-#endif /* SYNTH_FEATURE_AMP_ENVELOPE */
-    if (sv.one_shot[voice]) {
-      osc_trigger(voice);
+    if (voice_invalid(voice)) return SYNTH_INVALID_VOICE;
+    if (f == 0) {
+        amp_envelope_release(voice);
+        if (sv.use_filter_envelope[voice])
+            envelope_release_e(&sv.filter_envelope[voice]);
+    } else {
+        sv.use_amp_envelope[voice] = 1;
+        if (sv.one_shot[voice]) {
+            osc_trigger(voice);
+        }
+        amp_envelope_trigger(voice, f);
+        if (sv.use_filter_envelope[voice])
+            envelope_trigger_e(&sv.filter_envelope[voice], f);
     }
-    //osc_trigger(voice);
-    amp_envelope_trigger(voice, f);
-  }
-  return 0;
+    return 0;
 }
 
 int mmf_set_freq(int n, float f) {
 #ifdef SYNTH_FEATURE_FILTER
+  sv.filter_freq[n] = f;
   mmf_set_params(n, f, sv.filter_res[n]);
 #endif /* SYNTH_FEATURE_FILTER */
   return 0;

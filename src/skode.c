@@ -759,6 +759,19 @@ int skode_function(ands_t *s, int info) {
     case ATOM4('f---'): // freq hz
       if (argc) freq_set(voice, arg[0]);
       break;
+    case ATOM4('ft--'): // filter-adsr A D S R
+      if (argc == 4) {
+        float a = arg[0];
+        float d = arg[1];
+        float s = arg[2];
+        float r = arg[3];
+        envelope_init_e(&sv.filter_envelope[voice], a, d, s, r);
+        sv.use_filter_envelope[voice] = !(a==0 && d==0 && s==1 && r==0);
+      }
+      break;
+    case ATOM4('fd--'): // filter-adsr depth
+      if (argc) sv.filter_env_depth[voice] = arg[0];
+      break;
     case ATOM4('F---'): // FM voice depth
       if (argc <= 1) {
         freq_mod_set(voice, -1, 0, 0);
@@ -850,11 +863,17 @@ int skode_function(ands_t *s, int info) {
       break;
     case ATOM4('l---'): // velocity amount
       if (argc) {
-        envelope_velocity(voice, arg[0]);
-        if (sv.link_velo_a[voice] >= 0) envelope_velocity(sv.link_velo_a[voice], arg[0]);
-        if (sv.link_velo_b[voice] >= 0) envelope_velocity(sv.link_velo_b[voice], arg[0]);
-        if (sv.link_velo_c[voice] >= 0) envelope_velocity(sv.link_velo_c[voice], arg[0]);
-        if (sv.link_velo_d[voice] >= 0) envelope_velocity(sv.link_velo_d[voice], arg[0]);
+        int a = sv.link_velo_c[voice];
+        int b = sv.link_velo_b[voice];
+        int c = sv.link_velo_c[voice];
+        int d = sv.link_velo_d[voice];
+        int x = arg[0];
+        envelope_velocity(voice, x);
+        if (a >= 0) envelope_velocity(a, x);
+        if (b >= 0) envelope_velocity(b, x);
+        if (c >= 0) envelope_velocity(c, x);
+        if (d >= 0) envelope_velocity(d, x);
+       
       }
       break;
     case ATOM4('m---'): // mute-audio bool

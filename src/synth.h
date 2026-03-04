@@ -103,4 +103,9 @@ void synth_voice_bench(int voice);
 
 void normalize_preserve_zero(float *data, int length);
 
+void envelope_init_e(envelope_t *e, float a, float d, float s, float r);
+void envelope_trigger_e(envelope_t *e, float f);
+void envelope_release_e(envelope_t *e);
+float envelope_step_e(envelope_t *e);
+
 #endif

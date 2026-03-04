@@ -118,6 +118,10 @@ typedef struct {
     float  * restrict filter_res;
     int    * restrict filter_mode;
     mmf_t  * restrict filter;
+    envelope_t * restrict filter_envelope;
+    int        * restrict use_filter_envelope;
+    float      * restrict filter_env_depth;
+    int        * restrict filter_update_counter;
 #endif
 
 #ifdef SYNTH_FEATURE_AMP_ENVELOPE

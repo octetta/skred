@@ -177,6 +177,10 @@ void synth_alloc_voices(int voice_max) {
     VALLOC(filter_res,       float);
     VALLOC(filter_mode,      int);
     VALLOC(filter,           mmf_t);
+    VALLOC(filter_envelope,       envelope_t);
+    VALLOC(use_filter_envelope,   int);
+    VALLOC(filter_env_depth,      float);
+    VALLOC(filter_update_counter, int);
 #endif
 
 #ifdef SYNTH_FEATURE_AMP_ENVELOPE
@@ -248,6 +252,10 @@ void synth_free_voices(void) {
 #ifdef SYNTH_FEATURE_FILTER
     VFREE(filter_freq);      VFREE(filter_res);
     VFREE(filter_mode);      VFREE(filter);
+    VFREE(filter_envelope);
+    VFREE(use_filter_envelope);
+    VFREE(filter_env_depth);
+    VFREE(filter_update_counter);
 #endif
 #ifdef SYNTH_FEATURE_AMP_ENVELOPE
     VFREE(amp_envelope);     VFREE(amp_envelope_mode); VFREE(use_amp_envelope);
