@@ -428,7 +428,7 @@ int skode_load(skode_t *ctx, int voice, int n) {
     while (fgets(line, sizeof(line), in) != NULL) {
       size_t len = strlen(line);
       if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
-      ctx->printf(ctx, "# %s\n", line);
+      ctx->printf(ctx, "  %s\n", line);
       r = skode_consume(line, &wprime);
       if (r != 0) {
         ctx->printf(ctx, "# error in patch\n");

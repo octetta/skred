@@ -204,7 +204,7 @@ int main(int argc, char *argv[]) {
           case '1': requested_synth_frames_per_callback = (int)strtol(&argv[i][2], NULL, 0); break;
           case '2': requested_seq_frames_per_callback = (int)strtol(&argv[i][2], NULL, 0); break;
           case 'e': {
-            printf("# %s\n", argv[i]);
+            printf("  %s\n", argv[i]);
             strcpy(execute_from_start, &argv[i][2]);
           } break;
           default:

@@ -84,7 +84,6 @@ void synth_config_set_voices(int n) {
         fprintf(stderr, "# voices rounded %d -> %d (VOICE_ALIGN=%d)\n",
                 n, rounded, VOICE_ALIGN);
     synth_config.voice_max = rounded;
-    printf("# %d\n", synth_config.voice_max);
 }
 
 void synth_config_set_waves(int n) {
