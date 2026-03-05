@@ -1497,7 +1497,10 @@ int mmf_set_freq(int n, float f) {
 
 int mmf_set_res(int n, float res) {
 #ifdef SYNTH_FEATURE_FILTER
-  if (res > 0) mmf_set_params(n, sv.filter_freq[n], res);
+  if (res > 0) {
+    sv.filter_res[n] = res;
+    mmf_set_params(n, sv.filter_freq[n], res);
+  }
 #endif /* SYNTH_FEATURE_FILTER */
   return 0;
 }

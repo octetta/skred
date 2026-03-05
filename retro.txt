@@ -1,0 +1,36 @@
+w10 strings / sawtooth
+w11 clarinet / square
+w12 acoustic-piano
+w13 electric-piano
+w14 electric-piano-hard
+w15 clavinet
+w16 organ
+w17 brass
+w18 sax
+w19 violin
+w20 acoustic-guitar
+w21 digital-guitar
+w22 electric-bass
+w23 digital-bass
+w24 bell
+w25 whistle
+
+
+w# Name             Description & Harmonic Character
+-- ---------------- --------------------------------
+10 Sawtooth         The standard "analog" saw. Rich in all harmonics; bright and buzzy.
+11 Square           Classic "hollow" woodwind/chiptune sound. Only odd harmonics.
+12 Acoustic Piano   Strong fundamental with complex, percussive upper-harmonic decay.
+13 Electric Piano   Mellow, bell-like attack; smoother than the acoustic version.
+14 Clavinet         Highly rhythmic and "twangy" with sharp, metallic harmonic peaks.
+15 Organ 1          A full "drawbars out" Hammond sound. Heavy and broad.
+16 Organ 2          A thinner, "whistling" organ tone; higher register emphasis.
+17 Brass            Bright, buzzy, and "reedy" with a distinct brassy swell potential.
+18 Saxophone        Nasal and harmonically dense in the mid-range.
+19 Violin           Rich, continuous harmonic texture; very effective for string pads.
+20 Acoustic Guitar  High-frequency "pluck" energy with a woody resonance.
+21 Electric Guitar  Mid-focused and biting; thinner than the acoustic guitar.
+22 Synth Bass       Heavy low-end fundamental with a slightly "squelchy" top.
+23 Digital Bass     More "clicky" and metallic than #13; cuts through a mix well.
+24 Bell             Pure, high-frequency harmonics with an inharmonic "clink" attack.
+25 Sine             Pure fundamental. Used for reinforcing sub-bass or clean organ tones.

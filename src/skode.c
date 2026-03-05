@@ -867,7 +867,7 @@ int skode_function(ands_t *s, int info) {
         int b = sv.link_velo_b[voice];
         int c = sv.link_velo_c[voice];
         int d = sv.link_velo_d[voice];
-        int x = arg[0];
+        double x = arg[0];
         envelope_velocity(voice, x);
         if (a >= 0) envelope_velocity(a, x);
         if (b >= 0) envelope_velocity(b, x);
