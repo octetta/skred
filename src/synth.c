@@ -709,6 +709,166 @@ static int voice_invalid(int voice) {
 
 #define SYNTH_INVALID_VOICE (100)
 
+#if 1
+
+
+char *voice_format(int v, char *out, size_t out_size, int verbose) {
+    if (out == NULL) return "(NULL)";
+    if (out_size == 0) return out;
+    if (voice_invalid(v)) {
+        out[0] = '\0';
+        return out;
+    }
+
+    char *ptr = out;
+    size_t remaining = out_size;
+
+#define APPEND(...) do { \
+    int _n = snprintf(ptr, remaining, __VA_ARGS__); \
+    if (_n > 0 && (size_t)_n < remaining) { ptr += _n; remaining -= _n; } \
+    else { ptr += remaining - 1; *ptr = '\0'; remaining = 0; return out; } \
+} while (0)
+
+    /* --- always: voice number, waveform, frequency, amplitude --- */
+    APPEND("v%d w%d f%g a%g", v, sv.wave_table_index[v], sv.freq[v], sv.user_amp[v]);
+
+    /* --- last midi note (suppress if never set) --- */
+    if (verbose || sv.last_midi_note[v] > 0)
+        APPEND(" n%g", sv.last_midi_note[v]);
+
+    /* --- note detune (suppress if both zero) --- */
+    if (verbose || sv.midi_transpose[v] != 0.0f || sv.midi_cents[v] != 0.0f)
+        APPEND(" N%g,%g", sv.midi_transpose[v], sv.midi_cents[v]);
+
+    /* --- midi note forward (suppress if all unset) --- */
+    if (verbose
+        || (int)sv.link_midi_a[v] >= 0
+        || (int)sv.link_midi_b[v] >= 0
+        || (int)sv.link_midi_c[v] >= 0
+        || (int)sv.link_midi_d[v] >= 0)
+        APPEND(" G%d,%d,%d,%d",
+            (int)sv.link_midi_a[v], (int)sv.link_midi_b[v],
+            (int)sv.link_midi_c[v], (int)sv.link_midi_d[v]);
+
+    /* --- velocity trigger chain (suppress if all unset) --- */
+    if (verbose
+        || (int)sv.link_velo_a[v] >= 0
+        || (int)sv.link_velo_b[v] >= 0
+        || (int)sv.link_velo_c[v] >= 0
+        || (int)sv.link_velo_d[v] >= 0)
+        APPEND(" H%d,%d,%d,%d",
+            (int)sv.link_velo_a[v], (int)sv.link_velo_b[v],
+            (int)sv.link_velo_c[v], (int)sv.link_velo_d[v]);
+
+    /* --- trigger link (suppress if unset) --- */
+    if (verbose || (int)sv.link_trig[v] >= 0)
+        APPEND(" L%d", (int)sv.link_trig[v]);
+
+    /* --- playback direction (suppress b0 default) --- */
+    if (verbose || sv.direction[v])
+        APPEND(" b%d", sv.direction[v]);
+
+    /* --- looping (suppress B0 default) --- */
+    if (verbose || sv.loop_enabled[v])
+        APPEND(" B%d", sv.loop_enabled[v]);
+
+    /* --- pan (suppress if centre) --- */
+    if (verbose || sv.pan[v] != 0.0f)
+        APPEND(" p%g", sv.pan[v]);
+
+    /* --- pan modulation (suppress if unset or depth zero) --- */
+    if (verbose || (sv.pan_mod_osc[v] >= 0 && sv.pan_mod_depth[v] != 0.0f))
+        APPEND(" P%d,%g,%g", sv.pan_mod_osc[v], sv.pan_mod_depth[v], sv.pan_mod_adder[v]);
+
+    /* --- filter (suppress if disabled) --- */
+    if (verbose || sv.filter_mode[v])
+        APPEND(" J%d K%g Q%g", sv.filter_mode[v], sv.filter_freq[v], sv.filter_res[v]);
+
+    /* --- filter envelope (suppress if disabled) --- */
+    if (verbose || sv.use_filter_envelope[v])
+        APPEND(" ft %g %g %g %g fd %g",
+            sv.filter_envelope[v].a,
+            sv.filter_envelope[v].d,
+            sv.filter_envelope[v].s,
+            sv.filter_envelope[v].r,
+            sv.filter_env_depth[v]);
+
+    /* --- phase distortion (suppress if mode 0) --- */
+    if (verbose || sv.cz_mode[v])
+        APPEND(" c%d,%g", sv.cz_mode[v], sv.cz_distortion[v]);
+
+    /* --- phase distortion modulation (suppress if unset or depth zero) --- */
+    if (verbose || (sv.cz_mod_osc[v] >= 0 && sv.cz_mod_depth[v] != 0.0f))
+        APPEND(" C%d,%g", sv.cz_mod_osc[v], sv.cz_mod_depth[v]);
+
+    /* --- sample and hold (suppress if off) --- */
+    if (verbose || sv.sample_hold_max[v])
+        APPEND(" h%d", sv.sample_hold_max[v]);
+
+    /* --- bit quantise (suppress if off) --- */
+    if (verbose || sv.quantize[v])
+        APPEND(" q%d", sv.quantize[v]);
+
+    /* --- amplitude modulation (suppress if unset or depth zero) --- */
+    if (verbose || (sv.amp_mod_osc[v] >= 0 && sv.amp_mod_depth[v] != 0.0f))
+        APPEND(" A%d,%g,%g", sv.amp_mod_osc[v], sv.amp_mod_depth[v], sv.amp_mod_adder[v]);
+
+    /* --- frequency modulation — print FF1 prefix if in shift mode --- */
+    if (verbose || (sv.freq_mod_osc[v] >= 0 && sv.freq_mod_depth[v] != 0.0f)) {
+        if (sv.freq_mod_mode[v] == 1)
+            APPEND(" FF1");
+        APPEND(" F%d,%g,%g", sv.freq_mod_osc[v], sv.freq_mod_depth[v], sv.freq_mod_adder[v]);
+    }
+
+    /* --- mix / record flags (suppress if default) --- */
+    if (verbose || sv.disconnect[v])
+        APPEND(" m%d", sv.disconnect[v]);
+    if (verbose || sv.record[v])
+        APPEND(" r%d", sv.record[v]);
+
+    /* --- smoother (suppress if default) --- */
+    if (verbose || (sv.smoother_enable[v] && sv.smoother_smoothing[v] != SMOOTH_DEFAULT))
+        APPEND(" s%g", sv.smoother_smoothing[v]);
+
+    /* --- glissando (suppress if disabled) --- */
+    if (verbose || sv.glissando_enable[v])
+        APPEND(" g%g", sv.glissando_speed[v]);
+
+    /* --- amplitude envelope (suppress if flat) --- */
+    if (verbose || !envelope_is_flat(v))
+        APPEND(" t%g,%g,%g,%g k%d",
+            sv.amp_envelope[v].a,
+            sv.amp_envelope[v].d,
+            sv.amp_envelope[v].s,
+            sv.amp_envelope[v].r,
+            sv.amp_envelope_mode[v]);
+
+    /* ----------------------------------------------------------------
+     * Verbose-only: internal engine state after a # comment marker.
+     * The user can read these values but they are not skode commands.
+     * ---------------------------------------------------------------- */
+    if (verbose) {
+        APPEND("\n#");
+        APPEND(" user_amp:%g amp:%g", sv.user_amp[v], sv.amp[v]);
+        APPEND(" freq_scale:%g", sv.freq_scale[v]);
+        APPEND(" offset_hz:%g", sv.offset_hz[v]);
+        APPEND(" phase:%g phase_inc:%g", sv.phase[v], sv.phase_inc[v]);
+        APPEND(" sample:%g", sv.sample[v]);
+        APPEND(" finished:%d one_shot:%d", sv.finished[v], sv.one_shot[v]);
+        APPEND(" smoother_gain:%g", sv.smoother_gain[v]);
+        APPEND(" filter_update_counter:%d", sv.filter_update_counter[v]);
+        APPEND(" filter_env_active:%d", sv.filter_envelope[v].is_active);
+        APPEND(" amp_env_active:%d", sv.amp_envelope[v].is_active);
+        APPEND(" latency:%.2fms",
+            (double)ts_diff_ns(&sv.mark_a[v], &sv.mark_b[v]) / 1000000.0);
+    }
+
+#undef APPEND
+
+    return out;
+}
+
+#else
 char *voice_format(int v, char *out, int verbose) {
   if (out == NULL) return "(NULL)";
   if (voice_invalid(v)) {
@@ -911,6 +1071,7 @@ char *voice_format(int v, char *out, int verbose) {
   }
   return out;
 }
+#endif
 
 int amp_set(int voice, float f) {
   sv.user_amp[voice] = f;

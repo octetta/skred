@@ -341,7 +341,7 @@ int main(int argc, char *argv[]) {
 
   while (main_running) {
     if (scope_enable) {
-      voice_format(current_voice, scope->voice_text, 0);
+      voice_format(current_voice, scope->voice_text, 1024, 0);
     }
 
     if (line) free(line); // get rid of previous malloc-ed line

@@ -213,7 +213,7 @@ void voice_show(skode_t *ctx, int v, char c, int verbose) {
   char s[1024];
   char e[8] = "";
   if (c != ' ') sprintf(e, " # *");
-  voice_format(v, s, verbose);
+  voice_format(v, s, sizeof(s), verbose);
   if (strlen(s)) ctx->printf(ctx, "; %s%s\n", s, e);
 }
 
@@ -863,7 +863,7 @@ int skode_function(ands_t *s, int info) {
       break;
     case ATOM4('l---'): // velocity amount
       if (argc) {
-        int a = sv.link_velo_c[voice];
+        int a = sv.link_velo_a[voice];
         int b = sv.link_velo_b[voice];
         int c = sv.link_velo_c[voice];
         int d = sv.link_velo_d[voice];
