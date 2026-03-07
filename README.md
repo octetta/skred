@@ -3,7 +3,7 @@
 # skred
 
 *wavetables gone rogue — snap together voices like LEGO,
-then poke them with short ASCII incantations for instant
+then shape them with short ASCII incantations for instant
 sonic mischief*
 
 ## description
