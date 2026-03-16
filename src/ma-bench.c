@@ -11,10 +11,12 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <winbase.h>
-static const char* graph_bins[] = {" ", ".", ":", "-", "=", "*", "#", "█"};
+// Ultra-safe 7-bit ASCII for maximum compatibility on Windows
+static const char* graph_bins[] = {" ", ".", ":", "-", "=", "+", "*", "#"};
 #else
 #include <sys/resource.h>
 #include <sys/utsname.h>
+// High-fidelity Braille gradient for Unix/Linux
 static const char* graph_bins[] = {" ", "⣀", "⣄", "⣤", "⣦", "⣶", "⣿", "⣿"};
 #endif
 
@@ -113,29 +115,29 @@ static void render_stats(BenchData *b, double period_ms) {
     }
     for(int i=0; i<b->cpuIdx; i++) if(b->cpuSamples[i] > max_cpu) max_cpu = b->cpuSamples[i];
     
-    printf("exec   %8.4f ms ├", min_e);
+    printf("exec   %8.4f ms [", min_e);
     for(int i=0; i<NUM_BINS; i++) {
         double threshold = ((double)i / NUM_BINS * period_ms);
         int idx = (max_e > threshold) ? 7 : 0;
         printf("%s", graph_bins[idx]);
     }
-    printf("┤ %8.4f ms [%s]\n", max_e, (max_e > period_ms * 0.8) ? "FAIL" : "PASS");
+    printf("] %8.4f ms [%s]\n", max_e, (max_e > period_ms * 0.8) ? "FAIL" : "PASS");
 
-    printf("jitter %8.4f ms ├", 0.0);
+    printf("jitter %8.4f ms [", 0.0);
     for(int i=0; i<NUM_BINS; i++) {
         double threshold = ((double)i / NUM_BINS * period_ms);
         int idx = (max_j > threshold) ? 7 : 0;
         printf("%s", graph_bins[idx]);
     }
-    printf("┤ %8.4f ms\n", max_j);
+    printf("] %8.4f ms\n", max_j);
 
-    printf("cpu    %8.4f %%  ├", 0.0);
+    printf("cpu    %8.4f %%  [", 0.0);
     for(int i=0; i<NUM_BINS; i++) {
         double threshold = ((double)i / NUM_BINS);
         int idx = (max_cpu > threshold) ? 7 : 0;
         printf("%s", graph_bins[idx]);
     }
-    printf("┤ %8.4f %%\n", max_cpu);
+    printf("] %8.4f %%\n", max_cpu);
     
     printf("underruns: %d\n", atomic_load(&b->underrun_count));
 }
