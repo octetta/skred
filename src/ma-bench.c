@@ -7,12 +7,13 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <time.h>
-#include <sys/utsname.h>
 
 #ifdef _WIN32
 #include <windows.h>
+#include <winbase.h>
 #else
 #include <sys/resource.h>
+#include <sys/utsname.h>
 #endif
 
 #define MAX_SAMPLES 65536
@@ -70,10 +71,15 @@ void init_lut() {
 }
 
 void print_system_info(int duration) {
+#ifdef _WIN32
+    printf("Miniaudio: %s | OS: Windows | Arch: x64 | Duration: %d sec\n", 
+            MA_VERSION_STRING, duration);
+#else
     struct utsname buffer;
     uname(&buffer);
     printf("Miniaudio: %s | OS: %s | Arch: %s | Duration: %d sec\n", 
             MA_VERSION_STRING, buffer.sysname, buffer.machine, duration);
+#endif
     printf("--------------------------------------------------------------------------\n");
 }
 
