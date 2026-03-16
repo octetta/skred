@@ -86,38 +86,12 @@ void print_system_info(int duration) {
     printf("--------------------------------------------------------------------------\n");
 }
 
-void export_to_csv(const char* fmt, ma_uint32 rate, ma_uint32 buf, BenchData *b) {
-
-    FILE *f = fopen("results.csv","a");
-    if(!f) return;
-
-    fseek(f,0,SEEK_END);
-    if(ftell(f)==0)
-        fprintf(f,"Format,Rate,Buffer,MaxExecMS,MaxJitterMS,MaxCPUPercent,Underruns\n");
-
-    double max_e=0,max_j=0,max_cpu=0;
-    size_t count = (b->idx < MAX_SAMPLES)? b->idx : MAX_SAMPLES;
-
-    for(size_t i=0;i<count;i++){
-        if(b->execTimes[i]>max_e) max_e=b->execTimes[i];
-        if(fabs(b->jitterTimes[i])>max_j) max_j=fabs(b->jitterTimes[i]);
-    }
-
-    for(int i=0;i<b->cpuIdx;i++)
-        if(b->cpuSamples[i]>max_cpu) max_cpu=b->cpuSamples[i];
-
-    fprintf(f,"%s,%u,%u,%.4f,%.4f,%.4f,%d\n",
-        fmt,rate,buf,max_e,max_j,max_cpu,
-        atomic_load(&b->underrun_count));
-
-    fclose(f);
-}
-
-static void render_histogram(const char* label,
-                             double* samples,
-                             size_t count)
+static void render_histogram(const char* label, double* samples, size_t count)
 {
-    if(count == 0) return;
+    if(count == 0) {
+        printf("%-6s (no data)\n", label);
+        return;
+    }
 
     double min=1e9,max=-1e9;
 
@@ -127,7 +101,7 @@ static void render_histogram(const char* label,
     }
 
     double range=max-min;
-    if(range<=1e-9) range=1e-9;
+    if(range<=1e-12) range=1e-12;
 
     double bins[NUM_BINS]={0};
 
@@ -151,14 +125,22 @@ static void render_histogram(const char* label,
     printf("] %8.4f\n",max);
 }
 
-static void render_stats(BenchData *b, double period_ms) {
-
+static void render_stats(BenchData *b, double period_ms)
+{
     size_t count = (b->idx < MAX_SAMPLES)? b->idx : MAX_SAMPLES;
 
-    double max_e=0;
+    double early[MAX_SAMPLES];
+    double late[MAX_SAMPLES];
+    size_t earlyCount = 0;
+    size_t lateCount = 0;
 
-    for(size_t i=0;i<count;i++)
-        if(b->execTimes[i]>max_e) max_e=b->execTimes[i];
+    for(size_t i=0;i<count;i++) {
+        double j = b->jitterTimes[i];
+        if(j < 0)
+            early[earlyCount++] = -j;
+        else if(j > 0)
+            late[lateCount++] = j;
+    }
 
     double cpuArray[1000];
     int cpuCount=b->cpuIdx;
@@ -168,11 +150,18 @@ static void render_stats(BenchData *b, double period_ms) {
 
     render_histogram("exec",b->execTimes,count);
     render_histogram("jitter",b->jitterTimes,count);
+    render_histogram("early",early,earlyCount);
+    render_histogram("late",late,lateCount);
     render_histogram("cpu",cpuArray,cpuCount);
 
     printf("underruns: %d\n",atomic_load(&b->underrun_count));
 
-    if(max_e > period_ms*0.8)
+    double max_exec = 0;
+    for(size_t i=0;i<count;i++)
+        if(b->execTimes[i] > max_exec)
+            max_exec = b->execTimes[i];
+
+    if(max_exec > period_ms*0.8)
         printf("callback budget status: FAIL\n");
     else
         printf("callback budget status: PASS\n");
@@ -209,8 +198,8 @@ static void audio_callback(ma_device* pDevice, void* pOutput,
 
         for(ma_uint32 i=0;i<frameCount;i++){
             float s = sineLUT[(int)b->phase];
-            for(ma_uint32 ch=0;ch<2;ch++)
-                *out++ = s;
+            *out++ = s;
+            *out++ = s;
 
             b->phase += b->phaseInc;
             if(b->phase>=LUT_SIZE) b->phase-=LUT_SIZE;
@@ -222,8 +211,8 @@ static void audio_callback(ma_device* pDevice, void* pOutput,
 
         for(ma_uint32 i=0;i<frameCount;i++){
             int16_t s=(int16_t)(sineLUT[(int)b->phase]*32767.0f);
-            for(ma_uint32 ch=0;ch<2;ch++)
-                *out++ = s;
+            *out++ = s;
+            *out++ = s;
 
             b->phase += b->phaseInc;
             if(b->phase>=LUT_SIZE) b->phase-=LUT_SIZE;
@@ -238,8 +227,8 @@ static void audio_callback(ma_device* pDevice, void* pOutput,
     }
 }
 
-void run_test(ma_format format, ma_uint32 rate, ma_uint32 bufSize) {
-
+void run_test(ma_format format, ma_uint32 rate, ma_uint32 bufSize)
+{
     g_bench.idx=0;
     g_bench.cpuIdx=0;
     g_bench.recording=0;
@@ -293,18 +282,14 @@ void run_test(ma_format format, ma_uint32 rate, ma_uint32 bufSize) {
 
         printf("--------------------------------------------------------------------------\n");
 
-        export_to_csv(
-            (format==ma_format_f32?"f32":"s16"),
-            rate,bufSize,&g_bench);
-
         ma_device_uninit(&dev);
     }
 
     ma_context_uninit(&ctx);
 }
 
-int main(int argc,char** argv) {
-
+int main(int argc,char** argv)
+{
     int duration = (argc>1)? atoi(argv[1]) : 2;
 
     g_bench.duration_sec = duration;
@@ -315,11 +300,11 @@ int main(int argc,char** argv) {
 
     ma_format fmts[] = {ma_format_f32,ma_format_s16};
     ma_uint32 rates[] = {44100,48000};
-    ma_uint32 bufs[]  = {256,512,1024};
+    ma_uint32 bufs[]  = {128,256,512,1024};
 
     for(int f=0;f<2;f++)
         for(int r=0;r<2;r++)
-            for(int b=0;b<3;b++)
+            for(int b=0;b<4;b++)
                 run_test(fmts[f],rates[r],bufs[b]);
 
     return 0;
