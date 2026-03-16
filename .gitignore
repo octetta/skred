@@ -1,5 +1,7 @@
 results.csv
 ma-bench
+ma-bench.exe
+ma-bench.pdb
 wa_*.wav
 zig-out
 .zig-cache
