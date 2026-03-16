@@ -1,3 +1,8 @@
+```
+gcc -o ma-bench ma-bench.c -lm -lpthread
+./ma-bench 10 # run each combo for 10 seconds
+```
+
 # Interpreting ma-bench Output
 
 The output has the following columns per test:
