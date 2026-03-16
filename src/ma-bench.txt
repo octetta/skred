@@ -1,0 +1,8 @@
+Benchmark Overview:
+ma-bench is an audio performance diagnostic tool designed to measure real-time callback stability in miniaudio. It executes a synthetic sine wave synthesis task across various sample rates and buffer sizes to identify the operational limits of the audio hardware and driver stack.
+
+Metrics Explained:
+* exec (ms): The actual time taken by the audio_callback to generate one buffer of audio. A value approaching the period_ms indicates the system is nearing the processing limit.
+* jitter (ms): The variation in the execution time between consecutive callbacks. Lower jitter indicates a more stable, predictable audio thread.
+* cpu (%): The relative CPU utilization monitored during the test duration.
+* underruns: A count of instances where the audio callback was invoked later than the expected buffer period. High underrun counts manifest as audible clicks, pops, or "crackling."

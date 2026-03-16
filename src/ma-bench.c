@@ -1,205 +1,200 @@
-/*
-ma-bench.c - Miniaudio callback benchmark
-- Works on Linux/macOS
-- f32 and s16 output
-- Precomputed sine table with fractional indexing
-- Callback benchmarking (avg/min/max + jitter)
-- DSP load %
-- UTF-8 histograms
-- OS + CPU info + Miniaudio version
-- Command-line test duration
-*/
-
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
-
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <math.h>
-#include <string.h>
+#include <stdatomic.h>
+#include <pthread.h>
+#include <unistd.h>
 #include <time.h>
 #include <sys/utsname.h>
 
-#define HIST_BINS 32
-#define HIST_WIDTH 42
-#define SINE_TABLE_SIZE 2048
-#define DEFAULT_TEST_SECONDS 5
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/resource.h>
+#endif
+
+#define MAX_SAMPLES 65536
+#define NUM_BINS 30
+#define LUT_SIZE 2048
 
 typedef struct {
-    double min, max, sum;
-    uint64_t count;
-} stat_t;
+    atomic_size_t idx;
+    double execTimes[MAX_SAMPLES];
+    double jitterTimes[MAX_SAMPLES];
+    float cpuSamples[1000];
+    int cpuIdx;
+    float phase;
+    float phaseInc;
+    ma_timer timer;
+    double last_exec_time;
+    double last_callback_time;
+    atomic_int underrun_count;
+    int recording;
+    int duration_sec;
+} BenchData;
 
-typedef struct {
-    stat_t exec;
-    stat_t jitter;
-    double exec_hist[HIST_BINS];
-    double jitter_hist[HIST_BINS];
-    double period_ms;
-} dsp_meter_t;
+static float sineLUT[LUT_SIZE];
+static BenchData g_bench;
 
-typedef struct {
-    ma_device device;
-    dsp_meter_t meter;
-    float sine[SINE_TABLE_SIZE];
-    double sine_pos;
-    double last_start;
-    uint64_t callbacks;
-    double freq; // sine frequency
-} bench_state;
-
-/* --- Utility --- */
-static double now_ms() {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return ts.tv_sec*1000.0 + ts.tv_nsec/1e6;
+double get_process_cpu_time() {
+#ifdef _WIN32
+    FILETIME create, exit, kernel, user;
+    GetProcessTimes(GetCurrentProcess(), &create, &exit, &kernel, &user);
+    return (double)(*((unsigned long long*)&kernel) + *((unsigned long long*)&user)) / 10000000.0;
+#else
+    struct rusage usage;
+    getrusage(RUSAGE_SELF, &usage);
+    return (double)usage.ru_utime.tv_sec + (double)usage.ru_utime.tv_usec / 1000000.0 +
+           (double)usage.ru_stime.tv_sec + (double)usage.ru_stime.tv_usec / 1000000.0;
+#endif
 }
 
-static void stat_init(stat_t *s) { s->min=1e9; s->max=0; s->sum=0; s->count=0; }
-static void stat_push(stat_t *s,double v){ if(v<s->min)s->min=v; if(v>s->max)s->max=v; s->sum+=v; s->count++; }
-static double stat_avg(stat_t *s){ return s->count ? s->sum/s->count : 0; }
-
-static void meter_init(dsp_meter_t *m,double period_ms){
-    stat_init(&m->exec);
-    stat_init(&m->jitter);
-    memset(m->exec_hist,0,sizeof(m->exec_hist));
-    memset(m->jitter_hist,0,sizeof(m->jitter_hist));
-    m->period_ms = period_ms;
-}
-
-static void hist_push(double *hist,double min,double max,double v){
-    if(v<min)v=min;
-    if(v>max)v=max;
-    int bin=(int)((v-min)/(max-min)*(HIST_BINS-1));
-    if(bin<0) bin=0;
-    if(bin>=HIST_BINS) bin=HIST_BINS-1;
-    hist[bin]++;
-}
-
-static void meter_record_exec(dsp_meter_t *m,double v){ stat_push(&m->exec,v); hist_push(m->exec_hist,0,m->period_ms,v);}
-static void meter_record_jitter(dsp_meter_t *m,double v){ stat_push(&m->jitter,v); hist_push(m->jitter_hist,0,m->period_ms,v); }
-
-static void render_hist(double *hist,double min,double max){
-    double maxv=0; for(int i=0;i<HIST_BINS;i++) if(hist[i]>maxv) maxv=hist[i]; if(maxv==0) maxv=1;
-    printf("├");
-    for(int x=0;x<HIST_WIDTH;x++){
-        int bin=(x*HIST_BINS)/HIST_WIDTH;
-        double v=hist[bin]/maxv;
-        const char* c=" ";
-        if(v>0.85)c="⣿";
-        else if(v>0.65)c="⣷";
-        else if(v>0.45)c="⣯";
-        else if(v>0.25)c="⣟";
-        else if(v>0.10)c="⣮";
-        else if(v>0.02)c="⣀";
-        printf("%s",c);
+void* cpu_monitor_thread(void* arg) {
+    BenchData *b = (BenchData*)arg;
+    double last_time = get_process_cpu_time();
+    struct timespec ts = {0, 100000000};
+    while(b->recording) {
+        nanosleep(&ts, NULL);
+        double now = get_process_cpu_time();
+        if(b->cpuIdx < 1000) b->cpuSamples[b->cpuIdx++] = (float)(now - last_time) * 10.0f;
+        last_time = now;
     }
-    printf("┤");
+    return NULL;
 }
 
-/* --- Audio callback --- */
-static void audio_callback(ma_device* dev, void* out, const void* in, ma_uint32 frames){
-    bench_state* s = (bench_state*)dev->pUserData;
-    double start=now_ms();
+void init_lut() {
+    for(int i = 0; i < LUT_SIZE; i++) 
+        sineLUT[i] = sinf((2.0f * 3.14159265f * i) / LUT_SIZE);
+}
 
-    if(s->last_start!=0){
-        double expected=s->last_start+s->meter.period_ms;
-        meter_record_jitter(&s->meter,fabs(start-expected));
+void print_system_info(int duration) {
+    struct utsname buffer;
+    uname(&buffer);
+    printf("Miniaudio: %s | OS: %s | Arch: %s | Duration: %d sec\n", 
+            MA_VERSION_STRING, buffer.sysname, buffer.machine, duration);
+    printf("--------------------------------------------------------------------------\n");
+}
+
+void export_to_csv(const char* fmt, ma_uint32 rate, ma_uint32 buf, BenchData *b) {
+    FILE *f = fopen("results.csv", "a");
+    if (!f) return;
+    fseek(f, 0, SEEK_END);
+    if (ftell(f) == 0) fprintf(f, "Format,Rate,Buffer,MaxExecMS,MaxJitterMS,MaxCPUPercent,Underruns\n");
+    
+    double max_e = 0.0, max_j = 0.0, max_cpu = 0.0;
+    size_t count = (b->idx < MAX_SAMPLES) ? b->idx : MAX_SAMPLES;
+    for(size_t i=0; i<count; i++) {
+        if(b->execTimes[i] > max_e) max_e = b->execTimes[i];
+        if(fabs(b->jitterTimes[i]) > max_j) max_j = fabs(b->jitterTimes[i]);
     }
-    s->last_start=start;
+    for(int i=0; i<b->cpuIdx; i++) if(b->cpuSamples[i] > max_cpu) max_cpu = b->cpuSamples[i];
 
-    uint32_t channels=dev->playback.channels;
-    double step = SINE_TABLE_SIZE * s->freq / dev->sampleRate;
+    fprintf(f, "%s,%u,%u,%.4f,%.4f,%.4f,%d\n", fmt, rate, buf, max_e, max_j, max_cpu, atomic_load(&b->underrun_count));
+    fclose(f);
+}
 
-    for(ma_uint32 i=0;i<frames;i++){
-        int idx = ((int)s->sine_pos) & (SINE_TABLE_SIZE-1);
-        float sample = s->sine[idx];
-        s->sine_pos += step;
+static void render_stats(BenchData *b, double period_ms) {
+    size_t count = (b->idx < MAX_SAMPLES) ? b->idx : MAX_SAMPLES;
+    double max_e = 0.0, min_e = 1000.0, max_j = 0.0, max_cpu = 0.0;
+    for(size_t i=0; i<count; i++) {
+        if(b->execTimes[i] > max_e) max_e = b->execTimes[i];
+        if(b->execTimes[i] < min_e) min_e = b->execTimes[i];
+        if(fabs(b->jitterTimes[i]) > max_j) max_j = fabs(b->jitterTimes[i]);
+    }
+    for(int i=0; i<b->cpuIdx; i++) if(b->cpuSamples[i] > max_cpu) max_cpu = b->cpuSamples[i];
+    
+    printf("exec   %8.4f ms ├", min_e);
+    for(int i=0; i<NUM_BINS; i++) printf(max_e > ((double)i/NUM_BINS*period_ms) ? "⣿" : ".");
+    printf("┤ %8.4f ms [%s]\n", max_e, (max_e > period_ms * 0.8) ? "FAIL" : "PASS");
 
-        for(uint32_t ch=0; ch<channels; ch++){
-            if(dev->playback.format==ma_format_f32) ((float*)out)[i*channels+ch]=sample;
-            else if(dev->playback.format==ma_format_s16) ((int16_t*)out)[i*channels+ch]=(int16_t)(sample*32767.0f);
+    printf("jitter %8.4f ms ├", 0.0);
+    for(int i=0; i<NUM_BINS; i++) printf(max_j > ((double)i/NUM_BINS*period_ms) ? "⣿" : ".");
+    printf("┤ %8.4f ms\n", max_j);
+
+    printf("cpu    %8.4f %%  ├", 0.0);
+    for(int i=0; i<NUM_BINS; i++) printf(max_cpu > ((double)i/NUM_BINS) ? "⣿" : ".");
+    printf("┤ %8.4f %%\n", max_cpu);
+    
+    printf("underruns: %d\n", atomic_load(&b->underrun_count));
+}
+
+static void audio_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
+    BenchData *b = (BenchData*)pDevice->pUserData;
+    if (!b || !b->recording) return;
+
+    double t0 = ma_timer_get_time_in_seconds(&b->timer) * 1000.0;
+    double expected_ms = (double)pDevice->playback.internalPeriodSizeInFrames / pDevice->sampleRate * 1000.0;
+    
+    if (b->last_callback_time > 0 && (t0 - b->last_callback_time) > (expected_ms * 1.5)) {
+        atomic_fetch_add(&b->underrun_count, 1);
+    }
+    b->last_callback_time = t0;
+
+    size_t i_idx = atomic_fetch_add(&b->idx, 1);
+    if (i_idx >= MAX_SAMPLES) return;
+    
+    if (pDevice->playback.format == ma_format_f32) {
+        float *out = (float*)pOutput;
+        for (ma_uint32 i = 0; i < frameCount; i++) {
+            float s = sineLUT[(int)b->phase];
+            for (ma_uint32 ch = 0; ch < 2; ch++) *out++ = s;
+            b->phase += b->phaseInc;
+            if (b->phase >= LUT_SIZE) b->phase -= LUT_SIZE;
+        }
+    } else {
+        int16_t *out = (int16_t*)pOutput;
+        for (ma_uint32 i = 0; i < frameCount; i++) {
+            int16_t s = (int16_t)(sineLUT[(int)b->phase] * 32767.0f);
+            for (ma_uint32 ch = 0; ch < 2; ch++) *out++ = s;
+            b->phase += b->phaseInc;
+            if (b->phase >= LUT_SIZE) b->phase -= LUT_SIZE;
         }
     }
-
-    double end=now_ms();
-    meter_record_exec(&s->meter,end-start);
-    s->callbacks++;
-    (void)in;
+    double t1 = ma_timer_get_time_in_seconds(&b->timer) * 1000.0;
+    b->execTimes[i_idx] = t1 - t0;
+    b->jitterTimes[i_idx] = (b->last_exec_time > 0) ? ((t1 - t0) - b->last_exec_time) : 0.0;
+    b->last_exec_time = t1 - t0;
 }
 
-/* --- Precompute sine table --- */
-static void precompute_sine(bench_state* s){
-    for(int i=0;i<SINE_TABLE_SIZE;i++)
-        s->sine[i]=sin((double)i/SINE_TABLE_SIZE*2.0*M_PI);
+void run_test(ma_format format, ma_uint32 rate, ma_uint32 bufSize) {
+    g_bench.idx = 0; g_bench.cpuIdx = 0; g_bench.recording = 0; 
+    g_bench.underrun_count = 0; g_bench.last_callback_time = 0;
+    g_bench.phase = 0; g_bench.phaseInc = (440.0f * LUT_SIZE) / (float)rate;
+    ma_context ctx; ma_context_init(NULL, 0, NULL, &ctx);
+    ma_device_config cfg = ma_device_config_init(ma_device_type_playback);
+    cfg.playback.format = format; cfg.sampleRate = rate; cfg.periodSizeInFrames = bufSize;
+    cfg.dataCallback = audio_callback; cfg.pUserData = &g_bench;
+    ma_device dev;
+    if (ma_device_init(&ctx, &cfg, &dev) == MA_SUCCESS) {
+        ma_timer_init(&g_bench.timer);
+        pthread_t tid;
+        ma_device_start(&dev);
+        g_bench.recording = 1;
+        pthread_create(&tid, NULL, cpu_monitor_thread, &g_bench);
+        sleep(g_bench.duration_sec);
+        g_bench.recording = 0;
+        pthread_join(tid, NULL);
+        ma_device_stop(&dev);
+        double period_ms = (double)bufSize * 1000.0 / rate;
+        printf("Fmt: %s, Rate: %u, Buf: %u, CBs: %zu\n", (format==ma_format_f32?"f32":"s16"), rate, bufSize, g_bench.idx);
+        render_stats(&g_bench, period_ms);
+        export_to_csv((format==ma_format_f32?"f32":"s16"), rate, bufSize, &g_bench);
+        printf("--------------------------------------------------------------------------\n");
+        ma_device_uninit(&dev);
+    }
+    ma_context_uninit(&ctx);
 }
 
-/* --- Print system info --- */
-static void print_system_info(){
-    struct utsname u;
-    uname(&u);
-    printf("Miniaudio version: %s\n",MA_VERSION_STRING);
-    printf("OS: %s %s\n",u.sysname,u.release);
-    printf("CPU: %s\n\n",u.machine);
-}
-
-/* --- Print benchmark results --- */
-static void print_results(bench_state* s){
-    double avg_exec=stat_avg(&s->meter.exec);
-    double load=avg_exec/s->meter.period_ms*100.0;
-    printf("exec   %7.4f ms ",s->meter.exec.min); render_hist(s->meter.exec_hist,0,s->meter.period_ms); printf(" %7.4f ms\n",s->meter.exec.max);
-    printf("jitter %7.4f ms ",s->meter.jitter.min); render_hist(s->meter.jitter_hist,0,s->meter.period_ms); printf(" %7.4f ms\n",s->meter.jitter.max);
-    printf("DSP load avg %.2f%%\n",load);
-}
-
-/* --- Run one test --- */
-static void run_test(ma_format fmt,int rate,int frames,int seconds,double freq){
-    bench_state s; memset(&s,0,sizeof(s));
-    s.freq=freq;
-    precompute_sine(&s);
-    double period_ms=(double)frames/rate*1000.0;
-    meter_init(&s.meter,period_ms);
-
-    ma_device_config cfg=ma_device_config_init(ma_device_type_playback);
-    cfg.playback.format=fmt;
-    cfg.playback.channels=2;
-    cfg.sampleRate=rate;
-    cfg.periodSizeInFrames=frames;
-    cfg.dataCallback=audio_callback;
-    cfg.pUserData=&s;
-
-    if(ma_device_init(NULL,&cfg,&s.device)!=MA_SUCCESS){ printf("Device init failed\n"); return; }
-    if(ma_device_start(&s.device)!=MA_SUCCESS){ printf("Device start failed\n"); ma_device_uninit(&s.device); return; }
-
-    ma_sleep(seconds*1000);
-    ma_device_uninit(&s.device);
-
-    double cps=s.callbacks/(double)seconds;
-    printf("%5s | %6d Hz | %5d frames | %6.0f cb/s | %.1f Hz\n",
-           fmt==ma_format_f32?"f32":"s16",rate,frames,cps,freq);
-    print_results(&s);
-    printf("\n");
-}
-
-/* --- Main --- */
-int main(int argc,char** argv){
-    int test_seconds=DEFAULT_TEST_SECONDS;
-    if(argc>1) test_seconds=atoi(argv[1]);
-
-    print_system_info();
-    printf("Format | SampleRate | Period | Callbacks/sec | SineHz\n");
-    printf("------------------------------------------------------\n\n");
-
-    ma_format formats[]={ma_format_f32,ma_format_s16};
-    int rates[]={44100,48000};
-    int frames[]={128,256,512,1024};
-    double freq = 440.0; // A4
-
-    for(int f=0;f<2;f++)
-        for(int r=0;r<2;r++)
-            for(int p=0;p<4;p++)
-                run_test(formats[f],rates[r],frames[p],test_seconds,freq);
-
+int main(int argc, char** argv) {
+    int duration = (argc > 1) ? atoi(argv[1]) : 2;
+    g_bench.duration_sec = duration;
+    print_system_info(duration);
+    init_lut();
+    ma_format fmts[] = {ma_format_f32, ma_format_s16};
+    ma_uint32 rates[] = {44100, 48000};
+    ma_uint32 bufs[] = {256, 512, 1024};
+    for(int f=0; f<2; f++) for(int r=0; r<2; r++) for(int b=0; b<3; b++) run_test(fmts[f], rates[r], bufs[b]);
     return 0;
 }
