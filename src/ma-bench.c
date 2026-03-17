@@ -39,6 +39,10 @@ typedef struct {
 
 static float sineLUT[LUT_SIZE];
 static BenchData g_bench;
+static float g_vol = 0.0;
+static unsigned long g_vhalf = 0;
+static float g_vinc = 0.0;
+unsigned long g_ttl_frame = 0;
 
 double get_process_cpu_time() {
 #ifdef _WIN32
@@ -192,17 +196,23 @@ static void audio_callback(ma_device* pDevice, void* pOutput,
     if(interval > expected_ms*1.5)
         atomic_fetch_add(&b->underrun_count,1);
 
+    
     if(pDevice->playback.format==ma_format_f32){
 
         float *out=(float*)pOutput;
 
         for(ma_uint32 i=0;i<frameCount;i++){
-            float s = sineLUT[(int)b->phase];
+            float ones = sineLUT[(int)b->phase];
+            ones *= g_vol;
+            float s = ones;
             *out++ = s;
             *out++ = s;
 
             b->phase += b->phaseInc;
             if(b->phase>=LUT_SIZE) b->phase-=LUT_SIZE;
+            if (g_ttl_frame < g_vhalf) g_vol += g_vinc;
+            else g_vol -= g_vinc;
+            g_ttl_frame++;
         }
 
     } else {
@@ -210,12 +220,17 @@ static void audio_callback(ma_device* pDevice, void* pOutput,
         int16_t *out=(int16_t*)pOutput;
 
         for(ma_uint32 i=0;i<frameCount;i++){
-            int16_t s=(int16_t)(sineLUT[(int)b->phase]*32767.0f);
+            float ones = sineLUT[(int)b->phase];
+            ones *= g_vol;
+            int16_t s=(int16_t)(ones*32767.0f);
             *out++ = s;
             *out++ = s;
 
             b->phase += b->phaseInc;
+            if (g_ttl_frame < g_vhalf) g_vol += g_vinc;
+            else g_vol -= g_vinc;
             if(b->phase>=LUT_SIZE) b->phase-=LUT_SIZE;
+            g_ttl_frame++;
         }
     }
 
@@ -229,6 +244,11 @@ static void audio_callback(ma_device* pDevice, void* pOutput,
 
 void run_test(ma_format format, ma_uint32 rate, ma_uint32 bufSize)
 {
+    g_vol = 0.0;
+    g_vhalf = g_bench.duration_sec * rate / 2;
+    g_vinc = 1.0/(float)g_vhalf;
+    g_ttl_frame = 0;
+
     g_bench.idx=0;
     g_bench.cpuIdx=0;
     g_bench.recording=0;
